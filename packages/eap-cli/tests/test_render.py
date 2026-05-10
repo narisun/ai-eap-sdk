@@ -35,3 +35,12 @@ def test_render_refuses_to_overwrite_unless_force(tmp_path: Path):
 
     render_template_dir(src, dst, {}, force=True)
     assert (dst / "x.txt").read_text() == "v1"
+
+
+def test_render_substitutes_name_in_filenames(tmp_path: Path):
+    src = tmp_path / "src"
+    (src / "tools").mkdir(parents=True)
+    (src / "tools" / "__name__.py.j2").write_text("# tool {{ name }}\n")
+    dst = tmp_path / "dst"
+    render_template_dir(src, dst, {"name": "lookup_user"})
+    assert (dst / "tools" / "lookup_user.py").read_text() == "# tool lookup_user\n"

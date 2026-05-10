@@ -6,6 +6,7 @@ from pathlib import Path
 import click
 
 from eap_cli.scaffolders.create_agent import create_agent
+from eap_cli.scaffolders.create_tool import create_tool
 from eap_cli.scaffolders.init import init_project
 
 
@@ -42,6 +43,18 @@ def create_agent_cmd(name: str, template: str) -> None:
     target = Path.cwd()
     written = create_agent(target, agent_name=name, template=template)
     click.echo(f"Wrote {len(written)} files for {template} template.")
+
+
+@cli.command("create-tool")
+@click.option("--name", required=True, help="Tool name (becomes the function and filename).")
+@click.option("--mcp", "as_mcp", is_flag=True, help="Generate as MCP-decorated tool. Required.")
+@click.option("--auth-required", is_flag=True, help="Mark the tool as requires_auth=True.")
+def create_tool_cmd(name: str, as_mcp: bool, auth_required: bool) -> None:
+    """Generate a new MCP tool stub."""
+    if not as_mcp:
+        raise click.ClickException("Only --mcp tools are supported in this version. Pass --mcp.")
+    written = create_tool(Path.cwd(), name=name, requires_auth=auth_required)
+    click.echo(f"Created {len(written)} file(s) for tool {name!r}.")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,20 @@ def _env() -> Environment:
     )
 
 
+def _maybe_substitute_name(path: Path, variables: dict) -> Path:
+    if "name" not in variables:
+        return path
+    parts = []
+    for part in path.parts:
+        if part == "__name__":
+            parts.append(str(variables["name"]))
+        elif part.startswith("__name__."):
+            parts.append(str(variables["name"]) + part[len("__name__"):])
+        else:
+            parts.append(part)
+    return Path(*parts)
+
+
 def render_template_dir(
     src: Path,
     dst: Path,
@@ -39,6 +53,7 @@ def render_template_dir(
         else:
             target = dst / rel.with_suffix("")
             content = env.from_string(src_file.read_text()).render(**variables)
+        target = _maybe_substitute_name(target, variables)
         if target.exists() and not force:
             raise FileExistsError(f"{target} already exists; pass force=True to overwrite")
         target.parent.mkdir(parents=True, exist_ok=True)
