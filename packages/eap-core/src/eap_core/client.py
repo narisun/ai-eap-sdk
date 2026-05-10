@@ -16,6 +16,8 @@ from pydantic import BaseModel
 
 from eap_core.config import RuntimeConfig
 from eap_core.identity.nhi import NonHumanIdentity
+from eap_core.mcp.registry import McpToolRegistry
+from eap_core.mcp.types import MCPError
 from eap_core.middleware.base import Middleware
 from eap_core.middleware.pipeline import MiddlewarePipeline
 from eap_core.runtimes.base import BaseRuntimeAdapter
@@ -49,12 +51,14 @@ class EnterpriseLLM:
         middlewares: list[Middleware] | None = None,
         identity: NonHumanIdentity | None = None,
         registry: AdapterRegistry | None = None,
+        tool_registry: McpToolRegistry | None = None,
     ) -> None:
         self._config = runtime_config
         self._registry = registry or AdapterRegistry.from_entry_points()
         self._adapter: BaseRuntimeAdapter = self._registry.create(runtime_config)
         self._pipeline = MiddlewarePipeline(middlewares or [])
         self._identity = identity
+        self._tool_registry = tool_registry
 
     @property
     def sync(self) -> SyncProxy:
@@ -124,6 +128,33 @@ class EnterpriseLLM:
 
         async for chunk in self._pipeline.run_stream(req, ctx, terminal):
             yield chunk
+
+    async def invoke_tool(self, tool_name: str, args: dict[str, Any]) -> Any:
+        if self._tool_registry is None:
+            raise MCPError(tool_name=tool_name, message="no tool registry configured on EnterpriseLLM")
+        spec = self._tool_registry.get(tool_name)
+        if spec is None:
+            raise MCPError(tool_name=tool_name, message="tool not found in registry")
+
+        ctx = Context(request_id=uuid.uuid4().hex, identity=self._identity)
+        req = Request(
+            model=self._config.model,
+            messages=[],
+            metadata={
+                "operation_name": "invoke_tool",
+                "action": f"tool:{tool_name}",
+                "resource": tool_name,
+                "tool_args": args,
+            },
+        )
+
+        async def terminal(r: Request, c: Context) -> Response:
+            invoked_args = r.metadata.get("tool_args", args)
+            result = await self._tool_registry.invoke(tool_name, invoked_args)
+            return Response(text=str(result), payload=result)
+
+        resp = await self._pipeline.run(req, ctx, terminal)
+        return resp.payload
 
     async def aclose(self) -> None:
         await self._adapter.aclose()
