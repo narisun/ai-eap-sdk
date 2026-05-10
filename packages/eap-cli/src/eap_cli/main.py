@@ -1,12 +1,14 @@
 """Top-level Click app for `eap`."""
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import click
 
 from eap_cli.scaffolders.create_agent import create_agent
 from eap_cli.scaffolders.create_tool import create_tool
+from eap_cli.scaffolders.eval_cmd import run_eval
 from eap_cli.scaffolders.init import init_project
 
 
@@ -55,6 +57,29 @@ def create_tool_cmd(name: str, as_mcp: bool, auth_required: bool) -> None:
         raise click.ClickException("Only --mcp tools are supported in this version. Pass --mcp.")
     written = create_tool(Path.cwd(), name=name, requires_auth=auth_required)
     click.echo(f"Created {len(written)} file(s) for tool {name!r}.")
+
+
+@cli.command("eval")
+@click.option("--dataset", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--agent", "agent_spec", default="agent.py:answer", show_default=True,
+              help="Agent entry point as path:function.")
+@click.option("--report", "report_fmt", type=click.Choice(["json", "html", "junit"]), default="json")
+@click.option("--threshold", type=float, default=0.7, show_default=True)
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path), default=None,
+              help="Write report to this file (otherwise stdout).")
+def eval_cmd(dataset: Path, agent_spec: str, report_fmt: str, threshold: float, output: Path | None) -> None:
+    """Run a golden-set eval over the project's agent."""
+    report, rendered = asyncio.run(run_eval(
+        dataset=dataset, agent_spec=agent_spec,
+        threshold=threshold, report_fmt=report_fmt, output=output,
+    ))
+    if output is None:
+        click.echo(rendered)
+    else:
+        click.echo(f"Wrote {report_fmt} report to {output} "
+                   f"(passed {report.passed_count}/{report.passed_count + report.failed_count})")
+    if report.failed_count > 0:
+        raise click.exceptions.Exit(1)
 
 
 if __name__ == "__main__":
