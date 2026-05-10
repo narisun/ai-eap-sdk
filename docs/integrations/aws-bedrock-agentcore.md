@@ -36,9 +36,9 @@ Observability, Cedar-based Policy, etc.). EAP-Core provides the
 | **Code Interpreter** (Python/JS sandboxes) | `register_code_interpreter_tools()` — three MCP tools | **Phase B — shipped** |
 | **Browser** (cloud browser) | `register_browser_tools()` — five MCP tools | **Phase B — shipped** |
 | **Inbound JWT verification** | `InboundJwtVerifier` + `jwt_dependency()` (FastAPI) | **Phase B — shipped** |
-| **Payments** (x402 microtransactions) | `PaymentMiddleware` intercepts 402 responses | Phase D |
-| **Evaluations** (trace-based eval) | Bidirectional adapters: export `Trajectory` → AgentCore Eval; consume AgentCore Eval results as a `Scorer` | Phase D |
-| **Registry** (org-wide tool/agent catalog) | `RegistryClient` to publish/pull `AgentCard` | Phase D |
+| **Payments** (x402 microtransactions) | `PaymentRequired` exception + `PaymentClient` | **Phase D — shipped** |
+| **Evaluations** (trace-based eval) | `to_agentcore_eval_dataset` (export) + `AgentCoreEvalScorer` (import) | **Phase D — shipped** |
+| **Registry** (org-wide tool/agent catalog) | `RegistryClient` — publish/discover AgentCards | **Phase D — shipped** |
 
 ## Phase A — what's shipped
 
@@ -308,34 +308,122 @@ Live API registration (creating a Gateway target via the AWS API) is
 not yet automated — Phase D refinement. The OpenAPI artifact is the
 hand-off point.
 
-## Phase D — planned
+## Phase D — what's shipped
 
-- **`RegistryClient`** — publishes your `AgentCard` (auto-built from
-  your tool registry via `build_card`) to AgentCore Registry; pulls
-  other agents' cards for discovery.
-- **`PaymentMiddleware`** — intercepts 402 responses from tool calls
-  and pays via AgentCore Payments (x402 protocol). Configurable
-  per-tool spending limits.
-- **AgentCore Eval bidirectional adapters** — export our
-  `Trajectory` JSONL to AgentCore Eval input format; ingest AgentCore
-  Eval results into our `EvalReport` so a single dashboard shows
-  scores from both systems.
+Phase D closes feature parity. Live AgentCore API calls in each
+section are gated behind `EAP_ENABLE_REAL_RUNTIMES=1`.
+
+### Registry — `RegistryClient`
+
+```python
+from eap_core.integrations.agentcore import RegistryClient
+from eap_core.a2a import build_card
+
+rc = RegistryClient(registry_name="org-registry", region="us-east-1")
+card = build_card(name="bank-agent", description="...", skills_from=registry)
+record_id = await rc.publish_agent_card(card)
+
+# Discover an agent by name, or search semantically:
+record = await rc.get_record("bank-agent")
+hits = await rc.search("agents that handle account transfers")
+```
+
+`publish_agent_card`, `publish_mcp_server`, `get_record`, `search`,
+and `list_records` map directly to AWS Agent Registry's control-plane
+API. The registry can also be reached via its MCP endpoint — use
+`GatewayClient` for that path.
+
+### Payments — `PaymentRequired` + `PaymentClient`
+
+Two pieces. A tool wrapper raises `PaymentRequired` when it sees an
+upstream `HTTP 402`. The `PaymentClient` opens a budget-limited
+`PaymentSession` and signs payments via the configured wallet
+provider (Coinbase CDP or Stripe/Privy).
+
+```python
+from eap_core.integrations.agentcore import (
+    PaymentClient, PaymentRequired,
+)
+
+pc = PaymentClient(
+    wallet_provider_id="my-cdp-wallet",
+    max_spend_cents=100,        # $1.00 hard cap
+    session_ttl_seconds=3600,
+)
+await pc.start_session()
+
+try:
+    result = await client.invoke_tool("paid_data", {"query": "..."})
+except PaymentRequired as pr:
+    if pc.can_afford(pr.amount_cents):
+        receipt = await pc.authorize_and_retry(pr)
+        # caller uses `receipt` to retry the original tool call with
+        # X-Payment-Receipt header set
+```
+
+Budget bookkeeping is enforced in-process (`can_afford`,
+`remaining_cents`) so an agent can pre-check before any AWS call;
+the actual payment authorization (which deducts from the budget)
+happens through AgentCore Payments.
+
+### Evaluations — bidirectional adapters
+
+**Export:** `to_agentcore_eval_dataset(trajectories)` converts our
+`Trajectory` records to AgentCore Eval's question/answer/contexts/
+trace_id/steps shape:
+
+```python
+from eap_core.integrations.agentcore import to_agentcore_eval_dataset
+
+rows = to_agentcore_eval_dataset(recorder.trajectories)
+# `rows` is a list of plain dicts; upload to S3 or pass to boto3
+```
+
+**Import:** `AgentCoreEvalScorer` implements our `_ScorerProto` so
+it plugs into `EvalRunner.scorers` alongside our deterministic
+scorer:
+
+```python
+from eap_core.eval import EvalRunner, FaithfulnessScorer, DeterministicJudge
+from eap_core.integrations.agentcore import AgentCoreEvalScorer
+
+helpfulness = AgentCoreEvalScorer(
+    evaluator_arn="arn:aws:bedrock-agentcore:::evaluator/Builtin.Helpfulness",
+    scorer_name="helpfulness",
+)
+faithfulness = FaithfulnessScorer(judge=DeterministicJudge())
+
+runner = EvalRunner(agent=my_agent, scorers=[helpfulness, faithfulness])
+report = await runner.run(cases)
+# report.aggregate now has both "helpfulness" and "faithfulness" entries
+```
+
+A single `EvalReport` carries scores from both our deterministic
+in-process scorer and AgentCore's managed evaluator. Useful for
+side-by-side comparison or for using AgentCore's LLM-as-judge
+evaluators as the primary metric while keeping our deterministic
+scorer as a CI smoke check.
 
 ## Why phase this way
 
 The phases are ordered so each phase is **independently shippable**
 and adds value on its own:
 
-- **Phase A** alone gets you to "EAP-Core agents run on AgentCore
-  Runtime with OTel and Identity wired." Most enterprise teams can
-  stop here and be productive.
+- **Phase A** gets you to "EAP-Core agents run on AgentCore Runtime
+  with OTel and Identity wired." Most enterprise teams can stop here
+  and be productive.
 - **Phase B** unlocks the agent-superpowers AgentCore offers (Memory,
   Code Interpreter, Browser) as middleware-gated, policy-enforced
-  tools rather than direct calls.
+  tools rather than direct calls. Plus inbound JWT verification.
 - **Phase C** turns your agent into a citizen of an AgentCore tool
-  ecosystem (consumes Gateway-hosted tools; publishes its own).
-- **Phase D** is the polish that closes feature parity (Registry
-  discoverability, microtransactions, eval integration).
+  ecosystem (consumes Gateway-hosted tools via `GatewayClient`;
+  publishes its own via `eap publish-to-gateway`).
+- **Phase D** closes feature parity: Registry discoverability,
+  x402 microtransactions, bidirectional Evaluations integration.
+
+All four phases are shipped as of v0.1.0+. Every live AgentCore call
+is gated behind `EAP_ENABLE_REAL_RUNTIMES=1` so tests stay
+deterministic and CI doesn't need AWS credentials.
 
 ## Defense in depth
 

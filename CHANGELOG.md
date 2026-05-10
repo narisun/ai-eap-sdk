@@ -12,6 +12,64 @@ The same version applies to both workspace packages (`eap-core` and
 
 ## [Unreleased]
 
+### Added — AWS Bedrock AgentCore integration (Phase D)
+
+Closes feature parity with AgentCore. Three independent pieces, all
+following the same lazy-boto3 + `EAP_ENABLE_REAL_RUNTIMES=1` gating
+pattern as Phases A–C.
+
+- **`RegistryClient`** — AWS Agent Registry client for org-wide
+  discovery. Methods: `publish_agent_card(card)`,
+  `publish_mcp_server(name, ...)`, `get_record(name)`,
+  `search(query)`, `list_records(record_type=..., max_results=...)`.
+  Construction does no I/O.
+- **`PaymentRequired`** (exception) — raised by tool wrappers when an
+  upstream service responds `HTTP 402`. Carries `amount_cents`,
+  `currency`, `merchant`, `original_url`, and the raw x402 payload.
+  Named to match the HTTP 402 "Payment Required" status (not the
+  ruff-preferred `Error` suffix — intentional, noqa'd).
+- **`PaymentClient`** — opens a budget-limited `PaymentSession`
+  via AgentCore Payments, signs payments via the configured wallet
+  (Coinbase CDP or Stripe/Privy), and tracks spending in-process.
+  Methods: `start_session()`, `authorize_and_retry(req)`, plus
+  the synchronous helpers `can_afford(amount_cents)`,
+  `remaining_cents`, `spent_cents`, `session_id`. Budget bookkeeping
+  is deterministic from the client's own state so agents can
+  pre-check before any AWS call.
+- **`to_agentcore_eval_dataset(trajectories)`** — pure-function
+  exporter that converts our `Trajectory` records to AgentCore Eval's
+  question / answer / contexts / trace_id / steps shape. Useful for
+  S3 upload or boto3 batch calls. Empty list → empty list.
+- **`AgentCoreEvalScorer`** — implements our `_ScorerProto` so it
+  plugs into `EvalRunner.scorers` alongside the deterministic
+  scorer. Wraps an AgentCore evaluator ARN (built-in like
+  `arn:aws:bedrock-agentcore:::evaluator/Builtin.Helpfulness` or
+  custom). A single `EvalReport.aggregate` can then carry scores from
+  both our in-process scorer and AgentCore's managed evaluator
+  side-by-side.
+
+### Tests added (24 new tests)
+
+`test_integrations_agentcore_phase_d.py`:
+- `RegistryClient` (7): construction is cheap (no boto3 import),
+  every method gated by env flag, stores construction params.
+- `PaymentRequired` (2): carries x402 metadata, optional raw defaults.
+- `PaymentClient` (6): initial state, gated start/authorize,
+  `can_afford` respects budget, `remaining_cents` tracks spend,
+  construction is cheap.
+- Eval adapters (4): one row per trajectory, missing input handled,
+  steps serialized, empty list returns empty.
+- `AgentCoreEvalScorer` (5): default + custom name, gated by env
+  flag, construction is cheap, satisfies `EvalRunner` scorer shape.
+
+### Stats
+
+- **243 tests passing** (up from 219 in Phase C).
+- Coverage holds. Lint, format, and strict mypy all green.
+- The AgentCore integration is now feature-complete across all four
+  phases. Live API calls remain `EAP_ENABLE_REAL_RUNTIMES=1`-gated;
+  flip the flag with AWS credentials configured to exercise them.
+
 ### Added — AWS Bedrock AgentCore integration (Phase C)
 
 Gateway integration. Outbound: an EAP-Core agent uses Gateway-hosted
