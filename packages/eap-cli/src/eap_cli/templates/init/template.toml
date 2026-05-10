@@ -1,0 +1,4 @@
+[template]
+name = "init"
+description = "Base EAP-Core project skeleton"
+required_vars = ["project_name", "runtime"]

@@ -1,0 +1,19 @@
+{
+  "version": "1",
+  "rules": [
+    {
+      "id": "deny-writes-by-default",
+      "effect": "forbid",
+      "principal": "*",
+      "action": ["tool:transfer", "tool:delete"],
+      "resource": "*"
+    },
+    {
+      "id": "permit-all",
+      "effect": "permit",
+      "principal": "*",
+      "action": "*",
+      "resource": "*"
+    }
+  ]
+}

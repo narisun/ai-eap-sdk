@@ -1,0 +1,10 @@
+{
+  "name": "research-agent",
+  "description": "Scaffolded EAP-Core agent",
+  "version": "0.1.0",
+  "skills": [
+    {"name": "echo", "description": "Echo the input back.", "input_schema": {"type": "object"}}
+  ],
+  "endpoints": {},
+  "authentication": null
+}

@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --dev
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy
+
+  test-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --dev
+      - run: uv run pytest --cov --cov-report=term-missing -m "not extras and not cloud"
+
+  test-extras:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        extra: [pii, otel, policy-cedar]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --extra ${{ matrix.extra }} --dev
+      - run: uv run pytest packages/eap-core/tests/extras -v

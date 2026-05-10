@@ -1,0 +1,40 @@
+"""Minimal EAP-Core agent — runnable via the local runtime."""
+from __future__ import annotations
+
+import asyncio
+
+from eap_core import EnterpriseLLM, RuntimeConfig
+from eap_core.middleware.observability import ObservabilityMiddleware
+from eap_core.middleware.pii import PiiMaskingMiddleware
+from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
+from eap_core.middleware.sanitize import PromptInjectionMiddleware
+from eap_core.middleware.validate import OutputValidationMiddleware
+import json
+from pathlib import Path
+
+
+def _load_policy() -> dict:
+    return json.loads((Path(__file__).parent / "configs" / "policy.json").read_text())
+
+
+def build_client() -> EnterpriseLLM:
+    return EnterpriseLLM(
+        RuntimeConfig(provider="{{ runtime }}", model="echo-1"),
+        middlewares=[
+            PromptInjectionMiddleware(),
+            PiiMaskingMiddleware(),
+            ObservabilityMiddleware(),
+            PolicyMiddleware(JsonPolicyEvaluator(_load_policy())),
+            OutputValidationMiddleware(),
+        ],
+    )
+
+
+async def run() -> None:
+    client = build_client()
+    resp = await client.generate_text("Hello from {{ project_name }}!")
+    print(resp.text)
+
+
+if __name__ == "__main__":
+    asyncio.run(run())
