@@ -21,6 +21,9 @@ from eap_core.a2a import AgentCard, Skill, build_card
 from eap_core.client import EnterpriseLLM
 from eap_core.config import EvalConfig, IdentityConfig, RuntimeConfig
 
+# Discovery abstraction (agent / tool / MCP-server registry)
+from eap_core.discovery import AgentRegistry, InMemoryAgentRegistry
+
 # Eval framework
 from eap_core.eval import (
     DeterministicJudge,
@@ -47,6 +50,29 @@ from eap_core.mcp import MCPError, McpToolRegistry, ToolSpec, default_registry, 
 
 # Memory abstraction
 from eap_core.memory import InMemoryStore, MemoryStore
+
+# Payments abstraction (x402, AP2, etc.)
+from eap_core.payments import (
+    InMemoryPaymentBackend,
+    PaymentBackend,
+    PaymentRequired,
+)
+
+# Sandbox abstraction (code + browser execution)
+from eap_core.sandbox import (
+    BrowserSandbox,
+    CodeSandbox,
+    InProcessCodeSandbox,
+    NoopBrowserSandbox,
+    SandboxResult,
+)
+
+# Security abstraction (threat detection)
+from eap_core.security import (
+    RegexThreatDetector,
+    ThreatAssessment,
+    ThreatDetector,
+)
 
 # Public data types
 from eap_core.types import Chunk, Context, Message, Request, Response
@@ -93,4 +119,21 @@ __all__ = [  # noqa: RUF022 — grouped semantically, not alphabetically
     # memory
     "InMemoryStore",
     "MemoryStore",
+    # sandbox
+    "BrowserSandbox",
+    "CodeSandbox",
+    "InProcessCodeSandbox",
+    "NoopBrowserSandbox",
+    "SandboxResult",
+    # discovery
+    "AgentRegistry",
+    "InMemoryAgentRegistry",
+    # payments
+    "InMemoryPaymentBackend",
+    "PaymentBackend",
+    "PaymentRequired",
+    # security
+    "RegexThreatDetector",
+    "ThreatAssessment",
+    "ThreatDetector",
 ]
