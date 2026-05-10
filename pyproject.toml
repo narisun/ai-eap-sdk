@@ -5,7 +5,7 @@ description = "Workspace root for the EAP-Core SDK"
 requires-python = ">=3.11"
 
 [tool.uv.workspace]
-members = ["packages/eap-core"]
+members = ["packages/eap-core", "packages/eap-cli"]
 
 [tool.uv.sources]
 eap-core = { workspace = true }
@@ -25,11 +25,11 @@ ignore = ["S101"]  # assert allowed in tests
 [tool.mypy]
 strict = true
 python_version = "3.11"
-files = ["packages/eap-core/src"]
+files = ["packages/eap-core/src", "packages/eap-cli/src"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["packages/eap-core/tests"]
+testpaths = ["packages/eap-core/tests", "packages/eap-cli/tests"]
 addopts = "--strict-markers -ra"
 markers = [
     "cloud: tests that hit real cloud APIs (skipped without EAP_ENABLE_REAL_RUNTIMES=1)",
@@ -37,7 +37,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["packages/eap-core/src"]
+source = ["packages/eap-core/src", "packages/eap-cli/src"]
 branch = true
 omit = [
     "packages/eap-core/src/eap_core/runtimes/bedrock.py",
