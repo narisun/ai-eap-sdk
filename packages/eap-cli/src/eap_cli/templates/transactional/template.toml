@@ -1,0 +1,4 @@
+[template]
+name = "transactional"
+description = "Action-style agent with auth-required write tools"
+required_vars = ["agent_name"]

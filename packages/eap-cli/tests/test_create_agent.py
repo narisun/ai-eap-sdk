@@ -37,3 +37,16 @@ def test_create_agent_unknown_template_errors(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(target)
     result = runner.invoke(cli, ["create-agent", "--name", "x", "--template", "bogus"])
     assert result.exit_code != 0
+
+
+def test_create_transactional_agent_includes_policy_gates(tmp_path: Path, monkeypatch):
+    runner = CliRunner()
+    target = tmp_path / "bank"
+    runner.invoke(cli, ["init", str(target), "--name", "bank"])
+    monkeypatch.chdir(target)
+    result = runner.invoke(cli, ["create-agent", "--name", "teller", "--template", "transactional"])
+    assert result.exit_code == 0, result.output
+    assert (target / "tools" / "get_account.py").is_file()
+    assert (target / "tools" / "transfer_funds.py").is_file()
+    transfer_text = (target / "tools" / "transfer_funds.py").read_text()
+    assert "requires_auth=True" in transfer_text
