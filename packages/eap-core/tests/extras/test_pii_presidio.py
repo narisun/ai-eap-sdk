@@ -7,11 +7,9 @@ from eap_core.middleware.pii import PiiMaskingMiddleware
 from eap_core.types import Context, Message, Request, Response
 
 
-# xfail: spaCy en_core_web_lg model not installed in this environment.
-# pip/uv are not available inside the venv to auto-download the model.
-# Install manually with: pip install en_core_web_lg (from spaCy releases).
 @pytest.mark.xfail(
-    reason="spaCy en_core_web_lg model not installed; no pip/uv available to download it",
+    reason="Manual span replacement breaks on Presidio overlapping findings; "
+    "proper integration needs AnonymizerEngine. Tracked for Plan 2/3.",
     strict=False,
 )
 async def test_presidio_masks_and_unmasks_round_trip():
