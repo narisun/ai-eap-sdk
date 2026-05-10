@@ -9,6 +9,7 @@ from typing import cast
 import click
 
 from eap_cli.scaffolders.create_agent import Template, create_agent
+from eap_cli.scaffolders.create_mcp_server import create_mcp_server
 from eap_cli.scaffolders.create_tool import create_tool
 from eap_cli.scaffolders.deploy import (
     _real_deploy_enabled,
@@ -71,6 +72,20 @@ def create_tool_cmd(name: str, as_mcp: bool, auth_required: bool) -> None:
         raise click.ClickException("Only --mcp tools are supported in this version. Pass --mcp.")
     written = create_tool(Path.cwd(), name=name, requires_auth=auth_required)
     click.echo(f"Created {len(written)} file(s) for tool {name!r}.")
+
+
+@cli.command("create-mcp-server")
+@click.argument("target", type=click.Path(file_okay=False, path_type=Path))
+@click.option("--name", default=None, help="Server name (defaults to target dir name).")
+@click.option("--force", is_flag=True, help="Overwrite existing files.")
+def create_mcp_server_cmd(target: Path, name: str | None, force: bool) -> None:
+    """Scaffold a standalone MCP-stdio server project (no LLM agent)."""
+    server_name = name or target.name
+    try:
+        written = create_mcp_server(target, server_name=server_name, force=force)
+    except FileExistsError as e:
+        raise click.ClickException(f"{e}. Re-run with --force to overwrite.") from e
+    click.echo(f"Wrote {len(written)} files for MCP server {server_name!r} to {target}")
 
 
 @cli.command("eval")

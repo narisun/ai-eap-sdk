@@ -1,0 +1,4 @@
+[template]
+name = "mcp_server"
+description = "Standalone MCP-stdio server project (tools-only, no LLM agent)"
+required_vars = ["server_name"]
