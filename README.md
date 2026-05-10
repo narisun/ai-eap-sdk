@@ -469,14 +469,18 @@ exporter. No SDK code changes.
 ```
 ai-eap-sdk/
 ├── packages/
-│   ├── eap-core/          # the SDK
-│   └── eap-cli/           # the `eap` CLI
+│   ├── eap-core/                # the SDK
+│   └── eap-cli/                 # the `eap` CLI
 ├── examples/
-│   └── research-agent/    # committed reference project
-├── docs/superpowers/
-│   ├── specs/             # design specs (full architecture)
-│   └── plans/             # implementation plans (Plans 1–4)
-└── pyproject.toml         # uv workspace root
+│   ├── research-agent/          # retrieval-style reference project
+│   ├── transactional-agent/     # action-style with auth-required tools
+│   └── mcp-server-example/      # standalone MCP-stdio server
+├── docs/
+│   ├── developer-guide.md       # for engineers extending the SDK
+│   └── superpowers/
+│       ├── specs/               # full design spec
+│       └── plans/               # implementation plans (Plans 1–4)
+└── pyproject.toml               # uv workspace root
 ```
 
 **Status:** walking-skeleton complete. Cloud adapters are
@@ -485,17 +489,31 @@ the flag and configure creds for real Bedrock / Vertex calls.
 
 ---
 
+## Extending EAP-Core
+
+Adding a new middleware, runtime adapter, eval scorer, policy
+evaluator, CLI template, or optional extra? Read
+[**`docs/developer-guide.md`**](docs/developer-guide.md) first. It
+covers the load-bearing design principles, the middleware contract,
+the extension cookbook (with code examples for each extension point),
+how to evolve the SDK as the open source ecosystem changes, the
+anti-patterns to refuse, and the future-proofing checklist to walk
+before merging non-trivial changes.
+
+---
+
 ## Development
 
 ```bash
 uv sync --all-packages --all-extras --group dev   # install everything
-uv run pytest --cov                                # 148 tests, ~93% coverage
+uv run pytest --cov                                # 153 tests, ~93% coverage
 uv run ruff check && uv run ruff format --check    # lint + format
 uv run mypy                                        # strict type-check
 ```
 
 The full design and the original four implementation plans live under
-`docs/superpowers/`. Read those before making non-trivial changes.
+`docs/superpowers/`. Read those, plus `docs/developer-guide.md`,
+before making non-trivial changes.
 
 ## License
 
