@@ -1,3 +1,4 @@
+from eap_core.eval.reports import emit_html, emit_json, emit_junit
 from eap_core.eval.faithfulness import (
     ClaimResult,
     DeterministicJudge,
@@ -12,6 +13,9 @@ from eap_core.eval.trajectory import Step, Trajectory, TrajectoryRecorder
 
 __all__ = [
     "CaseResult",
+    "emit_html",
+    "emit_json",
+    "emit_junit",
     "ClaimResult",
     "DeterministicJudge",
     "EvalCase",
