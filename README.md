@@ -515,6 +515,10 @@ The full design and the original four implementation plans live under
 `docs/superpowers/`. Read those, plus `docs/developer-guide.md`,
 before making non-trivial changes.
 
+## Changelog
+
+See [`CHANGELOG.md`](CHANGELOG.md) for what's shipped in each version.
+
 ## License
 
 MIT.
