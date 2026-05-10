@@ -79,14 +79,23 @@ class PiiMaskingMiddleware(PassthroughMiddleware):
     def _mask_text(self, text: str, vault: dict[str, str]) -> str:
         if self._engine == "regex":
             return _replace_in_text(text, vault, self._patterns)
-        analyzer, _ = self._presidio
+        analyzer, anonymizer = self._presidio  # type: ignore[misc]
         results = analyzer.analyze(text=text, language="en")
-        out = text
-        for r in sorted(results, key=lambda x: x.start, reverse=True):
-            original = out[r.start : r.end]
-            token = f"<{r.entity_type}_{uuid.uuid4().hex[:8]}>"
+        if not results:
+            return text
+        from presidio_anonymizer.entities import OperatorConfig  # type: ignore[import-not-found]
+
+        resolved = anonymizer.anonymize(
+            text=text,
+            analyzer_results=results,
+            operators={"DEFAULT": OperatorConfig("replace", {"new_value": "<<PII>>"})},
+        )
+        out = resolved.text
+        for item in sorted(resolved.items, key=lambda i: i.start):
+            token = f"<{item.entity_type}_{uuid.uuid4().hex[:8]}>"
+            original = text[item.start : item.end]
             vault[token] = original
-            out = out[: r.start] + token + out[r.end :]
+            out = out.replace("<<PII>>", token, 1)
         return out
 
     def _mask_message(self, msg: Message, vault: dict[str, str]) -> Message:

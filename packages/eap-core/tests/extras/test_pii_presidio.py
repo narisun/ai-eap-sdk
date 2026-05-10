@@ -7,20 +7,15 @@ from eap_core.middleware.pii import PiiMaskingMiddleware  # noqa: E402
 from eap_core.types import Context, Message, Request, Response  # noqa: E402
 
 
-@pytest.mark.xfail(
-    reason="Manual span replacement breaks on Presidio overlapping findings; "
-    "proper integration needs AnonymizerEngine. Tracked for Plan 2/3.",
-    strict=False,
-)
 async def test_presidio_masks_and_unmasks_round_trip():
     mw = PiiMaskingMiddleware(engine="presidio")
     req = Request(
         model="m",
-        messages=[Message(role="user", content="My SSN is 123-45-6789 and email john@acme.com")],
+        messages=[Message(role="user", content="My SSN is 456-78-9012 and email john@acme.com")],
     )
     ctx = Context()
     masked = await mw.on_request(req, ctx)
-    assert "123-45-6789" not in masked.messages[0].content
+    assert "456-78-9012" not in masked.messages[0].content
     assert "john@acme.com" not in masked.messages[0].content
     assert len(ctx.vault) >= 2
     token = next(iter(ctx.vault))
