@@ -1,10 +1,11 @@
 """Eval runner — drives a golden dataset through an agent and scores trajectories."""
+
 from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -39,10 +40,10 @@ class EvalReport(BaseModel):
 AgentFn = Callable[[EvalCase], Awaitable[Trajectory]]
 
 
-class _ScorerProto:
+class _ScorerProto(Protocol):
     name: str
 
-    async def score(self, traj: Trajectory) -> FaithfulnessResult: ...  # pragma: no cover
+    async def score(self, traj: Trajectory) -> FaithfulnessResult: ...
 
 
 class EvalRunner:
@@ -74,12 +75,14 @@ class EvalRunner:
                 totals.setdefault(scorer.name, []).append(result.score)
                 if result.score < self._threshold:
                     passed_case = False
-            results.append(CaseResult(
-                case_id=case.id,
-                trajectory=traj,
-                scores=scores,
-                passed=passed_case,
-            ))
+            results.append(
+                CaseResult(
+                    case_id=case.id,
+                    trajectory=traj,
+                    scores=scores,
+                    passed=passed_case,
+                )
+            )
         aggregate = {name: sum(vals) / len(vals) for name, vals in totals.items()}
         return EvalReport(
             cases=results,

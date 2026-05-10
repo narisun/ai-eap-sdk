@@ -14,6 +14,7 @@ async def test_register_and_dispatch(reg: McpToolRegistry):
     @mcp_tool()
     async def add(a: int, b: int) -> int:
         return a + b
+
     reg.register(add.spec)
     result = await reg.invoke("add", {"a": 2, "b": 3})
     assert result == 5
@@ -28,6 +29,7 @@ async def test_invoke_validates_args_against_schema(reg: McpToolRegistry):
     @mcp_tool()
     async def add(a: int, b: int) -> int:
         return a + b
+
     reg.register(add.spec)
     with pytest.raises(MCPError, match="validation"):
         await reg.invoke("add", {"a": "not-an-int", "b": 3})
@@ -37,6 +39,7 @@ def test_list_tools_returns_specs(reg: McpToolRegistry):
     @mcp_tool()
     async def echo(x: str) -> str:
         return x
+
     reg.register(echo.spec)
     specs = reg.list_tools()
     assert len(specs) == 1
@@ -47,6 +50,7 @@ async def test_invoke_supports_sync_function(reg: McpToolRegistry):
     @mcp_tool()
     def doubler(x: int) -> int:
         return x * 2
+
     reg.register(doubler.spec)
     result = await reg.invoke("doubler", {"x": 5})
     assert result == 10
@@ -80,6 +84,7 @@ async def test_invoke_tool_re_raises_mcp_error(reg: McpToolRegistry):
 
 async def test_invoke_no_input_schema_skips_validation(reg: McpToolRegistry):
     """A ToolSpec with empty input_schema should still dispatch successfully."""
+
     @mcp_tool()
     async def no_params() -> str:
         return "ok"

@@ -62,41 +62,38 @@ class PiiMaskingMiddleware(PassthroughMiddleware):
         if engine == "presidio":
             self._init_presidio()
 
-    def _init_presidio(self) -> None:
+    def _init_presidio(self) -> None:  # pragma: no cover  # exercised in extras tests
         try:
-            from presidio_analyzer import (
-                AnalyzerEngine,  # type: ignore[import-untyped,unused-ignore]
-            )
-            from presidio_anonymizer import (
-                AnonymizerEngine,  # type: ignore[import-untyped,unused-ignore,no-untyped-call]
-            )
+            from presidio_analyzer import AnalyzerEngine
+            from presidio_anonymizer import AnonymizerEngine
         except ImportError as e:
             raise ImportError(
                 "engine='presidio' requires the [pii] extra: pip install eap-core[pii]"
             ) from e
-        self._presidio = (AnalyzerEngine(), AnonymizerEngine())  # type: ignore[no-untyped-call]
+        self._presidio = (AnalyzerEngine(), AnonymizerEngine())  # type: ignore[no-untyped-call,unused-ignore]
 
     def _mask_text(self, text: str, vault: dict[str, str]) -> str:
         if self._engine == "regex":
             return _replace_in_text(text, vault, self._patterns)
-        analyzer, anonymizer = self._presidio  # type: ignore[misc]
-        results = analyzer.analyze(text=text, language="en")
-        if not results:
+        # Presidio path — exercised in tests/extras/test_pii_presidio.py
+        analyzer, anonymizer = self._presidio  # pragma: no cover
+        results = analyzer.analyze(text=text, language="en")  # pragma: no cover
+        if not results:  # pragma: no cover
             return text
-        from presidio_anonymizer.entities import OperatorConfig  # type: ignore[import-not-found]
+        from presidio_anonymizer.entities import OperatorConfig  # pragma: no cover
 
-        resolved = anonymizer.anonymize(
+        resolved = anonymizer.anonymize(  # pragma: no cover
             text=text,
             analyzer_results=results,
             operators={"DEFAULT": OperatorConfig("replace", {"new_value": "<<PII>>"})},
         )
-        out = resolved.text
-        for item in sorted(resolved.items, key=lambda i: i.start):
+        out: str = resolved.text  # pragma: no cover
+        for item in sorted(resolved.items, key=lambda i: i.start):  # pragma: no cover
             token = f"<{item.entity_type}_{uuid.uuid4().hex[:8]}>"
             original = text[item.start : item.end]
             vault[token] = original
             out = out.replace("<<PII>>", token, 1)
-        return out
+        return out  # pragma: no cover
 
     def _mask_message(self, msg: Message, vault: dict[str, str]) -> Message:
         if isinstance(msg.content, str):

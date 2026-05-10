@@ -1,4 +1,5 @@
 """Trajectory recording for eval and audit."""
+
 from __future__ import annotations
 
 from pathlib import Path

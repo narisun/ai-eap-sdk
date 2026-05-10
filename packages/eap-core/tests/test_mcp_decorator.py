@@ -1,6 +1,4 @@
-from typing import Annotated
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from eap_core.mcp.decorator import mcp_tool
 
@@ -67,6 +65,7 @@ def test_decorator_preserves_callable():
         return x
 
     import asyncio
+
     assert asyncio.run(echo("hi")) == "hi"
 
 
@@ -81,7 +80,9 @@ def test_build_mcp_server_raises_import_error_when_mcp_missing(monkeypatch):
 
     # Temporarily make the 'mcp' import fail
     with mock.patch.dict(sys.modules, {"mcp": None, "mcp.server": None, "mcp.types": None}):
-        from eap_core.mcp.server import build_mcp_server
         import pytest as _pytest
+
+        from eap_core.mcp.server import build_mcp_server
+
         with _pytest.raises(ImportError, match="mcp"):
             build_mcp_server(reg)

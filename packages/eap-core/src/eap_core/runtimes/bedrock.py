@@ -34,7 +34,7 @@ class BedrockRuntimeAdapter(BaseRuntimeAdapter):
         if not _real_runtimes_enabled():
             raise NotImplementedError(_GUIDE)
         try:
-            import boto3  # type: ignore[import-untyped]
+            import boto3
         except ImportError as e:
             raise ImportError(
                 "Bedrock adapter requires the [aws] extra: pip install eap-core[aws]"
@@ -71,7 +71,7 @@ class BedrockRuntimeAdapter(BaseRuntimeAdapter):
         if not _real_runtimes_enabled():
             return [ModelInfo(name=self._config.model, provider="bedrock")]
         try:
-            import boto3  # type: ignore[import-untyped,unused-ignore]
+            import boto3
         except ImportError as e:
             raise ImportError("Bedrock adapter requires the [aws] extra") from e
         client = boto3.client("bedrock", region_name=self._config.options.get("region"))

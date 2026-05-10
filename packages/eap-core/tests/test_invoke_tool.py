@@ -8,10 +8,11 @@ from eap_core.mcp.registry import McpToolRegistry
 from eap_core.mcp.types import MCPError
 from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
 
-
 PERMIT_ALL = {
     "version": "1",
-    "rules": [{"id": "permit-all", "effect": "permit", "principal": "*", "action": "*", "resource": "*"}],
+    "rules": [
+        {"id": "permit-all", "effect": "permit", "principal": "*", "action": "*", "resource": "*"}
+    ],
 }
 
 
@@ -48,8 +49,20 @@ async def test_invoke_tool_runs_through_policy_middleware():
     deny_writes = {
         "version": "1",
         "rules": [
-            {"id": "permit-reads", "effect": "permit", "principal": "*", "action": ["tool:read_account"], "resource": "*"},
-            {"id": "deny-default", "effect": "forbid", "principal": "*", "action": ["tool:transfer"], "resource": "*"},
+            {
+                "id": "permit-reads",
+                "effect": "permit",
+                "principal": "*",
+                "action": ["tool:read_account"],
+                "resource": "*",
+            },
+            {
+                "id": "deny-default",
+                "effect": "forbid",
+                "principal": "*",
+                "action": ["tool:transfer"],
+                "resource": "*",
+            },
         ],
     }
     reg = McpToolRegistry()

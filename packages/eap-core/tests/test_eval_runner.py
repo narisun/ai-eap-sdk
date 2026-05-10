@@ -1,9 +1,7 @@
 import json
 
-import pytest
-
 from eap_core.eval.faithfulness import DeterministicJudge, FaithfulnessScorer
-from eap_core.eval.runner import EvalCase, EvalRunner, EvalReport
+from eap_core.eval.runner import EvalCase, EvalReport, EvalRunner
 from eap_core.eval.trajectory import Trajectory
 
 
@@ -54,9 +52,18 @@ async def test_runner_marks_failures_below_threshold():
 
 async def test_runner_loads_dataset_from_json(tmp_path):
     dataset = tmp_path / "golden.json"
-    dataset.write_text(json.dumps([
-        {"id": "c1", "input": "q1", "expected_contexts": ["X"], "expected_answer_substrings": ["X"]},
-    ]))
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "c1",
+                    "input": "q1",
+                    "expected_contexts": ["X"],
+                    "expected_answer_substrings": ["X"],
+                },
+            ]
+        )
+    )
     cases = EvalRunner.load_dataset(dataset)
     assert len(cases) == 1
     assert cases[0].id == "c1"

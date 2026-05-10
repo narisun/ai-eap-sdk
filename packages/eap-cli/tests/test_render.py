@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from eap_cli.scaffolders.render import render_template_dir
 
 

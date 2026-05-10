@@ -1,4 +1,5 @@
 """A2A AgentCard model and builder."""
+
 from __future__ import annotations
 
 from typing import Any

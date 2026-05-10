@@ -3,15 +3,15 @@ import pytest
 pytest.importorskip("opentelemetry.sdk")
 pytestmark = pytest.mark.extras
 
-from opentelemetry import trace  # noqa: E402
-from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: E402
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: E402
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 
-from eap_core.middleware.observability import ObservabilityMiddleware  # noqa: E402
-from eap_core.types import Context, Message, Request, Response  # noqa: E402
+from eap_core.middleware.observability import ObservabilityMiddleware
+from eap_core.types import Context, Message, Request, Response
 
 
 @pytest.fixture

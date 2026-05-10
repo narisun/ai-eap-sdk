@@ -1,4 +1,5 @@
 """End-to-end CLI test: scaffold a project, run agent.py as a subprocess, eval."""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +9,6 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-
 from eap_cli.main import cli
 
 
@@ -41,10 +41,22 @@ def test_scaffold_research_then_eval_subprocess(tmp_path: Path, runner, monkeypa
     runner.invoke(cli, ["create-agent", "--name", "research", "--template", "research"])
 
     out = target / "report.json"
-    res = runner.invoke(cli, ["eval", "--dataset", "tests/golden_set.json",
-                              "--agent", "agent.py:answer",
-                              "--report", "json", "--output", str(out),
-                              "--threshold", "0.0"])
+    res = runner.invoke(
+        cli,
+        [
+            "eval",
+            "--dataset",
+            "tests/golden_set.json",
+            "--agent",
+            "agent.py:answer",
+            "--report",
+            "json",
+            "--output",
+            str(out),
+            "--threshold",
+            "0.0",
+        ],
+    )
     assert res.exit_code == 0, res.output
     data = json.loads(out.read_text())
     assert "aggregate" in data

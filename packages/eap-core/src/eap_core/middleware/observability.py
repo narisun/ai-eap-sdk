@@ -13,12 +13,17 @@ from typing import Any
 from eap_core.middleware.base import PassthroughMiddleware
 from eap_core.types import Context, Request, Response
 
+# `_otel_trace` is annotated as Any so the optional opentelemetry-api
+# integration works regardless of whether the SDK ships py.typed markers
+# or whether the package is installed at all.
+_otel_trace: Any
 try:
-    from opentelemetry import trace as _otel_trace  # type: ignore[import-untyped,unused-ignore]
+    from opentelemetry import trace as _otel_trace_module
 
+    _otel_trace = _otel_trace_module
     _HAS_OTEL = True
 except ImportError:  # pragma: no cover
-    _otel_trace = None  # type: ignore[assignment]
+    _otel_trace = None
     _HAS_OTEL = False
 
 

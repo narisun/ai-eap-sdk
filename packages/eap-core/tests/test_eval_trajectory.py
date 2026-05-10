@@ -6,10 +6,11 @@ from eap_core.eval.trajectory import Step, Trajectory, TrajectoryRecorder
 from eap_core.middleware.observability import ObservabilityMiddleware
 from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
 
-
 PERMIT_ALL = {
     "version": "1",
-    "rules": [{"id": "permit", "effect": "permit", "principal": "*", "action": "*", "resource": "*"}],
+    "rules": [
+        {"id": "permit", "effect": "permit", "principal": "*", "action": "*", "resource": "*"}
+    ],
 }
 
 
@@ -57,10 +58,11 @@ async def test_recorder_collects_retrieved_contexts_from_ctx(tmp_path):
     recorder = TrajectoryRecorder(out_path=out)
 
     from eap_core.middleware.base import PassthroughMiddleware
-    from eap_core.types import Context, Request, Response
+    from eap_core.types import Context, Request
 
     class CtxStuffer(PassthroughMiddleware):
         name = "stuffer"
+
         async def on_request(self, req: Request, ctx: Context) -> Request:
             ctx.metadata["retrieved_contexts"] = ["doc:1 says X", "doc:2 says Y"]
             return req

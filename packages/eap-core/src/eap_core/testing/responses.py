@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 
 @contextmanager

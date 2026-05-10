@@ -1,9 +1,10 @@
 """Faithfulness scoring."""
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol
 
 from pydantic import BaseModel, Field
@@ -11,7 +12,7 @@ from pydantic import BaseModel, Field
 from eap_core.eval.trajectory import Trajectory
 
 
-class Verdict(str, Enum):
+class Verdict(StrEnum):
     SUPPORTED = "supported"
     CONTRADICTED = "contradicted"
     NOT_FOUND = "not_found"
@@ -42,9 +43,37 @@ _WORD = re.compile(r"\b[\w']+\b")
 
 
 def _content_words(text: str) -> set[str]:
-    stop = {"a", "an", "the", "is", "are", "was", "were", "be", "of", "in", "on",
-            "and", "or", "but", "to", "for", "from", "by", "at", "with", "as", "it",
-            "this", "that", "these", "those", "has", "have", "had"}
+    stop = {
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "of",
+        "in",
+        "on",
+        "and",
+        "or",
+        "but",
+        "to",
+        "for",
+        "from",
+        "by",
+        "at",
+        "with",
+        "as",
+        "it",
+        "this",
+        "that",
+        "these",
+        "those",
+        "has",
+        "have",
+        "had",
+    }
     return {w.lower() for w in _WORD.findall(text) if w.lower() not in stop}
 
 
@@ -69,12 +98,18 @@ class DeterministicJudge:
 
 
 class LLMJudge:
+    """Production judge backed by an EnterpriseLLM client.
+
+    Tested against a real LLM in eval pipelines, not in unit tests — the
+    DeterministicJudge covers the FaithfulnessScorer's algorithmic path.
+    """
+
     name = "llm"
 
-    def __init__(self, client) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, client) -> None:  # type: ignore[no-untyped-def]  # pragma: no cover
         self._client = client
 
-    async def extract_claims(self, answer: str) -> list[str]:
+    async def extract_claims(self, answer: str) -> list[str]:  # pragma: no cover
         prompt = (
             "Break the following answer into atomic factual claims. "
             "Return one claim per line, no numbering, no extra prose.\n\n"
@@ -83,7 +118,7 @@ class LLMJudge:
         resp = await self._client.generate_text(prompt)
         return [line.strip() for line in resp.text.splitlines() if line.strip()]
 
-    async def entails(self, claim: str, contexts: list[str]) -> Verdict:
+    async def entails(self, claim: str, contexts: list[str]) -> Verdict:  # pragma: no cover
         joined = "\n---\n".join(contexts) if contexts else "(no context)"
         prompt = (
             "Given the CONTEXT below, decide whether the CLAIM is supported. "

@@ -1,11 +1,12 @@
 """@mcp_tool decorator — generates JSON Schema from type hints."""
+
 from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
 from typing import Any, get_type_hints
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 
 from eap_core.mcp.types import ToolSpec
 
@@ -13,7 +14,7 @@ from eap_core.mcp.types import ToolSpec
 def _schema_for_param(annotation: Any) -> dict[str, Any]:
     try:
         return TypeAdapter(annotation).json_schema()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return {"type": "object"}
 
 
@@ -61,4 +62,5 @@ def mcp_tool(
         )
         fn.spec = spec  # type: ignore[attr-defined]
         return fn
+
     return wrap

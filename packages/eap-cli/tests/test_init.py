@@ -1,8 +1,6 @@
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
-
 from eap_cli.main import cli
 
 
@@ -13,11 +11,16 @@ def test_eap_init_creates_runnable_project(tmp_path: Path):
     assert result.exit_code == 0, result.output
 
     expected = {
-        "pyproject.toml", "agent.py",
+        "pyproject.toml",
+        "agent.py",
         "tools/example_tool.py",
-        "configs/policy.json", "configs/agent_card.json",
-        "tests/golden_set.json", "responses.yaml",
-        ".claude.md", ".gitignore", "README.md",
+        "configs/policy.json",
+        "configs/agent_card.json",
+        "tests/golden_set.json",
+        "responses.yaml",
+        ".claude.md",
+        ".gitignore",
+        "README.md",
     }
     actual = {str(p.relative_to(target)) for p in target.rglob("*") if p.is_file()}
     assert expected.issubset(actual)

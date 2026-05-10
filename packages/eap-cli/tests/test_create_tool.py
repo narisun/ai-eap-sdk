@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from click.testing import CliRunner
-
 from eap_cli.main import cli
 
 

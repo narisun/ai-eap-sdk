@@ -2,6 +2,7 @@
 
 Replace `_DOCS` with your real retriever (vector DB, BM25, etc.).
 """
+
 from __future__ import annotations
 
 from eap_core.mcp import default_registry, mcp_tool

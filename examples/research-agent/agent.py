@@ -4,11 +4,15 @@ Demonstrates: an EAP-Core agent that calls a `search_docs` tool, then
 asks the LLM to summarize, with citations recorded as retrieved_contexts
 on the trajectory.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 from pathlib import Path
+
+# Importing the tools registers them with default_registry().
+from tools import search_docs  # noqa: F401
 
 from eap_core import EnterpriseLLM, RuntimeConfig
 from eap_core.mcp import default_registry
@@ -17,9 +21,6 @@ from eap_core.middleware.pii import PiiMaskingMiddleware
 from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
 from eap_core.middleware.sanitize import PromptInjectionMiddleware
 from eap_core.middleware.validate import OutputValidationMiddleware
-
-# Importing the tools registers them with default_registry().
-from tools import search_docs  # noqa: F401
 
 
 def _load_policy() -> dict:

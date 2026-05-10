@@ -4,13 +4,15 @@ Loads the user's `agent.py:answer` (or configured target) dynamically and
 drives the configured dataset through it. Uses
 `eap_core.eval.EvalRunner` and the report emitters.
 """
+
 from __future__ import annotations
 
 import asyncio
 import importlib.util
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from eap_core.eval.faithfulness import DeterministicJudge, FaithfulnessScorer
 from eap_core.eval.reports import emit_html, emit_json, emit_junit
@@ -39,7 +41,8 @@ def _load_callable(spec: str) -> Callable[..., Any]:
         module = importlib.import_module(target)
     if not hasattr(module, func):
         raise AttributeError(f"{target} has no attribute {func!r}")
-    return getattr(module, func)
+    fn: Callable[..., Any] = getattr(module, func)
+    return fn
 
 
 def _make_agent(callable_: Callable[..., Any]) -> Callable[[EvalCase], Any]:
@@ -55,6 +58,7 @@ def _make_agent(callable_: Callable[..., Any]) -> Callable[[EvalCase], Any]:
             retrieved_contexts=case.expected_contexts,
             extra={"input_text": case.input},
         )
+
     return _agent
 
 

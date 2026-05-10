@@ -78,16 +78,6 @@ async def test_on_stream_chunk_no_vault_passthrough():
     assert out.text == "no tokens here"
 
 
-async def test_presidio_engine_initialises_when_available():
-    # presidio is installed in the dev environment; verify init doesn't raise
-    try:
-        mw = PiiMaskingMiddleware(engine="presidio")
-        assert mw._engine == "presidio"
-    except ImportError:
-        # If presidio is not installed the guard raises — that's also correct
-        pass
-
-
 async def test_mask_message_with_multipart_content():
     mw = PiiMaskingMiddleware()
     ctx = Context()

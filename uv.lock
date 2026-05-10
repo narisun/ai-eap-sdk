@@ -19,6 +19,7 @@ resolution-markers = [
 [manifest]
 members = [
     "ai-eap-sdk-workspace",
+    "eap-cli",
     "eap-core",
 ]
 
@@ -26,6 +27,67 @@ members = [
 name = "ai-eap-sdk-workspace"
 version = "0.0.0"
 source = { virtual = "." }
+
+[package.optional-dependencies]
+a2a = [
+    { name = "eap-core", extra = ["a2a"] },
+]
+all = [
+    { name = "eap-core", extra = ["a2a", "aws", "eval", "gcp", "mcp", "otel", "pii", "policy-cedar"] },
+]
+aws = [
+    { name = "eap-core", extra = ["aws"] },
+]
+eval = [
+    { name = "eap-core", extra = ["eval"] },
+]
+gcp = [
+    { name = "eap-core", extra = ["gcp"] },
+]
+mcp = [
+    { name = "eap-core", extra = ["mcp"] },
+]
+otel = [
+    { name = "eap-core", extra = ["otel"] },
+]
+pii = [
+    { name = "eap-core", extra = ["pii"] },
+]
+policy-cedar = [
+    { name = "eap-core", extra = ["policy-cedar"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "eap-core", extras = ["a2a"], marker = "extra == 'a2a'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["aws"], marker = "extra == 'aws'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["eval"], marker = "extra == 'eval'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["gcp"], marker = "extra == 'gcp'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["mcp"], marker = "extra == 'mcp'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["otel"], marker = "extra == 'otel'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["pii"], marker = "extra == 'pii'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["pii", "otel", "aws", "gcp", "mcp", "a2a", "eval", "policy-cedar"], marker = "extra == 'all'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["policy-cedar"], marker = "extra == 'policy-cedar'", editable = "packages/eap-core" },
+]
+provides-extras = ["pii", "otel", "aws", "gcp", "mcp", "a2a", "eval", "policy-cedar", "all"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.10" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-asyncio", specifier = ">=0.23" },
+    { name = "pytest-cov", specifier = ">=5" },
+    { name = "ruff", specifier = ">=0.4" },
+]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -847,11 +909,42 @@ wheels = [
 ]
 
 [[package]]
+name = "eap-cli"
+version = "0.1.0"
+source = { editable = "packages/eap-cli" }
+dependencies = [
+    { name = "click" },
+    { name = "eap-core" },
+    { name = "jinja2" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1" },
+    { name = "eap-core", editable = "packages/eap-core" },
+    { name = "jinja2", specifier = ">=3.1" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "eap-core"
 version = "0.1.0"
 source = { editable = "packages/eap-core" }
 dependencies = [
     { name = "httpx" },
+    { name = "jsonschema" },
     { name = "pydantic" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "pyyaml" },
@@ -904,6 +997,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'a2a'", specifier = ">=0.110" },
     { name = "google-cloud-aiplatform", marker = "extra == 'gcp'", specifier = ">=1.50" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "jsonschema", specifier = ">=4.21" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=0.9" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "opentelemetry-api", marker = "extra == 'otel'", specifier = ">=1.24" },

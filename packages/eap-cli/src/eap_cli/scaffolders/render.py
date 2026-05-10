@@ -1,4 +1,5 @@
 """Jinja2 template rendering for scaffolded projects."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,7 +16,7 @@ def _env() -> Environment:
     )
 
 
-def _maybe_substitute_name(path: Path, variables: dict) -> Path:
+def _maybe_substitute_name(path: Path, variables: dict[str, Any]) -> Path:
     if "name" not in variables:
         return path
     parts = []
@@ -23,7 +24,7 @@ def _maybe_substitute_name(path: Path, variables: dict) -> Path:
         if part == "__name__":
             parts.append(str(variables["name"]))
         elif part.startswith("__name__."):
-            parts.append(str(variables["name"]) + part[len("__name__"):])
+            parts.append(str(variables["name"]) + part[len("__name__") :])
         else:
             parts.append(part)
     return Path(*parts)

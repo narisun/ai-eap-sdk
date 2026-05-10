@@ -1,5 +1,3 @@
-import pytest
-
 from eap_core.a2a.card import AgentCard, Skill, build_card
 from eap_core.mcp.decorator import mcp_tool
 from eap_core.mcp.registry import McpToolRegistry
@@ -9,7 +7,9 @@ def test_agent_card_serializes_to_dict():
     card = AgentCard(
         name="research-agent",
         description="answers research questions",
-        skills=[Skill(name="search", description="search docs", input_schema={}, output_schema=None)],
+        skills=[
+            Skill(name="search", description="search docs", input_schema={}, output_schema=None)
+        ],
         endpoints={"http": "https://agent.example/v1"},
         authentication={"type": "oauth2.1"},
     )

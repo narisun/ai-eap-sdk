@@ -1,4 +1,5 @@
 """`eap deploy` packaging."""
+
 from __future__ import annotations
 
 import os
@@ -71,7 +72,8 @@ def package_gcp(project: Path, *, service: str = "eap-agent", dry_run: bool = Fa
 
 def upload_aws(zip_path: Path, bucket: str) -> str:
     """Real upload via boto3. Gated by EAP_ENABLE_REAL_DEPLOY=1."""
-    import boto3  # type: ignore[import-not-found]  # lazy
+    import boto3  # lazy
+
     s3 = boto3.client("s3")
     key = f"eap-agents/{zip_path.name}"
     s3.upload_file(str(zip_path), bucket, key)
@@ -80,7 +82,8 @@ def upload_aws(zip_path: Path, bucket: str) -> str:
 
 def deploy_gcp(target_dir: Path, service: str) -> str:
     """Real deploy via gcloud subprocess. Gated by EAP_ENABLE_REAL_DEPLOY=1."""
-    import subprocess  # noqa: S404
+    import subprocess
+
     cmd = ["gcloud", "run", "deploy", service, "--source", str(target_dir)]
     subprocess.run(cmd, check=True)  # noqa: S603
     return f"projects/$PROJECT/services/{service}"

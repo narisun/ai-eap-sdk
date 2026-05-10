@@ -1,4 +1,5 @@
 """McpToolRegistry — discovery and dispatch for MCP-decorated tools."""
+
 from __future__ import annotations
 
 import asyncio
@@ -31,14 +32,17 @@ class McpToolRegistry:
             try:
                 jsonschema_validate(args, spec.input_schema)
             except JsonSchemaError as e:
-                raise MCPError(tool_name=name, message=f"input validation failed: {e.message}") from e
+                raise MCPError(
+                    tool_name=name,
+                    message=f"input validation failed: {e.message}",
+                ) from e
         try:
             if spec.is_async:
                 return await spec.fn(**args)
             return await asyncio.to_thread(spec.fn, **args)
         except MCPError:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise MCPError(tool_name=name, message=f"tool raised: {e}") from e
 
 

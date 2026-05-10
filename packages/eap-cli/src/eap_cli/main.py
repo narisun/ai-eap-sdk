@@ -1,12 +1,14 @@
 """Top-level Click app for `eap`."""
+
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import cast
 
 import click
 
-from eap_cli.scaffolders.create_agent import create_agent
+from eap_cli.scaffolders.create_agent import Template, create_agent
 from eap_cli.scaffolders.create_tool import create_tool
 from eap_cli.scaffolders.deploy import (
     _real_deploy_enabled,
@@ -16,7 +18,7 @@ from eap_cli.scaffolders.deploy import (
     upload_aws,
 )
 from eap_cli.scaffolders.eval_cmd import run_eval
-from eap_cli.scaffolders.init import init_project
+from eap_cli.scaffolders.init import Runtime, init_project
 
 
 @click.group()
@@ -34,7 +36,12 @@ def init_cmd(target: Path, name: str | None, runtime: str, force: bool) -> None:
     """Scaffold a new EAP-Core agent project."""
     project_name = name or target.name
     try:
-        written = init_project(target, project_name=project_name, runtime=runtime, force=force)
+        written = init_project(
+            target,
+            project_name=project_name,
+            runtime=cast(Runtime, runtime),
+            force=force,
+        )
     except FileExistsError as e:
         raise click.ClickException(f"{e}. Re-run with --force to overwrite.") from e
     click.echo(f"Wrote {len(written)} files to {target}")
@@ -50,7 +57,7 @@ def init_cmd(target: Path, name: str | None, runtime: str, force: bool) -> None:
 def create_agent_cmd(name: str, template: str) -> None:
     """Generate an agent from a template (overlays the current project)."""
     target = Path.cwd()
-    written = create_agent(target, agent_name=name, template=template)
+    written = create_agent(target, agent_name=name, template=cast(Template, template))
     click.echo(f"Wrote {len(written)} files for {template} template.")
 
 
@@ -67,24 +74,55 @@ def create_tool_cmd(name: str, as_mcp: bool, auth_required: bool) -> None:
 
 
 @cli.command("eval")
-@click.option("--dataset", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option("--agent", "agent_spec", default="agent.py:answer", show_default=True,
-              help="Agent entry point as path:function.")
-@click.option("--report", "report_fmt", type=click.Choice(["json", "html", "junit"]), default="json")
+@click.option(
+    "--dataset",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--agent",
+    "agent_spec",
+    default="agent.py:answer",
+    show_default=True,
+    help="Agent entry point as path:function.",
+)
+@click.option(
+    "--report",
+    "report_fmt",
+    type=click.Choice(["json", "html", "junit"]),
+    default="json",
+)
 @click.option("--threshold", type=float, default=0.7, show_default=True)
-@click.option("--output", type=click.Path(dir_okay=False, path_type=Path), default=None,
-              help="Write report to this file (otherwise stdout).")
-def eval_cmd(dataset: Path, agent_spec: str, report_fmt: str, threshold: float, output: Path | None) -> None:
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Write report to this file (otherwise stdout).",
+)
+def eval_cmd(
+    dataset: Path,
+    agent_spec: str,
+    report_fmt: str,
+    threshold: float,
+    output: Path | None,
+) -> None:
     """Run a golden-set eval over the project's agent."""
-    report, rendered = asyncio.run(run_eval(
-        dataset=dataset, agent_spec=agent_spec,
-        threshold=threshold, report_fmt=report_fmt, output=output,
-    ))
+    report, rendered = asyncio.run(
+        run_eval(
+            dataset=dataset,
+            agent_spec=agent_spec,
+            threshold=threshold,
+            report_fmt=report_fmt,
+            output=output,
+        )
+    )
     if output is None:
         click.echo(rendered)
     else:
-        click.echo(f"Wrote {report_fmt} report to {output} "
-                   f"(passed {report.passed_count}/{report.passed_count + report.failed_count})")
+        click.echo(
+            f"Wrote {report_fmt} report to {output} "
+            f"(passed {report.passed_count}/{report.passed_count + report.failed_count})"
+        )
     if report.failed_count > 0:
         raise click.exceptions.Exit(1)
 

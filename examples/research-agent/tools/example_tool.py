@@ -1,4 +1,5 @@
 """Example MCP tool — register one and ship."""
+
 from __future__ import annotations
 
 from eap_core.mcp import default_registry, mcp_tool

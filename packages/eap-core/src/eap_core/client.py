@@ -130,9 +130,13 @@ class EnterpriseLLM:
             yield chunk
 
     async def invoke_tool(self, tool_name: str, args: dict[str, Any]) -> Any:
-        if self._tool_registry is None:
-            raise MCPError(tool_name=tool_name, message="no tool registry configured on EnterpriseLLM")
-        spec = self._tool_registry.get(tool_name)
+        registry = self._tool_registry
+        if registry is None:
+            raise MCPError(
+                tool_name=tool_name,
+                message="no tool registry configured on EnterpriseLLM",
+            )
+        spec = registry.get(tool_name)
         if spec is None:
             raise MCPError(tool_name=tool_name, message="tool not found in registry")
 
@@ -150,7 +154,7 @@ class EnterpriseLLM:
 
         async def terminal(r: Request, c: Context) -> Response:
             invoked_args = r.metadata.get("tool_args", args)
-            result = await self._tool_registry.invoke(tool_name, invoked_args)
+            result = await registry.invoke(tool_name, invoked_args)
             return Response(text=str(result), payload=result)
 
         resp = await self._pipeline.run(req, ctx, terminal)

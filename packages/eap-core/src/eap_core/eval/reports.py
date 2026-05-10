@@ -1,4 +1,5 @@
 """Eval report emitters — JSON, HTML, JUnit XML."""
+
 from __future__ import annotations
 
 import html
@@ -15,8 +16,7 @@ def emit_html(report: EvalReport) -> str:
     rows: list[str] = []
     for case in report.cases:
         score_cells = " ".join(
-            f"<td>{html.escape(name)}: {res.score:.2f}</td>"
-            for name, res in case.scores.items()
+            f"<td>{html.escape(name)}: {res.score:.2f}</td>" for name, res in case.scores.items()
         )
         status = "PASS" if case.passed else "FAIL"
         rows.append(
@@ -43,7 +43,7 @@ Passed: {report.passed_count} / Failed: {report.failed_count}</p>
 <h2>Aggregate</h2><ul>{aggregate_lines}</ul>
 <h2>Cases</h2>
 <table><tr><th>Case</th><th>Scores</th><th>Status</th></tr>
-{''.join(rows)}
+{"".join(rows)}
 </table>
 </body></html>
 """

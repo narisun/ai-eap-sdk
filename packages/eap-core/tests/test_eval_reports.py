@@ -12,14 +12,18 @@ from eap_core.eval.trajectory import Trajectory
 
 
 def _sample_report() -> EvalReport:
-    traj = Trajectory(request_id="r1", final_answer="Paris is the capital.", retrieved_contexts=["Paris..."])
+    traj = Trajectory(
+        request_id="r1", final_answer="Paris is the capital.", retrieved_contexts=["Paris..."]
+    )
     score = FaithfulnessResult(
         request_id="r1",
         score=0.5,
         per_claim=[ClaimResult(claim="Paris is the capital.", verdict=Verdict.NOT_FOUND)],
     )
     return EvalReport(
-        cases=[CaseResult(case_id="c1", trajectory=traj, scores={"faithfulness": score}, passed=False)],
+        cases=[
+            CaseResult(case_id="c1", trajectory=traj, scores={"faithfulness": score}, passed=False)
+        ],
         aggregate={"faithfulness": 0.5},
         threshold=0.7,
         passed_count=0,

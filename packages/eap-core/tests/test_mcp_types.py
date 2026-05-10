@@ -5,7 +5,9 @@ from eap_core.mcp.types import MCPError, ToolSpec
 
 
 def test_tool_spec_minimal():
-    spec = ToolSpec(name="get_balance", description="...", input_schema={}, output_schema=None, fn=lambda: None)
+    spec = ToolSpec(
+        name="get_balance", description="...", input_schema={}, output_schema=None, fn=lambda: None
+    )
     assert spec.name == "get_balance"
     assert spec.requires_auth is False
 
