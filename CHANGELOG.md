@@ -12,6 +12,63 @@ The same version applies to both workspace packages (`eap-core` and
 
 ## [Unreleased]
 
+### Added — AWS Bedrock AgentCore integration (Phase C)
+
+Gateway integration. Outbound: an EAP-Core agent uses Gateway-hosted
+tools through the normal `invoke_tool` path with full middleware
+chain enforcement. Inbound: project tools are published to Gateway as
+an OpenAPI 3.1 HTTP target.
+
+- **`GatewayClient`** — MCP-over-HTTP client (plain JSON-RPC 2.0).
+  Methods: `list_tools()`, `invoke(name, args)`, `aclose()`. Auth is
+  pluggable: pass an `httpx` `auth=` object for AWS SigV4, or set
+  `identity=` to a `NonHumanIdentity` for OAuth Bearer tokens
+  (audience-scoped, cached). Construction does no I/O; live calls
+  gated by `EAP_ENABLE_REAL_RUNTIMES=1`.
+- **`add_gateway_to_registry(registry, gateway, tool_specs)`** —
+  registers remote Gateway tools as proxy specs in a local
+  `McpToolRegistry`. Each proxy's `fn` is a closure that forwards
+  `(name, args)` to `gateway.invoke`. After this call,
+  `client.invoke_tool("<remote_tool>", {...})` flows through the
+  agent's middleware chain locally (sanitize / PII / policy / OTel /
+  validate) and then crosses the network. Proxy specs are marked
+  `requires_auth=True` because they cross a trust boundary.
+- **`export_tools_as_openapi(registry, ...)`** — generates an
+  OpenAPI 3.1 spec from any `McpToolRegistry`. Each tool becomes a
+  `POST /tools/<name>` operation with the tool's input schema as the
+  request body schema. The `x-mcp-tool.requires_auth` extension
+  preserves the SDK's auth marker so Gateway can apply outbound auth
+  correctly. Empty registries produce a valid skeleton.
+- **`eap publish-to-gateway`** CLI command — runs
+  `export_tools_as_openapi` against the project's registry and writes
+  the spec + a deploy `README.md` to `dist/gateway/`. Importing the
+  user's entry file (default `agent.py`) triggers the `@mcp_tool`
+  decorator side-effects that populate the registry. Has `--dry-run`,
+  `--entry`, `--title`, `--server-url` flags.
+
+### Tests added (19 new tests)
+
+`test_integrations_agentcore_phase_c.py`:
+- `GatewayClient`: list_tools / invoke gated by env flag; construction
+  no I/O; JSON-RPC 2.0 wire shape for `tools/list`; surfaces
+  single-text-content directly; returns full content list when
+  multipart; raises `MCPError` on JSON-RPC errors and HTTP errors;
+  attaches `Authorization: Bearer <token>` from `identity`.
+- `add_gateway_to_registry`: registers proxy specs, dispatches
+  through the registry forwards to gateway, skips unnamed specs,
+  marks proxies as `requires_auth=True`, handles both `inputSchema`
+  (camelCase) and `input_schema` (snake_case) keys.
+- `export_tools_as_openapi`: emits one path per tool, marks
+  auth-required in `x-mcp-tool` extension, empty-registry skeleton.
+- `eap publish-to-gateway` end-to-end: scaffolded project →
+  `openapi.json` + `README.md` with the expected `POST /tools/<name>`
+  operations; `--dry-run` writes nothing; missing entry errors
+  cleanly.
+
+### Stats
+- **219 tests passing** (up from 200 in Phase B).
+- Coverage holds. Lint, format, and strict mypy all green.
+
 ### Added — AWS Bedrock AgentCore integration (Phase B)
 
 In-process adapters for AgentCore-managed services. Live calls are

@@ -32,7 +32,7 @@ Observability, Cedar-based Policy, etc.). EAP-Core provides the
 | **Identity** (workload IDs, OAuth in/out) | `OIDCTokenExchange.from_agentcore()` factory points at AgentCore Identity | **Phase A — shipped** |
 | **Policy** (Cedar at the Gateway tier) | Our `PolicyMiddleware` runs the same Cedar policy in-process. Defense in depth. | **Aligned** (no new code) |
 | **Memory** (short/long-term, cross-session) | `MemoryStore` Protocol + `InMemoryStore` (default) + `AgentCoreMemoryStore` | **Phase B — shipped** |
-| **Gateway** (APIs/Lambdas → MCP) | `GatewayClient` for outbound; `eap publish-to-gateway` for inbound | Phase C |
+| **Gateway** (APIs/Lambdas → MCP) | `GatewayClient` for outbound; `eap publish-to-gateway` (OpenAPI export) for inbound | **Phase C — shipped** |
 | **Code Interpreter** (Python/JS sandboxes) | `register_code_interpreter_tools()` — three MCP tools | **Phase B — shipped** |
 | **Browser** (cloud browser) | `register_browser_tools()` — five MCP tools | **Phase B — shipped** |
 | **Inbound JWT verification** | `InboundJwtVerifier` + `jwt_dependency()` (FastAPI) | **Phase B — shipped** |
@@ -248,16 +248,65 @@ authorizer already verifies upstream, but a second check inside the
 agent makes audit replay simpler and protects against
 misconfiguration).
 
-## Phase C — planned (Gateway integration)
+## Phase C — what's shipped
 
-- **`GatewayClient`** — outbound: dispatches `client.invoke_tool` to
-  a remote AgentCore Gateway over MCP-HTTP. Lets your agent use
-  AgentCore-hosted tools (Salesforce, Slack, JIRA, etc.) without
-  caring about the Gateway URL.
-- **`eap publish-to-gateway`** — inbound: takes your project's
-  `@mcp_tool`-decorated functions and registers them with AgentCore
-  Gateway as MCP tools. Other AgentCore-deployed agents can then call
-  them via Gateway.
+### Outbound — call Gateway-hosted tools from your agent
+
+`GatewayClient` is an MCP-over-HTTP client (plain JSON-RPC 2.0 — the
+shape Gateway speaks). `add_gateway_to_registry` registers the
+gateway's tools as proxy specs in your local `McpToolRegistry`, so
+`client.invoke_tool("name", args)` runs through the agent's full
+middleware chain locally before forwarding to the gateway.
+
+```python
+from eap_core.integrations.agentcore import (
+    GatewayClient,
+    add_gateway_to_registry,
+)
+from eap_core.mcp import default_registry
+
+gw = GatewayClient(
+    gateway_url="https://your-gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
+    identity=nhi,            # NonHumanIdentity — supplies OAuth tokens
+    audience="my-gateway",   # token audience for scope binding
+)
+specs = await gw.list_tools()
+add_gateway_to_registry(default_registry(), gw, specs)
+
+# Now any tool the gateway hosts is reachable through the local
+# registry with full middleware chain enforcement.
+result = await client.invoke_tool("lookup_account", {"id": "acct-1"})
+```
+
+Auth is pluggable: pass an `httpx` `auth=` object for AWS SigV4, or
+use an `identity` for OAuth Bearer tokens. The `MCPError` exception
+fires on JSON-RPC errors and HTTP 4xx/5xx with the gateway's
+`tool_name` attached so audit replay knows which tool failed.
+
+### Inbound — publish your tools to Gateway
+
+`eap publish-to-gateway` generates an OpenAPI 3.1 spec from your
+project's `@mcp_tool` registrations. Gateway accepts OpenAPI as an
+HTTP target type, so this is the lowest-friction way to make your
+tools discoverable through Gateway:
+
+```bash
+eap publish-to-gateway --title "my-bank-tools" \\
+                       --server-url https://my-agent.example
+```
+
+Output at `dist/gateway/`:
+
+- `openapi.json` — every `@mcp_tool` becomes a `POST /tools/<name>`
+  operation. Input schema comes from the tool's type hints (via the
+  same Pydantic `TypeAdapter` path as the decorator); the
+  `x-mcp-tool.requires_auth` extension flags auth-required tools so
+  Gateway can apply outbound auth.
+- `README.md` — upload-to-S3 / register-with-Gateway commands.
+
+Live API registration (creating a Gateway target via the AWS API) is
+not yet automated — Phase D refinement. The OpenAPI artifact is the
+hand-off point.
 
 ## Phase D — planned
 

@@ -22,6 +22,7 @@ from eap_cli.scaffolders.deploy import (
 )
 from eap_cli.scaffolders.eval_cmd import run_eval
 from eap_cli.scaffolders.init import Runtime, init_project
+from eap_cli.scaffolders.publish_gateway import publish_to_gateway
 
 
 @click.group()
@@ -211,6 +212,41 @@ def deploy_cmd(
                 f"Set EAP_ENABLE_REAL_DEPLOY=1 to build the image locally. "
                 f"Otherwise see {target}/README.md for build/push/register steps."
             )
+
+
+@cli.command("publish-to-gateway")
+@click.option(
+    "--entry",
+    default="agent.py",
+    show_default=True,
+    help="Project entry file whose import side-effects register tools.",
+)
+@click.option(
+    "--title",
+    default=None,
+    help="OpenAPI title (defaults to current directory name).",
+)
+@click.option(
+    "--server-url",
+    default="https://your-agent-host.example",
+    show_default=True,
+    help="Server URL recorded in the OpenAPI 'servers' field.",
+)
+@click.option("--dry-run", is_flag=True, help="Show plan, write nothing.")
+def publish_gateway_cmd(
+    entry: str,
+    title: str | None,
+    server_url: str,
+    dry_run: bool,
+) -> None:
+    """Generate an OpenAPI spec from local @mcp_tools for AgentCore Gateway."""
+    project = Path.cwd()
+    if dry_run:
+        click.echo(f"[dry-run] would publish {project} tools as OpenAPI spec")
+        return
+    target = publish_to_gateway(project, entry=entry, title=title, server_url=server_url)
+    click.echo(f"Wrote OpenAPI spec to {target}/openapi.json")
+    click.echo(f"Upload + register steps in {target}/README.md")
 
 
 if __name__ == "__main__":
