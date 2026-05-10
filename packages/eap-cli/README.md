@@ -9,7 +9,7 @@ The `eap` CLI — scaffolding and ops for EAP-Core agentic AI projects.
 uv sync --all-packages --group dev
 
 # As a downstream dep (pin to a tag)
-uv add "eap-cli @ git+https://github.com/narisun/ai-eap-sdk.git@v0.1.0#subdirectory=packages/eap-cli"
+uv add "eap-cli @ git+https://github.com/narisun/ai-eap-sdk.git@v0.2.0#subdirectory=packages/eap-cli"
 ```
 
 Then:

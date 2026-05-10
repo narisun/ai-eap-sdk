@@ -12,6 +12,34 @@ The same version applies to both workspace packages (`eap-core` and
 
 ## [Unreleased]
 
+Nothing yet. Open a PR.
+
+---
+
+## [0.2.0] — 2026-05-10 — AWS Bedrock AgentCore integration
+
+Adds full integration with AWS Bedrock AgentCore across all 11
+managed services (Runtime, Identity, Observability, Memory, Gateway,
+Code Interpreter, Browser, Payments, Evaluations, Policy, Registry)
+plus inbound JWT verification. The integration ships in four phases
+(A → B → C → D), each independently shippable and adding value on
+its own. All live AgentCore calls are gated behind
+`EAP_ENABLE_REAL_RUNTIMES=1` so tests stay deterministic and CI does
+not need AWS credentials.
+
+The architectural claim that motivates the integration: **EAP-Core's
+middleware chain runs in the agent's own process, before any
+AgentCore-managed service sees the data**. PII is masked before
+AgentCore Memory stores it. Prompt injection is blocked before the
+text reaches the Code Interpreter sandbox. Policy denials happen
+even when calls bypass Gateway. Defense in depth across the full
+AgentCore surface.
+
+### Stats
+- **243 tests passing** (up from 153 in v0.1.0).
+- Coverage holds ≥ 90% on the no-extras baseline.
+- Lint, format, and strict mypy all green.
+
 ### Added — AWS Bedrock AgentCore integration (Phase D)
 
 Closes feature parity with AgentCore. Three independent pieces, all

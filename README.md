@@ -175,15 +175,15 @@ the git repo (pin to a tag for stability):
 ```toml
 [project]
 dependencies = [
-    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.1.0#subdirectory=packages/eap-core",
+    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.2.0#subdirectory=packages/eap-core",
 ]
 ```
 
 Or via `uv add`:
 
 ```bash
-uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.1.0#subdirectory=packages/eap-core"
-uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.1.0#subdirectory=packages/eap-cli"
+uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.2.0#subdirectory=packages/eap-core"
+uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.2.0#subdirectory=packages/eap-cli"
 ```
 
 If you operate a private package index (e.g. AWS CodeArtifact, Azure
