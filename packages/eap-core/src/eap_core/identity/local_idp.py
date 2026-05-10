@@ -4,6 +4,7 @@ Issues HS256 JWTs with a fixed secret. Used as the default
 ``token_endpoint_handler`` for ``OIDCTokenExchange`` when no real IdP
 is configured.
 """
+
 from __future__ import annotations
 
 import secrets

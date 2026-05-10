@@ -1,8 +1,5 @@
-from typing import Any
-
 import pytest
 
-from eap_core.middleware.base import Middleware
 from eap_core.middleware.pipeline import MiddlewarePipeline
 from eap_core.types import Chunk, Context, Message, Request, Response
 
@@ -36,7 +33,11 @@ async def _terminal(req: Request, ctx: Context) -> Response:
 async def test_pipeline_runs_request_left_to_right_response_right_to_left():
     log: list[str] = []
     pipe = MiddlewarePipeline(
-        [RecordingMiddleware("a", log), RecordingMiddleware("b", log), RecordingMiddleware("c", log)]
+        [
+            RecordingMiddleware("a", log),
+            RecordingMiddleware("b", log),
+            RecordingMiddleware("c", log),
+        ]
     )
     ctx = Context()
     req = Request(model="m", messages=[Message(role="user", content="hi")])
@@ -76,7 +77,9 @@ async def test_pipeline_streams_chunks_through_each_middleware_in_order():
 
         async def on_stream_chunk(self, chunk: Chunk, ctx: Context) -> Chunk:
             chunks_seen.append(chunk.text)
-            return Chunk(index=chunk.index, text=chunk.text + "!", finish_reason=chunk.finish_reason)
+            return Chunk(
+                index=chunk.index, text=chunk.text + "!", finish_reason=chunk.finish_reason
+            )
 
         async def on_error(self, exc: Exception, ctx: Context) -> None:
             pass
@@ -93,3 +96,34 @@ async def test_pipeline_streams_chunks_through_each_middleware_in_order():
         out.append(c.text)
     assert out == ["a!", "b!", "c!"]
     assert chunks_seen == ["a", "b", "c"]
+
+
+async def test_pipeline_run_stream_calls_on_error_on_exception():
+    log: list[str] = []
+
+    class BoomStream:
+        name = "boomstream"
+
+        async def on_request(self, req: Request, ctx: Context) -> Request:
+            log.append("req:boomstream")
+            return req
+
+        async def on_response(self, resp: Response, ctx: Context) -> Response:
+            return resp
+
+        async def on_stream_chunk(self, chunk: Chunk, ctx: Context) -> Chunk:
+            raise RuntimeError("stream boom")
+
+        async def on_error(self, exc: Exception, ctx: Context) -> None:
+            log.append(f"err:boomstream:{type(exc).__name__}")
+
+    pipe = MiddlewarePipeline([BoomStream()])
+
+    async def gen():
+        yield Chunk(index=0, text="a", finish_reason=None)
+
+    ctx = Context()
+    with pytest.raises(RuntimeError, match="stream boom"):
+        async for _ in pipe.run_stream(Request(model="m", messages=[]), ctx, lambda r, c: gen()):
+            pass
+    assert any("err:boomstream" in entry for entry in log)

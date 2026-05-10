@@ -28,11 +28,41 @@ async def test_middleware_records_genai_attributes_in_context():
 async def test_response_records_token_usage():
     mw = ObservabilityMiddleware()
     ctx = Context()
-    await mw.on_request(
-        Request(model="m", messages=[Message(role="user", content="hi")]), ctx
-    )
-    await mw.on_response(
-        Response(text="ok", usage={"input_tokens": 7, "output_tokens": 12}), ctx
-    )
+    await mw.on_request(Request(model="m", messages=[Message(role="user", content="hi")]), ctx)
+    await mw.on_response(Response(text="ok", usage={"input_tokens": 7, "output_tokens": 12}), ctx)
     assert ctx.metadata["gen_ai.usage.input_tokens"] == 7
     assert ctx.metadata["gen_ai.usage.output_tokens"] == 12
+
+
+async def test_on_error_no_span_is_noop():
+    mw = ObservabilityMiddleware()
+    ctx = Context()
+    # ctx.span is None; on_error should be a no-op
+    await mw.on_error(ValueError("boom"), ctx)
+
+
+async def test_on_error_with_mock_span():
+    mw = ObservabilityMiddleware()
+    ctx = Context()
+
+    class FakeSpan:
+        def __init__(self):
+            self.attrs = {}
+            self.ended = False
+            self.exc = None
+
+        def set_attribute(self, k, v):
+            self.attrs[k] = v
+
+        def record_exception(self, exc):
+            self.exc = exc
+
+        def end(self):
+            self.ended = True
+
+    ctx.span = FakeSpan()
+    exc = RuntimeError("oops")
+    await mw.on_error(exc, ctx)
+    assert ctx.span.attrs.get("gen_ai.error.type") == "RuntimeError"
+    assert ctx.span.exc is exc
+    assert ctx.span.ended

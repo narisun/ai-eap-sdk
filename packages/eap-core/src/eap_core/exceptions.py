@@ -20,7 +20,7 @@ class PolicyDeniedError(EapError):
 
 
 class OutputValidationError(EapError):
-    def __init__(self, errors: list[dict]) -> None:
+    def __init__(self, errors: list[dict[str, object]]) -> None:
         super().__init__(f"Output failed schema validation: {errors}")
         self.errors = errors
 

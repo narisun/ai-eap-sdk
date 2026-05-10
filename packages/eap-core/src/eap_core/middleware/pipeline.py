@@ -1,4 +1,5 @@
 """Onion-model executor for the middleware chain."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -21,11 +22,11 @@ class MiddlewarePipeline:
     order on every middleware whose `on_request` already executed.
     """
 
-    def __init__(self, middlewares: list["Middleware"]) -> None:
+    def __init__(self, middlewares: list[Middleware]) -> None:
         self._mws = list(middlewares)
 
     async def run(self, req: Request, ctx: Context, terminal: Terminal) -> Response:
-        ran: list["Middleware"] = []
+        ran: list[Middleware] = []
         try:
             for mw in self._mws:
                 ran.append(mw)
@@ -38,14 +39,14 @@ class MiddlewarePipeline:
             for mw in reversed(ran):
                 try:
                     await mw.on_error(exc, ctx)
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: S110
                     pass
             raise
 
     async def run_stream(
         self, req: Request, ctx: Context, terminal: StreamTerminal
     ) -> AsyncIterator[Chunk]:
-        ran: list["Middleware"] = []
+        ran: list[Middleware] = []
         try:
             for mw in self._mws:
                 req = await mw.on_request(req, ctx)
@@ -58,6 +59,6 @@ class MiddlewarePipeline:
             for mw in reversed(ran):
                 try:
                     await mw.on_error(exc, ctx)
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: S110
                     pass
             raise

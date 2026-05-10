@@ -4,6 +4,7 @@ Schema is read from `req.metadata['output_schema']` (set by EnterpriseLLM
 when caller passes `schema=`). Attempts to parse `resp.text` as JSON and
 validates against the schema. Result placed in `resp.payload`.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,5 +36,5 @@ class OutputValidationMiddleware(PassthroughMiddleware):
         try:
             payload = schema.model_validate(data)
         except ValidationError as e:
-            raise OutputValidationError(errors=e.errors()) from e
+            raise OutputValidationError(errors=e.errors()) from e  # type: ignore[arg-type]
         return resp.model_copy(update={"payload": payload})

@@ -1,14 +1,14 @@
 """LocalRuntimeAdapter — deterministic in-memory runtime."""
+
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel
 
 from eap_core.config import RuntimeConfig
@@ -33,8 +33,9 @@ def _load_responses() -> list[dict[str, Any]]:
     ]
     for c in candidates:
         if c.is_file():
-            data = yaml.safe_load(c.read_text()) or {}
-            return data.get("responses", [])
+            data: dict[str, Any] = yaml.safe_load(c.read_text()) or {}
+            result: list[dict[str, Any]] = data.get("responses", [])
+            return result
     return []
 
 
@@ -53,9 +54,9 @@ def _synthesize_default(schema: type[BaseModel]) -> dict[str, Any]:
             continue
         if field.default_factory is not None:
             try:
-                out[name] = field.default_factory()
+                out[name] = field.default_factory()  # type: ignore[call-arg]
                 continue
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: S110
                 pass
         ann = field.annotation
         if ann is str:
@@ -89,7 +90,10 @@ class LocalRuntimeAdapter(BaseRuntimeAdapter):
             obj = _synthesize_default(schema)
             return RawResponse(
                 text=json.dumps(obj),
-                usage={"input_tokens": len(prompt.split()), "output_tokens": len(json.dumps(obj).split())},
+                usage={
+                    "input_tokens": len(prompt.split()),
+                    "output_tokens": len(json.dumps(obj).split()),
+                },
                 finish_reason="stop",
             )
 
@@ -109,7 +113,7 @@ class LocalRuntimeAdapter(BaseRuntimeAdapter):
             finish_reason="stop",
         )
 
-    async def stream(self, req: Request) -> AsyncIterator[RawChunk]:
+    async def stream(self, req: Request) -> AsyncIterator[RawChunk]:  # type: ignore[misc,override]
         full = (await self.generate(req)).text
         for i, word in enumerate(full.split(" ")):
             await asyncio.sleep(0)

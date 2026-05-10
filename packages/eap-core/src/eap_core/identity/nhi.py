@@ -1,4 +1,5 @@
 """NonHumanIdentity — workload identity for agents."""
+
 from __future__ import annotations
 
 import time
@@ -7,7 +8,9 @@ from typing import Protocol
 
 
 class IdentityProvider(Protocol):
-    def issue(self, *, client_id: str, audience: str, scope: str, roles: list[str] | None = None) -> str: ...
+    def issue(
+        self, *, client_id: str, audience: str, scope: str, roles: list[str] | None = None
+    ) -> str: ...
 
 
 @dataclass
@@ -33,7 +36,9 @@ class NonHumanIdentity:
         entry = self._cache.get(key)
         if entry and entry.expires_at - self.cache_buffer_seconds > time.monotonic():
             return entry.token
-        token = self.idp.issue(client_id=self.client_id, audience=aud, scope=scope, roles=self.roles)
+        token = self.idp.issue(
+            client_id=self.client_id, audience=aud, scope=scope, roles=self.roles
+        )
         ttl = getattr(self.idp, "_ttl", 300)
         self._cache[key] = TokenCacheEntry(token=token, expires_at=time.monotonic() + ttl)
         return token

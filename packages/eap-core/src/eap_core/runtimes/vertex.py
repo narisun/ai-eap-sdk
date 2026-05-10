@@ -1,4 +1,5 @@
 """GCP Vertex AI adapter (shape-correct stub)."""
+
 from __future__ import annotations
 
 import os
@@ -28,10 +29,14 @@ class VertexRuntimeAdapter(BaseRuntimeAdapter):
         if not _real_runtimes_enabled():
             raise NotImplementedError(_GUIDE)
         try:
-            import vertexai  # type: ignore[import-not-found]
-            from vertexai.generative_models import GenerativeModel  # type: ignore[import-not-found]
+            import vertexai  # type: ignore[import-untyped,unused-ignore]
+            from vertexai.generative_models import (
+                GenerativeModel,  # type: ignore[import-untyped,unused-ignore]
+            )
         except ImportError as e:
-            raise ImportError("Vertex adapter requires the [gcp] extra: pip install eap-core[gcp]") from e
+            raise ImportError(
+                "Vertex adapter requires the [gcp] extra: pip install eap-core[gcp]"
+            ) from e
         vertexai.init(
             project=self._config.options.get("project"),
             location=self._config.options.get("location", "us-central1"),

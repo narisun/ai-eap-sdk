@@ -1,4 +1,5 @@
 """Configuration models for EAP-Core."""
+
 from __future__ import annotations
 
 from typing import Any

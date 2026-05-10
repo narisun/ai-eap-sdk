@@ -11,6 +11,7 @@ Decision algorithm:
 - Else if any permit matches → ALLOW.
 - Else → DENY (default deny).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,7 +39,7 @@ def _matches(value: str, pattern: str | list[str]) -> bool:
     return pattern in ("*", value)
 
 
-def _condition_holds(condition: dict, principal: Any) -> bool:
+def _condition_holds(condition: dict[str, Any], principal: Any) -> bool:
     role = condition.get("principal_has_role")
     if role is not None:
         roles = getattr(principal, "roles", []) if principal is not None else []
@@ -47,7 +48,7 @@ def _condition_holds(condition: dict, principal: Any) -> bool:
 
 
 class JsonPolicyEvaluator:
-    def __init__(self, document: dict) -> None:
+    def __init__(self, document: dict[str, Any]) -> None:
         self._rules = document.get("rules", [])
 
     def evaluate(self, principal: Any, action: str, resource: str) -> PolicyDecision:

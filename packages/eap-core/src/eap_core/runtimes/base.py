@@ -1,4 +1,5 @@
 """BaseRuntimeAdapter ABC and adapter-side data types."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

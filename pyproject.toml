@@ -35,3 +35,21 @@ markers = [
     "cloud: tests that hit real cloud APIs (skipped without EAP_ENABLE_REAL_RUNTIMES=1)",
     "extras: tests that require optional extras",
 ]
+
+[tool.coverage.run]
+source = ["packages/eap-core/src"]
+branch = true
+omit = [
+    "packages/eap-core/src/eap_core/runtimes/bedrock.py",
+    "packages/eap-core/src/eap_core/runtimes/vertex.py",
+]
+
+[tool.coverage.report]
+fail_under = 90
+skip_covered = false
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

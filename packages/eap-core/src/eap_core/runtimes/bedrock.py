@@ -4,6 +4,7 @@ Real network calls execute only when ``EAP_ENABLE_REAL_RUNTIMES=1``.
 ``boto3`` is lazy-imported inside the call paths so absence of the
 ``[aws]`` extra does not break import.
 """
+
 from __future__ import annotations
 
 import os
@@ -33,13 +34,21 @@ class BedrockRuntimeAdapter(BaseRuntimeAdapter):
         if not _real_runtimes_enabled():
             raise NotImplementedError(_GUIDE)
         try:
-            import boto3  # type: ignore[import-not-found]
+            import boto3  # type: ignore[import-untyped]
         except ImportError as e:
-            raise ImportError("Bedrock adapter requires the [aws] extra: pip install eap-core[aws]") from e
+            raise ImportError(
+                "Bedrock adapter requires the [aws] extra: pip install eap-core[aws]"
+            ) from e
         client = boto3.client("bedrock-runtime", region_name=self._config.options.get("region"))
         resp = client.converse(
             modelId=self._config.model,
-            messages=[{"role": m.role, "content": [{"text": m.content if isinstance(m.content, str) else ""}]} for m in req.messages],
+            messages=[
+                {
+                    "role": m.role,
+                    "content": [{"text": m.content if isinstance(m.content, str) else ""}],
+                }
+                for m in req.messages
+            ],
         )
         text = resp["output"]["message"]["content"][0]["text"]
         usage = resp.get("usage", {})
@@ -62,7 +71,7 @@ class BedrockRuntimeAdapter(BaseRuntimeAdapter):
         if not _real_runtimes_enabled():
             return [ModelInfo(name=self._config.model, provider="bedrock")]
         try:
-            import boto3  # type: ignore[import-not-found]
+            import boto3  # type: ignore[import-untyped,unused-ignore]
         except ImportError as e:
             raise ImportError("Bedrock adapter requires the [aws] extra") from e
         client = boto3.client("bedrock", region_name=self._config.options.get("region"))

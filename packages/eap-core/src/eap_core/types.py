@@ -1,4 +1,5 @@
 """Public data types for EAP-Core."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -42,6 +43,7 @@ class Chunk(BaseModel):
 @dataclass
 class Context:
     """Per-request mutable container shared across middlewares."""
+
     vault: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     span: Any = None

@@ -1,4 +1,5 @@
 """Middleware Protocol and shared base types."""
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
@@ -23,6 +24,7 @@ class Middleware(Protocol):
 
 class PassthroughMiddleware:
     """Convenience base class — overrides only what you need."""
+
     name: str = "passthrough"
 
     async def on_request(self, req: Request, ctx: Context) -> Request:

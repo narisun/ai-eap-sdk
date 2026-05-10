@@ -3,8 +3,8 @@ import pytest
 pytest.importorskip("presidio_analyzer")
 pytestmark = pytest.mark.extras
 
-from eap_core.middleware.pii import PiiMaskingMiddleware
-from eap_core.types import Context, Message, Request, Response
+from eap_core.middleware.pii import PiiMaskingMiddleware  # noqa: E402
+from eap_core.types import Context, Message, Request, Response  # noqa: E402
 
 
 @pytest.mark.xfail(

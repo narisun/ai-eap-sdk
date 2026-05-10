@@ -4,6 +4,7 @@ Wires the middleware pipeline to a runtime adapter resolved via the
 AdapterRegistry. Supports `generate_text`, `stream_text`, and a sync
 proxy at `client.sync`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,7 +23,7 @@ from eap_core.runtimes.registry import AdapterRegistry
 from eap_core.types import Chunk, Context, Message, Request, Response
 
 
-def _to_messages(prompt: str | list[Message] | list[dict]) -> list[Message]:
+def _to_messages(prompt: str | list[Message] | list[dict[str, Any]]) -> list[Message]:
     if isinstance(prompt, str):
         return [Message(role="user", content=prompt)]
     out: list[Message] = []
@@ -32,10 +33,12 @@ def _to_messages(prompt: str | list[Message] | list[dict]) -> list[Message]:
 
 
 class SyncProxy:
-    def __init__(self, client: "EnterpriseLLM") -> None:
+    def __init__(self, client: EnterpriseLLM) -> None:
         self._client = client
 
-    def generate_text(self, prompt, **kw):
+    def generate_text(
+        self, prompt: str | list[Message] | list[dict[str, Any]], **kw: Any
+    ) -> Response:
         return asyncio.run(self._client.generate_text(prompt, **kw))
 
 
@@ -59,7 +62,7 @@ class EnterpriseLLM:
 
     async def generate_text(
         self,
-        prompt,
+        prompt: str | list[Message] | list[dict[str, Any]],
         *,
         schema: type[BaseModel] | None = None,
         operation_name: str = "generate_text",
@@ -93,7 +96,7 @@ class EnterpriseLLM:
 
     async def stream_text(
         self,
-        prompt,
+        prompt: str | list[Message] | list[dict[str, Any]],
         *,
         schema: type[BaseModel] | None = None,
         operation_name: str = "generate_text",
@@ -115,8 +118,8 @@ class EnterpriseLLM:
             options=kwargs,
         )
 
-        async def terminal(r: Request, c: Context):
-            async for raw in self._adapter.stream(r):
+        async def terminal(r: Request, c: Context) -> AsyncIterator[Chunk]:  # type: ignore[misc,unused-ignore]
+            async for raw in self._adapter.stream(r):  # type: ignore[attr-defined]
                 yield Chunk(index=raw.index, text=raw.text, finish_reason=raw.finish_reason)
 
         async for chunk in self._pipeline.run_stream(req, ctx, terminal):

@@ -1,4 +1,5 @@
 """RFC 8693 OAuth 2.0 token exchange client."""
+
 from __future__ import annotations
 
 import httpx
@@ -6,7 +7,7 @@ import httpx
 from eap_core.exceptions import IdentityError
 
 GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange"
-SUBJECT_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:jwt"
+SUBJECT_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:jwt"  # noqa: S105
 
 
 class OIDCTokenExchange:
@@ -32,8 +33,10 @@ class OIDCTokenExchange:
                 payload = resp.json()
             except ValueError:
                 payload = {"error": resp.text}
-            raise IdentityError(payload.get("error", f"token exchange failed: HTTP {resp.status_code}"))
-        data = resp.json()
+            raise IdentityError(
+                payload.get("error", f"token exchange failed: HTTP {resp.status_code}")
+            )
+        data: dict[str, str] = resp.json()
         return data["access_token"]
 
     async def aclose(self) -> None:

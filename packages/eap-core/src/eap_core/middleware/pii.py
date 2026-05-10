@@ -4,11 +4,13 @@ Default behavior uses regex patterns and an in-context vault for
 re-identification. The Presidio path is enabled when `pii` extra is
 installed and `engine="presidio"` is passed.
 """
+
 from __future__ import annotations
 
 import re
 import uuid
-from typing import Literal
+from collections.abc import Iterator
+from typing import Any, Literal
 
 from eap_core.middleware.base import PassthroughMiddleware
 from eap_core.types import Chunk, Context, Message, Request, Response
@@ -21,25 +23,29 @@ _DEFAULT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
-def _replace_in_text(text: str, vault: dict[str, str], patterns) -> str:
+def _replace_in_text(
+    text: str, vault: dict[str, str], patterns: tuple[tuple[str, re.Pattern[str]], ...]
+) -> str:
     out = text
     for label, pat in patterns:
+
         def _sub(m: re.Match[str], _label: str = label) -> str:
             value = m.group(0)
             token = f"<{_label}_{uuid.uuid4().hex[:8]}>"
             vault[token] = value
             return token
+
         out = pat.sub(_sub, out)
     return out
 
 
-def _content_iter(content):
+def _content_iter(content: str | list[dict[str, object]]) -> Iterator[str]:  # pragma: no cover
     if isinstance(content, str):
         yield content
     else:
         for part in content:
             if isinstance(part, dict) and "text" in part:
-                yield part["text"]
+                yield str(part["text"])
 
 
 class PiiMaskingMiddleware(PassthroughMiddleware):
@@ -48,29 +54,32 @@ class PiiMaskingMiddleware(PassthroughMiddleware):
     def __init__(
         self,
         engine: Literal["regex", "presidio"] = "regex",
-        patterns=None,
+        patterns: tuple[tuple[str, re.Pattern[str]], ...] | None = None,
     ) -> None:
         self._engine = engine
         self._patterns = patterns or _DEFAULT_PATTERNS
-        self._presidio = None
+        self._presidio: Any = None
         if engine == "presidio":
             self._init_presidio()
 
     def _init_presidio(self) -> None:
         try:
-            from presidio_analyzer import AnalyzerEngine  # type: ignore[import-not-found]
-            from presidio_anonymizer import AnonymizerEngine  # type: ignore[import-not-found]
+            from presidio_analyzer import (
+                AnalyzerEngine,  # type: ignore[import-untyped,unused-ignore]
+            )
+            from presidio_anonymizer import (
+                AnonymizerEngine,  # type: ignore[import-untyped,unused-ignore,no-untyped-call]
+            )
         except ImportError as e:
             raise ImportError(
-                "engine='presidio' requires the [pii] extra: "
-                "pip install eap-core[pii]"
+                "engine='presidio' requires the [pii] extra: pip install eap-core[pii]"
             ) from e
-        self._presidio = (AnalyzerEngine(), AnonymizerEngine())
+        self._presidio = (AnalyzerEngine(), AnonymizerEngine())  # type: ignore[no-untyped-call]
 
     def _mask_text(self, text: str, vault: dict[str, str]) -> str:
         if self._engine == "regex":
             return _replace_in_text(text, vault, self._patterns)
-        analyzer, _ = self._presidio  # type: ignore[misc]
+        analyzer, _ = self._presidio
         results = analyzer.analyze(text=text, language="en")
         out = text
         for r in sorted(results, key=lambda x: x.start, reverse=True):
@@ -83,7 +92,7 @@ class PiiMaskingMiddleware(PassthroughMiddleware):
     def _mask_message(self, msg: Message, vault: dict[str, str]) -> Message:
         if isinstance(msg.content, str):
             return msg.model_copy(update={"content": self._mask_text(msg.content, vault)})
-        new_parts: list[dict] = []
+        new_parts: list[dict[str, object]] = []
         for part in msg.content:
             if isinstance(part, dict) and "text" in part:
                 new_parts.append({**part, "text": self._mask_text(part["text"], vault)})

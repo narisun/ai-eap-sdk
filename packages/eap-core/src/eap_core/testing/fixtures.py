@@ -1,22 +1,31 @@
 """Test fixtures for users of EAP-Core."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 
 from eap_core.client import EnterpriseLLM
 from eap_core.config import RuntimeConfig
+from eap_core.middleware.base import Middleware
 from eap_core.middleware.observability import ObservabilityMiddleware
 from eap_core.middleware.pii import PiiMaskingMiddleware
 from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
 from eap_core.middleware.sanitize import PromptInjectionMiddleware
 from eap_core.middleware.validate import OutputValidationMiddleware
-from eap_core.types import Context
+from eap_core.types import Context, Response
 
 _PERMIT_ALL = {
     "version": "1",
     "rules": [
-        {"id": "permit-all-in-tests", "effect": "permit", "principal": "*", "action": "*", "resource": "*"},
+        {
+            "id": "permit-all-in-tests",
+            "effect": "permit",
+            "principal": "*",
+            "action": "*",
+            "resource": "*",
+        },
     ],
 }
 
@@ -24,10 +33,10 @@ _PERMIT_ALL = {
 def make_test_client(
     *,
     model: str = "echo-1",
-    extra_middlewares=None,
+    extra_middlewares: list[Middleware] | None = None,
 ) -> EnterpriseLLM:
     """A pre-wired EnterpriseLLM with LocalRuntimeAdapter and a permissive policy."""
-    chain = [
+    chain: list[Middleware] = [
         PromptInjectionMiddleware(),
         PiiMaskingMiddleware(),
         ObservabilityMiddleware(),
@@ -40,17 +49,17 @@ def make_test_client(
 
 
 @contextmanager
-def capture_traces() -> Iterator[list[dict]]:
+def capture_traces() -> Iterator[list[dict[str, Any]]]:
     """Collects ctx.metadata snapshots after each request runs.
 
     Hooks into ObservabilityMiddleware via a local subclass so we don't
     require the OTel SDK.
     """
-    captured: list[dict] = []
+    captured: list[dict[str, Any]] = []
 
     original = ObservabilityMiddleware.on_response
 
-    async def _on_response(self, resp, ctx: Context):
+    async def _on_response(self: ObservabilityMiddleware, resp: Response, ctx: Context) -> Response:
         result = await original(self, resp, ctx)
         captured.append(dict(ctx.metadata))
         return result

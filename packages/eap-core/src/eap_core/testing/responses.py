@@ -1,4 +1,5 @@
 """Helpers for writing deterministic LocalRuntimeAdapter responses in tests."""
+
 from __future__ import annotations
 
 import os
@@ -7,7 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 
 @contextmanager

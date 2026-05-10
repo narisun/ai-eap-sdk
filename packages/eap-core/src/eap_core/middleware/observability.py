@@ -5,6 +5,7 @@ opentelemetry-api package if available; falls back to a no-op tracer
 otherwise. Either way, the same attributes are written to ``ctx.metadata``
 so downstream consumers (eval, audit) get the data without depending on OTel.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -13,10 +14,11 @@ from eap_core.middleware.base import PassthroughMiddleware
 from eap_core.types import Context, Request, Response
 
 try:
-    from opentelemetry import trace as _otel_trace  # type: ignore[import-not-found]
+    from opentelemetry import trace as _otel_trace  # type: ignore[import-untyped,unused-ignore]
+
     _HAS_OTEL = True
 except ImportError:  # pragma: no cover
-    _otel_trace = None
+    _otel_trace = None  # type: ignore[assignment]
     _HAS_OTEL = False
 
 
@@ -25,9 +27,7 @@ class ObservabilityMiddleware(PassthroughMiddleware):
 
     def __init__(self, tracer_name: str = "eap_core") -> None:
         self._tracer_name = tracer_name
-        self._tracer: Any = (
-            _otel_trace.get_tracer(tracer_name) if _HAS_OTEL else None
-        )
+        self._tracer: Any = _otel_trace.get_tracer(tracer_name) if _HAS_OTEL else None
 
     async def on_request(self, req: Request, ctx: Context) -> Request:
         op = req.metadata.get("operation_name", "generate_text")

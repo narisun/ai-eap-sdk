@@ -21,11 +21,15 @@ async def test_token_exchange_posts_rfc8693_grant_and_returns_access_token():
         captured["url"] = str(req.url)
         body = httpx.QueryParams(req.content.decode())
         captured["body"] = dict(body)
-        return httpx.Response(200, json={"access_token": "exchanged-token", "expires_in": 60, "token_type": "Bearer"})
+        return httpx.Response(
+            200, json={"access_token": "exchanged-token", "expires_in": 60, "token_type": "Bearer"}
+        )
 
     client = httpx.AsyncClient(transport=_MockTransport(handler))
     ex = OIDCTokenExchange(token_endpoint="https://idp.example/token", http=client)
-    token = await ex.exchange(subject_token="initial-jwt", audience="api.bank", scope="read:accounts")
+    token = await ex.exchange(
+        subject_token="initial-jwt", audience="api.bank", scope="read:accounts"
+    )
     assert token == "exchanged-token"
     assert captured["url"] == "https://idp.example/token"
     assert captured["body"]["grant_type"] == "urn:ietf:params:oauth:grant-type:token-exchange"
@@ -41,4 +45,24 @@ async def test_token_exchange_raises_on_idp_error():
     client = httpx.AsyncClient(transport=_MockTransport(handler))
     ex = OIDCTokenExchange(token_endpoint="https://idp.example/token", http=client)
     with pytest.raises(Exception, match="invalid_grant"):
+        await ex.exchange(subject_token="x", audience="y", scope="z")
+
+
+async def test_token_exchange_aclose():
+    def handler(req):
+        return httpx.Response(200, json={"access_token": "tok"})
+
+    client = httpx.AsyncClient(transport=_MockTransport(handler))
+    ex = OIDCTokenExchange(token_endpoint="https://idp.example/token", http=client)
+    await ex.aclose()  # should complete without error
+
+
+async def test_token_exchange_non_json_error_body():
+    def handler(req):
+        return httpx.Response(503, text="Service Unavailable")
+
+    client = httpx.AsyncClient(transport=_MockTransport(handler))
+    ex = OIDCTokenExchange(token_endpoint="https://idp.example/token", http=client)
+    # Non-JSON body: the error field comes from resp.text ("Service Unavailable")
+    with pytest.raises(Exception):
         await ex.exchange(subject_token="x", audience="y", scope="z")

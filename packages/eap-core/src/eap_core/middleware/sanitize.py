@@ -4,6 +4,7 @@ Default detector is a small regex set covering common patterns. Callers
 can plug in a more sophisticated classifier (LLM- or model-based) via
 the `extra_classifier` argument.
 """
+
 from __future__ import annotations
 
 import re
@@ -23,8 +24,10 @@ _DEFAULT_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 
 def _content_text(msg: Message) -> str:
-    return msg.content if isinstance(msg.content, str) else " ".join(
-        p.get("text", "") for p in msg.content if isinstance(p, dict)
+    return (
+        msg.content
+        if isinstance(msg.content, str)
+        else " ".join(p.get("text", "") for p in msg.content if isinstance(p, dict))
     )
 
 
@@ -48,7 +51,5 @@ class PromptInjectionMiddleware(PassthroughMiddleware):
                         reason=f"matched pattern {pat.pattern!r}", matched=text[:200]
                     )
             if self._classifier is not None and await self._classifier(text):
-                raise PromptInjectionError(
-                    reason="classifier flagged input", matched=text[:200]
-                )
+                raise PromptInjectionError(reason="classifier flagged input", matched=text[:200])
         return req

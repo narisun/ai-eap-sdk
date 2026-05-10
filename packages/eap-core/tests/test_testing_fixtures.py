@@ -3,6 +3,7 @@ from eap_core.testing.fixtures import (
     capture_traces,
     make_test_client,
 )
+from eap_core.testing.responses import canned_responses
 
 
 async def test_make_test_client_runs_end_to_end():
@@ -23,3 +24,23 @@ def test_assert_pii_round_trip_helper_matches_email():
     processed_with_token = "ping me at <EMAIL_abc123>"
     vault = {"<EMAIL_abc123>": "sundar@example.com"}
     assert_pii_round_trip(text, processed_with_token, vault)
+
+
+async def test_canned_responses_cm_serves_yaml_responses():
+    entries = [{"match": "capital of Spain", "text": "Madrid."}]
+    with canned_responses(entries) as td:
+        assert (td / "responses.yaml").exists()
+        client = make_test_client()
+        resp = await client.generate_text("capital of Spain")
+        assert resp.text == "Madrid."
+
+
+async def test_make_test_client_with_extra_middlewares():
+    from eap_core.middleware.base import PassthroughMiddleware
+
+    class NullMiddleware(PassthroughMiddleware):
+        name = "null"
+
+    client = make_test_client(extra_middlewares=[NullMiddleware()])
+    resp = await client.generate_text("hi")
+    assert isinstance(resp.text, str)

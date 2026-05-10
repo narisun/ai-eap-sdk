@@ -1,8 +1,9 @@
 """Runtime adapter registry with entry-point discovery."""
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from importlib.metadata import entry_points
-from typing import Callable
 
 from eap_core.config import RuntimeConfig
 from eap_core.runtimes.base import BaseRuntimeAdapter
@@ -25,13 +26,12 @@ class AdapterRegistry:
             cls = self._adapters[config.provider]
         except KeyError as e:
             raise KeyError(
-                f"unknown runtime provider {config.provider!r}; "
-                f"registered: {self.providers()}"
+                f"unknown runtime provider {config.provider!r}; registered: {self.providers()}"
             ) from e
         return cls(config)
 
     @classmethod
-    def from_entry_points(cls, group: str = "eap_core.runtimes") -> "AdapterRegistry":
+    def from_entry_points(cls, group: str = "eap_core.runtimes") -> AdapterRegistry:
         reg = cls()
         for ep in entry_points(group=group):
             reg.register(ep.name, ep.load())

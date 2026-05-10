@@ -3,7 +3,7 @@ import time
 import pytest
 
 from eap_core.identity.local_idp import LocalIdPStub
-from eap_core.identity.nhi import NonHumanIdentity, TokenCacheEntry
+from eap_core.identity.nhi import NonHumanIdentity
 
 
 def test_nhi_caches_token_until_ttl_elapses(monkeypatch):
