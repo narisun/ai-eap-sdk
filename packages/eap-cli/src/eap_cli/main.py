@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import cast
 
@@ -15,9 +16,11 @@ from eap_cli.scaffolders.deploy import (
     _real_deploy_enabled,
     deploy_agentcore,
     deploy_gcp,
+    deploy_vertex_agent_engine,
     package_agentcore,
     package_aws,
     package_gcp,
+    package_vertex_agent_engine,
     upload_aws,
 )
 from eap_cli.scaffolders.eval_cmd import run_eval
@@ -146,7 +149,11 @@ def eval_cmd(
 
 
 @cli.command("deploy")
-@click.option("--runtime", type=click.Choice(["aws", "gcp", "agentcore"]), required=True)
+@click.option(
+    "--runtime",
+    type=click.Choice(["aws", "gcp", "agentcore", "vertex-agent-engine"]),
+    required=True,
+)
 @click.option("--bucket", default=None, help="S3 bucket for AWS uploads.")
 @click.option("--service", default="eap-agent", help="Cloud Run / AgentCore name.")
 @click.option(
@@ -200,13 +207,33 @@ def deploy_cmd(
                 f"Set EAP_ENABLE_REAL_DEPLOY=1 to deploy. "
                 f"Otherwise: gcloud run deploy {service} --source {target}"
             )
-    else:  # agentcore
+    elif runtime == "agentcore":
         target = package_agentcore(project, entry=entry)
         click.echo(f"Packaged: {target}")
         if _real_deploy_enabled():
             image = deploy_agentcore(target, name=service, region=region)
             click.echo(f"Built image: {image}")
             click.echo(f"Push to ECR and register with AgentCore Runtime — see {target}/README.md")
+        else:
+            click.echo(
+                f"Set EAP_ENABLE_REAL_DEPLOY=1 to build the image locally. "
+                f"Otherwise see {target}/README.md for build/push/register steps."
+            )
+    else:  # vertex-agent-engine
+        target = package_vertex_agent_engine(project, entry=entry)
+        click.echo(f"Packaged: {target}")
+        if _real_deploy_enabled():
+            image = deploy_vertex_agent_engine(
+                target,
+                name=service,
+                project_id=os.environ.get("GOOGLE_CLOUD_PROJECT", ""),
+                region=region,
+            )
+            click.echo(f"Built image: {image}")
+            click.echo(
+                f"Push to Artifact Registry and register with Vertex Agent Engine — "
+                f"see {target}/README.md"
+            )
         else:
             click.echo(
                 f"Set EAP_ENABLE_REAL_DEPLOY=1 to build the image locally. "

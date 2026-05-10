@@ -74,6 +74,8 @@ module = [
     "botocore.*",
     "vertexai",
     "vertexai.*",
+    "google",
+    "google.*",
     "presidio_analyzer",
     "presidio_analyzer.*",
     "presidio_anonymizer",
