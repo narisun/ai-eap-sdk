@@ -1,0 +1,3 @@
+responses:
+  - match: "Hello"
+    text: "Hello back from the local runtime!"

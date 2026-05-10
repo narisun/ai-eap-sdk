@@ -34,6 +34,27 @@ def test_scaffold_then_run_agent_subprocess(tmp_path: Path, runner):
     assert "Hello back" in out or "[local-runtime]" in out
 
 
+def test_scaffold_transactional_then_run_subprocess(tmp_path: Path, runner, monkeypatch):
+    target = tmp_path / "bank"
+    runner.invoke(cli, ["init", str(target), "--name", "bank", "--runtime", "local"])
+    monkeypatch.chdir(target)
+    runner.invoke(cli, ["create-agent", "--name", "bank", "--template", "transactional"])
+
+    completed = subprocess.run(
+        [sys.executable, str(target / "agent.py")],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0
+    out = completed.stdout
+    # The transactional template's run() executes a transfer and prints the result dict.
+    assert "status" in out
+    assert "ok" in out
+    assert "amount_cents" in out
+
+
 def test_scaffold_research_then_eval_subprocess(tmp_path: Path, runner, monkeypatch):
     target = tmp_path / "research"
     runner.invoke(cli, ["init", str(target), "--name", "research", "--runtime", "local"])
