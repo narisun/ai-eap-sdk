@@ -10,9 +10,135 @@ The same version applies to both workspace packages (`eap-core` and
 
 ---
 
-## [Unreleased]
+## [Unreleased] — GCP Vertex Agent Engine integration + vendor-neutral Protocols
 
-Nothing yet. Open a PR.
+Adds full integration with GCP Vertex AI Agent Engine across the
+parallel surface to AgentCore (Runtime, Observability, Identity,
+Memory Bank, Agent Sandbox (code + browser), Agent Gateway, Agent
+Registry, AP2 payments, Gen AI Eval) and promotes the cross-cutting
+abstractions to top-level Protocols so backends are interchangeable
+by config.
+
+### Architectural shift — vendor-neutral Protocols at top level
+
+`eap_core` now exposes four cross-cloud Protocols that were previously
+implicit:
+
+- `eap_core.sandbox.CodeSandbox` + `BrowserSandbox` + `SandboxResult`
+  — abstract sandboxed code/browser execution. Backed in-process by
+  `InProcessCodeSandbox` (subprocess) and `NoopBrowserSandbox`;
+  in the cloud by AgentCore Code Interpreter / Browser and Vertex
+  Agent Sandbox.
+- `eap_core.discovery.AgentRegistry` — abstract org-wide
+  agent/tool/MCP-server catalog. Defaulted to `InMemoryAgentRegistry`;
+  cloud impls are `RegistryClient` (AWS) and `VertexAgentRegistry` (GCP).
+- `eap_core.payments.PaymentBackend` + `PaymentRequired` — abstract
+  agent microtransactions. Defaulted to `InMemoryPaymentBackend`;
+  cloud impls are AgentCore `PaymentClient` (x402) and `AP2PaymentClient` (AP2).
+- `eap_core.security.ThreatDetector` + `ThreatAssessment` — abstract
+  prompt-injection / threat scoring. Defaulted to a 5-pattern
+  `RegexThreatDetector`.
+
+If your agent depends on the Protocol (not the concrete class), it
+runs unmodified on either AWS or GCP. Switching is a one-line
+constructor change at the seam.
+
+### Added — GCP Vertex Agent Engine integration
+
+All live GCP calls lazy-import `google-cloud-aiplatform` and are gated
+behind `EAP_ENABLE_REAL_RUNTIMES=1`. CI does not need GCP credentials.
+
+**Phase A — Runtime + Observability + Identity:**
+
+- `eap deploy --runtime vertex-agent-engine` — packages a Cloud Run-
+  compatible image (`linux/amd64`, `PORT` env, `EXPOSE 8080`) with a
+  FastAPI handler exposing `POST /invocations` + `GET /health`. Live
+  `docker build` gated by `EAP_ENABLE_REAL_DEPLOY=1`.
+- `configure_for_vertex_observability(project_id=, service_name=,
+  endpoint=)` — wires the OTel SDK to a Cloud Trace OTLP endpoint
+  and writes a `gcp.project_id` resource attribute. Returns `False`
+  when the `[otel]` extra is missing.
+- `VertexAgentIdentityToken(scopes=...)` — wraps the standard Google
+  auth chain (ADC → workload identity → IAM SA) with a
+  `get_token(audience=, scope=)` signature that matches
+  `NonHumanIdentity` for drop-in substitution.
+
+**Phase B — Managed Memory + Sandboxes:**
+
+- `VertexMemoryBankStore(project_id=, location=, memory_bank_id=)` —
+  Vertex Memory Bank backend; implements the `MemoryStore` Protocol
+  (remember/recall/list_keys/forget/clear).
+- `VertexCodeSandbox(project_id=, location=, sandbox_id=)` —
+  implements the `CodeSandbox` Protocol; returns `SandboxResult` with
+  stdout/stderr/exit_code/artifacts.
+- `VertexBrowserSandbox(project_id=, location=, session_id=)` —
+  implements the `BrowserSandbox` Protocol
+  (navigate/click/fill/extract_text/screenshot).
+- `register_code_sandbox_tools(registry, project_id=, ...)` — registers
+  `execute_python`, `execute_javascript`, `execute_typescript` MCP
+  tools that traverse the middleware chain on invoke.
+- `register_browser_sandbox_tools(registry, project_id=, ...)` —
+  registers five `browser_*` MCP tools.
+
+**Phase C — Outbound Gateway:**
+
+- `VertexGatewayClient(gateway_url=, identity=, ...)` — JSON-RPC 2.0
+  MCP client for any MCP-HTTP endpoint; supported Google configuration
+  is the Vertex Agent Gateway. Identical wire shape to
+  `agentcore.GatewayClient` — pointing at either gateway is a
+  constructor swap. Pluggable identity and httpx auth.
+
+**Phase D — Registry, Payments (AP2), Evaluations:**
+
+- `VertexAgentRegistry(project_id=, location=, registry_id=)` —
+  implements the `AgentRegistry` Protocol against Vertex Agent
+  Registry. `publish` validates the `name` field before the env-flag
+  gate so config bugs surface even without `EAP_ENABLE_REAL_RUNTIMES`.
+- `AP2PaymentClient(wallet_provider_id=, project_id=, ...)` —
+  implements the `PaymentBackend` Protocol against Google's Agent
+  Payment Protocol. Drop-in compatible with `agentcore.PaymentClient`:
+  same `start_session` / `authorize` / `can_afford` / budget
+  bookkeeping.
+- `to_vertex_eval_dataset(trajectories)` — maps `Trajectory` records
+  to Vertex Gen AI Eval Service shape
+  (prompt/response/context/trace_id/steps).
+- `VertexEvalScorer(project_id=, metric=, ...)` — `Scorer` impl that
+  calls Vertex Eval and returns `FaithfulnessResult` indistinguishable
+  from `AgentCoreEvalScorer`.
+
+### Added — vendor-neutral abstractions (top-level)
+
+- `eap_core.sandbox` — `CodeSandbox`, `BrowserSandbox`,
+  `SandboxResult`, `InProcessCodeSandbox`, `NoopBrowserSandbox`.
+- `eap_core.discovery` — `AgentRegistry`, `InMemoryAgentRegistry`.
+- `eap_core.payments` — `PaymentBackend`, `PaymentRequired`,
+  `InMemoryPaymentBackend`.
+- `eap_core.security` — `ThreatDetector`, `ThreatAssessment`,
+  `RegexThreatDetector` (5 default injection patterns).
+
+All four are re-exported from `eap_core` top-level.
+
+### Added — packaging + workspace plumbing
+
+- `[gcp]` extra on `eap-core` (and re-forwarded from workspace root)
+  pulls `google-cloud-aiplatform`, which transitively brings in
+  `google-auth` and `google-auth-transport-requests`. The workspace
+  `[all]` extra includes it.
+- Mypy `google` / `google.*` module overrides silence untyped-import
+  errors at workspace level.
+
+### Docs
+
+- `docs/integrations/gcp-vertex-agent-engine.md` — full positioning,
+  cross-cloud equivalence table, service-by-service mapping, and
+  per-phase usage walkthroughs.
+
+### Stats
+
+- **342 tests passing** (up from 243 in v0.2.0).
+- 69 new tests: 7 CLI deploy, 9 Phase A integration, 20 Phase B,
+  13 Phase C, 20 Phase D.
+- Lint / format / strict mypy all green.
 
 ---
 
