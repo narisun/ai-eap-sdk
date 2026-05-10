@@ -143,7 +143,731 @@ class VertexAgentIdentityToken:
         return str(self._cached_creds.token)  # pragma: no cover
 
 
-__all__ = [
+# ---------------------------------------------------------------------------
+# Phase B — Memory Bank + Code Execution + Browser Sandbox
+# ---------------------------------------------------------------------------
+
+
+class VertexMemoryBankStore:
+    """Vertex AI Memory Bank backend for the ``MemoryStore`` Protocol.
+
+    Vertex Memory Bank persists short-term session memory and long-term
+    cross-session facts in a managed store. Construction is cheap (no
+    I/O); methods lazy-import ``google-cloud-aiplatform`` and call the
+    Memory Bank REST surface.
+
+    Live calls are gated behind ``EAP_ENABLE_REAL_RUNTIMES=1``. Without
+    the flag, every method raises ``NotImplementedError`` with a clear
+    "wire credentials" message.
+    """
+
+    name: str = "vertex_memory_bank"
+
+    def __init__(
+        self,
+        *,
+        project_id: str,
+        location: str = "us-central1",
+        memory_bank_id: str,
+    ) -> None:
+        self._project_id = project_id
+        self._location = location
+        self._memory_bank_id = memory_bank_id
+
+    def _client(self) -> Any:
+        try:
+            from google.cloud import aiplatform_v1beta1
+        except ImportError as e:
+            raise ImportError(
+                "VertexMemoryBankStore requires the [gcp] extra: pip install eap-core[gcp]"
+            ) from e
+        return aiplatform_v1beta1.MemoryBankServiceClient()
+
+    def _parent(self) -> str:
+        return (
+            f"projects/{self._project_id}/locations/{self._location}"
+            f"/memoryBanks/{self._memory_bank_id}"
+        )
+
+    async def remember(self, session_id: str, key: str, value: str) -> None:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        client.upsert_memory(  # pragma: no cover
+            parent=self._parent(),
+            session_id=session_id,
+            key=key,
+            value=value,
+        )
+
+    async def recall(self, session_id: str, key: str) -> str | None:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        try:  # pragma: no cover
+            resp = client.get_memory(parent=self._parent(), session_id=session_id, key=key)
+            return str(resp.value) if resp.value else None
+        except Exception:  # pragma: no cover
+            # google.api_core.exceptions.NotFound, etc. — match the
+            # AgentCore "absent => None" contract.
+            return None
+
+    async def list_keys(self, session_id: str) -> list[str]:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        resp = client.list_memories(  # pragma: no cover
+            parent=self._parent(), session_id=session_id
+        )
+        return [m.key for m in resp.memories]  # pragma: no cover
+
+    async def forget(self, session_id: str, key: str) -> None:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        client.delete_memory(  # pragma: no cover
+            parent=self._parent(), session_id=session_id, key=key
+        )
+
+    async def clear(self, session_id: str) -> None:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        client.delete_session(parent=self._parent(), session_id=session_id)
+
+
+# ---- Code Sandbox ----------------------------------------------------------
+
+
+class VertexCodeSandbox:
+    """Vertex Agent Sandbox (code path) — implements ``CodeSandbox`` Protocol.
+
+    Vertex Agent Sandbox is Google's managed code-execution environment
+    for agents. It accepts Python (and a handful of other languages
+    depending on the sandbox image) and returns stdout/stderr/exit_code
+    plus any GCS artifact URIs produced.
+
+    Live calls are gated behind ``EAP_ENABLE_REAL_RUNTIMES=1`` and
+    lazy-import ``google-cloud-aiplatform``.
+    """
+
+    name: str = "vertex_code_sandbox"
+
+    def __init__(
+        self,
+        *,
+        project_id: str,
+        location: str = "us-central1",
+        sandbox_id: str | None = None,
+    ) -> None:
+        self._project_id = project_id
+        self._location = location
+        self._sandbox_id = sandbox_id
+
+    def _client(self) -> Any:
+        try:
+            from google.cloud import aiplatform_v1beta1
+        except ImportError as e:
+            raise ImportError(
+                "VertexCodeSandbox requires the [gcp] extra: pip install eap-core[gcp]"
+            ) from e
+        return aiplatform_v1beta1.SandboxServiceClient()
+
+    async def execute(self, language: str, code: str) -> Any:
+        from eap_core.sandbox import SandboxResult
+
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        parent = (  # pragma: no cover
+            f"projects/{self._project_id}/locations/{self._location}"
+        )
+        resp = client.execute_code(  # pragma: no cover
+            parent=parent,
+            language=language,
+            code=code,
+            sandbox_id=self._sandbox_id,
+        )
+        return SandboxResult(  # pragma: no cover
+            stdout=resp.stdout or "",
+            stderr=resp.stderr or "",
+            exit_code=int(resp.exit_code or 0),
+            artifacts={a.name: a.uri for a in (resp.artifacts or [])},
+        )
+
+
+def register_code_sandbox_tools(
+    registry: Any,
+    *,
+    project_id: str,
+    location: str = "us-central1",
+    sandbox_id: str | None = None,
+) -> None:
+    """Register Vertex Agent Sandbox code-execution MCP tools on a registry.
+
+    Adds three ``@mcp_tool``-decorated functions:
+
+    - ``execute_python(code: str) -> dict``
+    - ``execute_javascript(code: str) -> dict``
+    - ``execute_typescript(code: str) -> dict``
+
+    Like the AgentCore equivalent, tools traverse the user's middleware
+    chain on each invoke — sanitize / PII / policy / observability all
+    apply to the agent-generated code that flows through them.
+    """
+    from eap_core.mcp.decorator import mcp_tool
+
+    sandbox = VertexCodeSandbox(project_id=project_id, location=location, sandbox_id=sandbox_id)
+
+    @mcp_tool(description="Execute Python code in a Vertex Agent Sandbox.")
+    async def execute_python(code: str) -> dict[str, Any]:
+        r = await sandbox.execute("python", code)
+        return {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.exit_code}
+
+    @mcp_tool(description="Execute JavaScript code in a Vertex Agent Sandbox.")
+    async def execute_javascript(code: str) -> dict[str, Any]:
+        r = await sandbox.execute("javascript", code)
+        return {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.exit_code}
+
+    @mcp_tool(description="Execute TypeScript code in a Vertex Agent Sandbox.")
+    async def execute_typescript(code: str) -> dict[str, Any]:
+        r = await sandbox.execute("typescript", code)
+        return {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.exit_code}
+
+    registry.register(execute_python.spec)  # type: ignore[attr-defined]
+    registry.register(execute_javascript.spec)  # type: ignore[attr-defined]
+    registry.register(execute_typescript.spec)  # type: ignore[attr-defined]
+
+
+# ---- Browser Sandbox -------------------------------------------------------
+
+
+class VertexBrowserSandbox:
+    """Vertex Agent Sandbox (browser path) — implements ``BrowserSandbox``.
+
+    The browser path of Vertex Agent Sandbox runs a managed headless
+    browser per session. The shape of this class matches the
+    ``BrowserSandbox`` Protocol so agents can swap between
+    AgentCore Browser and Vertex Browser by config alone.
+    """
+
+    name: str = "vertex_browser_sandbox"
+
+    def __init__(
+        self,
+        *,
+        project_id: str,
+        location: str = "us-central1",
+        session_id: str | None = None,
+    ) -> None:
+        self._project_id = project_id
+        self._location = location
+        self._session_id = session_id
+
+    def _client(self) -> Any:
+        try:
+            from google.cloud import aiplatform_v1beta1
+        except ImportError as e:
+            raise ImportError(
+                "VertexBrowserSandbox requires the [gcp] extra: pip install eap-core[gcp]"
+            ) from e
+        return aiplatform_v1beta1.SandboxServiceClient()
+
+    def _parent(self) -> str:
+        return f"projects/{self._project_id}/locations/{self._location}"
+
+    async def _action(self, action: str, **params: Any) -> dict[str, Any]:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        resp = client.invoke_browser_action(  # pragma: no cover
+            parent=self._parent(),
+            session_id=self._session_id,
+            action=action,
+            params=params,
+        )
+        return dict(resp.result) if resp.result else {}  # pragma: no cover
+
+    async def navigate(self, url: str) -> dict[str, Any]:
+        return await self._action("navigate", url=url)
+
+    async def click(self, selector: str) -> dict[str, Any]:
+        return await self._action("click", selector=selector)
+
+    async def fill(self, selector: str, value: str) -> dict[str, Any]:
+        return await self._action("fill", selector=selector, value=value)
+
+    async def extract_text(self, selector: str = "body") -> str:
+        r = await self._action("extract_text", selector=selector)
+        return str(r.get("text", ""))
+
+    async def screenshot(self) -> bytes:
+        r = await self._action("screenshot")
+        # API returns base64-encoded PNG; decode for the Protocol.
+        import base64
+
+        data = r.get("png_base64", "")
+        return base64.b64decode(data) if data else b""
+
+
+def register_browser_sandbox_tools(
+    registry: Any,
+    *,
+    project_id: str,
+    location: str = "us-central1",
+    session_id: str | None = None,
+) -> None:
+    """Register Vertex Browser Sandbox MCP tools on a registry.
+
+    Symmetric to ``agentcore.register_browser_tools``. Registers five
+    tools: ``browser_navigate``, ``browser_click``, ``browser_fill``,
+    ``browser_extract_text``, ``browser_screenshot``.
+    """
+    from eap_core.mcp.decorator import mcp_tool
+
+    browser = VertexBrowserSandbox(project_id=project_id, location=location, session_id=session_id)
+
+    @mcp_tool(description="Navigate the Vertex Browser Sandbox to a URL.")
+    async def browser_navigate(url: str) -> dict[str, Any]:
+        return await browser.navigate(url)
+
+    @mcp_tool(description="Click an element by CSS selector.")
+    async def browser_click(selector: str) -> dict[str, Any]:
+        return await browser.click(selector)
+
+    @mcp_tool(description="Fill an input field by CSS selector.")
+    async def browser_fill(selector: str, value: str) -> dict[str, Any]:
+        return await browser.fill(selector, value)
+
+    @mcp_tool(description="Extract text from the current page (default: body).")
+    async def browser_extract_text(selector: str = "body") -> str:
+        return await browser.extract_text(selector)
+
+    @mcp_tool(description="Capture a screenshot of the current page as PNG bytes.")
+    async def browser_screenshot() -> dict[str, Any]:
+        png = await browser.screenshot()
+        import base64
+
+        return {"png_base64": base64.b64encode(png).decode("ascii") if png else ""}
+
+    registry.register(browser_navigate.spec)  # type: ignore[attr-defined]
+    registry.register(browser_click.spec)  # type: ignore[attr-defined]
+    registry.register(browser_fill.spec)  # type: ignore[attr-defined]
+    registry.register(browser_extract_text.spec)  # type: ignore[attr-defined]
+    registry.register(browser_screenshot.spec)  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Phase C — Gateway (outbound MCP-over-HTTP)
+# ---------------------------------------------------------------------------
+
+
+class VertexGatewayClient:
+    """Outbound MCP-over-HTTP client for a Vertex Agent Gateway endpoint.
+
+    Speaks plain MCP (JSON-RPC 2.0). Identical wire protocol to
+    ``agentcore.GatewayClient`` — the same client works against any
+    MCP-HTTP endpoint, and Vertex's Agent Gateway is the supported
+    Google configuration.
+
+    Auth is pluggable. Pass a ``VertexAgentIdentityToken`` for Google
+    Bearer auth, or an arbitrary httpx auth callable for other schemes.
+    """
+
+    def __init__(
+        self,
+        *,
+        gateway_url: str,
+        identity: Any | None = None,
+        audience: str | None = None,
+        scope: str = "",
+        http: Any | None = None,
+        auth: Any | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> None:
+        import httpx
+
+        self._url = gateway_url.rstrip("/")
+        self._identity = identity
+        self._audience = audience or gateway_url
+        self._scope = scope
+        self._http = http or httpx.AsyncClient(timeout=timeout_seconds)
+        self._auth = auth
+        self._next_request_id = 0
+
+    def _bearer_header(self) -> dict[str, str]:
+        if self._identity is None:
+            return {}
+        token = self._identity.get_token(audience=self._audience, scope=self._scope)
+        return {"Authorization": f"Bearer {token}"}
+
+    def _next_id(self) -> int:
+        self._next_request_id += 1
+        return self._next_request_id
+
+    async def _rpc(self, method: str, params: dict[str, Any]) -> Any:
+        from eap_core.mcp.types import MCPError
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": self._next_id(),
+            "method": method,
+            "params": params,
+        }
+        headers = {"Content-Type": "application/json", **self._bearer_header()}
+        post_kwargs: dict[str, Any] = {"json": payload, "headers": headers}
+        if self._auth is not None:
+            post_kwargs["auth"] = self._auth
+        resp = await self._http.post(self._url, **post_kwargs)
+        if resp.status_code >= 400:
+            raise MCPError(
+                tool_name=str(params.get("name", "<gateway>")),
+                message=f"gateway returned HTTP {resp.status_code}: {resp.text[:200]}",
+            )
+        body = resp.json()
+        if "error" in body:
+            err = body["error"]
+            raise MCPError(
+                tool_name=str(params.get("name", "<gateway>")),
+                message=f"gateway error {err.get('code')}: {err.get('message')}",
+            )
+        return body.get("result")
+
+    async def list_tools(self) -> list[dict[str, Any]]:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        result = await self._rpc("tools/list", {})  # pragma: no cover
+        return list(result.get("tools", []))  # pragma: no cover
+
+    async def invoke(self, name: str, args: dict[str, Any]) -> Any:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        result = await self._rpc(  # pragma: no cover
+            "tools/call", {"name": name, "arguments": args}
+        )
+        content = result.get("content", [])  # pragma: no cover
+        if (  # pragma: no cover
+            isinstance(content, list)
+            and len(content) == 1
+            and isinstance(content[0], dict)
+            and content[0].get("type") == "text"
+        ):
+            return content[0].get("text", "")
+        return content  # pragma: no cover
+
+    async def aclose(self) -> None:
+        await self._http.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Phase D — Registry, Payments (AP2), Evaluations
+# ---------------------------------------------------------------------------
+
+
+class VertexAgentRegistry:
+    """Publish and discover agents/tools/MCP servers in Vertex Agent Registry.
+
+    Implements the ``AgentRegistry`` Protocol against Google's
+    Agent Registry (an extension of Vertex Model Registry for agentic
+    artifacts). Live calls are gated by ``EAP_ENABLE_REAL_RUNTIMES=1``.
+    """
+
+    name: str = "vertex_agent_registry"
+
+    def __init__(
+        self,
+        *,
+        project_id: str,
+        location: str = "us-central1",
+        registry_id: str = "default",
+    ) -> None:
+        self._project_id = project_id
+        self._location = location
+        self._registry_id = registry_id
+
+    def _client(self) -> Any:
+        try:
+            from google.cloud import aiplatform_v1beta1
+        except ImportError as e:
+            raise ImportError(
+                "VertexAgentRegistry requires the [gcp] extra: pip install eap-core[gcp]"
+            ) from e
+        return aiplatform_v1beta1.AgentRegistryServiceClient()
+
+    def _parent(self) -> str:
+        return (
+            f"projects/{self._project_id}/locations/{self._location}"
+            f"/agentRegistries/{self._registry_id}"
+        )
+
+    async def publish(self, record: dict[str, Any]) -> str:
+        if "name" not in record:
+            raise ValueError("record must have a 'name' field")
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        resp = client.create_registry_record(  # pragma: no cover
+            parent=self._parent(),
+            record_type=record.get("record_type", "AGENT"),
+            name=record["name"],
+            description=record.get("description", ""),
+            metadata=record,
+        )
+        return str(resp.record_id)  # pragma: no cover
+
+    async def get(self, name: str) -> dict[str, Any] | None:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        try:  # pragma: no cover
+            resp = client.get_registry_record(parent=self._parent(), name=name)
+            return dict(resp.record) if resp.record else None
+        except Exception:  # pragma: no cover
+            return None
+
+    async def search(self, query: str, *, max_results: int = 10) -> list[dict[str, Any]]:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        resp = client.search_registry_records(  # pragma: no cover
+            parent=self._parent(), query=query, max_results=max_results
+        )
+        return [dict(r) for r in resp.records]  # pragma: no cover
+
+    async def list_records(
+        self,
+        *,
+        record_type: str | None = None,
+        max_results: int = 100,
+    ) -> list[dict[str, Any]]:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        kwargs: dict[str, Any] = {  # pragma: no cover
+            "parent": self._parent(),
+            "max_results": max_results,
+        }
+        if record_type is not None:  # pragma: no cover
+            kwargs["record_type"] = record_type
+        resp = client.list_registry_records(**kwargs)  # pragma: no cover
+        return [dict(r) for r in resp.records]  # pragma: no cover
+
+
+# ---- Payments (AP2) --------------------------------------------------------
+
+
+class AP2PaymentClient:
+    """Pay for microtransactions via Google's Agent Payment Protocol (AP2).
+
+    Implements the ``PaymentBackend`` Protocol. AP2 is Google's
+    standardized agent-payments scheme — conceptually parallel to AWS's
+    x402 — wrapping wallet-provider signing, budget enforcement, and
+    receipt issuance behind a managed service.
+
+    The class is shaped to be drop-in compatible with
+    ``agentcore.PaymentClient``: same ``start_session`` / ``authorize``
+    methods, same ``remaining_cents`` / ``spent_cents`` properties.
+    """
+
+    name: str = "ap2_payment"
+
+    def __init__(
+        self,
+        *,
+        wallet_provider_id: str,
+        project_id: str,
+        location: str = "us-central1",
+        max_spend_cents: int = 100,
+        currency: str = "USD",
+        session_ttl_seconds: int = 3600,
+    ) -> None:
+        self._wallet_provider_id = wallet_provider_id
+        self._project_id = project_id
+        self._location = location
+        self._max_spend_cents = max_spend_cents
+        self._currency = currency
+        self._ttl = session_ttl_seconds
+        self._session_id: str | None = None
+        self._spent_cents = 0
+
+    def _client(self) -> Any:
+        try:
+            from google.cloud import aiplatform_v1beta1
+        except ImportError as e:
+            raise ImportError(
+                "AP2PaymentClient requires the [gcp] extra: pip install eap-core[gcp]"
+            ) from e
+        return aiplatform_v1beta1.PaymentServiceClient()
+
+    def _parent(self) -> str:
+        return f"projects/{self._project_id}/locations/{self._location}"
+
+    @property
+    def session_id(self) -> str | None:
+        return self._session_id
+
+    @property
+    def spent_cents(self) -> int:
+        return self._spent_cents
+
+    @property
+    def remaining_cents(self) -> int:
+        return max(self._max_spend_cents - self._spent_cents, 0)
+
+    def can_afford(self, amount_cents: int) -> bool:
+        return amount_cents <= self.remaining_cents
+
+    async def start_session(self) -> str:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        resp = client.create_payment_session(  # pragma: no cover
+            parent=self._parent(),
+            wallet_provider_id=self._wallet_provider_id,
+            max_spend_amount_cents=self._max_spend_cents,
+            currency=self._currency,
+            ttl_seconds=self._ttl,
+        )
+        self._session_id = str(resp.session_id)  # pragma: no cover
+        return self._session_id  # pragma: no cover  # type: ignore[return-value]
+
+    async def authorize(self, req: Any) -> dict[str, Any]:
+        """Sign an AP2 payment request and return a receipt.
+
+        ``req`` is a ``PaymentRequired`` (from ``eap_core.payments``)
+        carrying amount, currency, merchant, and original URL.
+        """
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        if self._session_id is None:  # pragma: no cover
+            raise RuntimeError("call start_session() before authorize()")
+        if not self.can_afford(req.amount_cents):  # pragma: no cover
+            raise RuntimeError(
+                f"payment of {req.amount_cents} {req.currency} would exceed "
+                f"remaining budget {self.remaining_cents}"
+            )
+        client = self._client()  # pragma: no cover
+        resp = client.authorize_payment(  # pragma: no cover
+            session_id=self._session_id,
+            amount_cents=req.amount_cents,
+            currency=req.currency,
+            merchant=req.merchant,
+            original_url=req.original_url,
+        )
+        self._spent_cents += req.amount_cents  # pragma: no cover
+        return dict(resp.receipt) if resp.receipt else {}  # pragma: no cover
+
+
+# ---- Evaluations adapters --------------------------------------------------
+
+
+def to_vertex_eval_dataset(trajectories: list[Any]) -> list[dict[str, Any]]:
+    """Convert ``Trajectory`` records to Vertex Gen AI Evaluation Service shape.
+
+    Vertex's Gen AI Eval service ingests prompt/response/contexts/reference.
+    We map ``Trajectory`` fields onto that shape:
+
+    - ``prompt`` ← ``trajectory.extra["input_text"]`` if present
+    - ``response`` ← ``trajectory.final_answer``
+    - ``context`` ← ``trajectory.retrieved_contexts``
+    - ``trace_id`` ← ``trajectory.request_id``
+    """
+    rows: list[dict[str, Any]] = []
+    for t in trajectories:
+        extra = t.extra or {}
+        rows.append(
+            {
+                "trace_id": t.request_id,
+                "prompt": extra.get("input_text", ""),
+                "response": t.final_answer,
+                "context": list(t.retrieved_contexts),
+                "steps": [s.model_dump() for s in t.steps],
+            }
+        )
+    return rows
+
+
+class VertexEvalScorer:
+    """Score a ``Trajectory`` via Vertex Gen AI Evaluation Service.
+
+    Implements the same ``score(traj) -> FaithfulnessResult`` shape as
+    ``AgentCoreEvalScorer`` so both can sit in ``EvalRunner.scorers``
+    interchangeably.
+
+    Built-in metric names include ``faithfulness``, ``groundedness``,
+    ``coherence``, ``helpfulness``, etc. See the Vertex Gen AI Eval
+    docs for the full catalog.
+    """
+
+    name: str = "vertex_eval"
+
+    def __init__(
+        self,
+        *,
+        project_id: str,
+        location: str = "us-central1",
+        metric: str = "faithfulness",
+        scorer_name: str | None = None,
+    ) -> None:
+        self._project_id = project_id
+        self._location = location
+        self._metric = metric
+        if scorer_name is not None:
+            self.name = scorer_name
+
+    def _client(self) -> Any:
+        try:
+            from google.cloud import aiplatform_v1beta1
+        except ImportError as e:
+            raise ImportError("VertexEvalScorer requires the [gcp] extra") from e
+        return aiplatform_v1beta1.EvaluationServiceClient()
+
+    async def score(self, traj: Any) -> Any:
+        from eap_core.eval.faithfulness import FaithfulnessResult
+
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_VERTEX_GUIDE)
+        client = self._client()  # pragma: no cover
+        row = to_vertex_eval_dataset([traj])[0]  # pragma: no cover
+        parent = (  # pragma: no cover
+            f"projects/{self._project_id}/locations/{self._location}"
+        )
+        resp = client.evaluate_instance(  # pragma: no cover
+            parent=parent,
+            metric=self._metric,
+            instance={
+                "prompt": row["prompt"],
+                "response": row["response"],
+                "context": row["context"],
+            },
+        )
+        score_value = float(resp.score)  # pragma: no cover
+        return FaithfulnessResult(  # pragma: no cover
+            request_id=traj.request_id,
+            score=score_value,
+            notes=str(resp.explanation or ""),
+        )
+
+
+__all__ = [  # noqa: RUF022 — grouped by phase, not alphabetically
+    # Phase A
     "VertexAgentIdentityToken",
     "configure_for_vertex_observability",
+    # Phase B — Memory
+    "VertexMemoryBankStore",
+    # Phase B — Code Sandbox
+    "VertexCodeSandbox",
+    "register_code_sandbox_tools",
+    # Phase B — Browser Sandbox
+    "VertexBrowserSandbox",
+    "register_browser_sandbox_tools",
+    # Phase C — Gateway
+    "VertexGatewayClient",
+    # Phase D — Registry
+    "VertexAgentRegistry",
+    # Phase D — Payments (AP2)
+    "AP2PaymentClient",
+    # Phase D — Evaluations
+    "to_vertex_eval_dataset",
+    "VertexEvalScorer",
 ]
