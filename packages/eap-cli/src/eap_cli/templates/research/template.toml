@@ -1,0 +1,4 @@
+[template]
+name = "research"
+description = "Retrieval-style research agent"
+required_vars = ["agent_name"]

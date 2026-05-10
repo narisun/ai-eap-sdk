@@ -5,6 +5,7 @@ from pathlib import Path
 
 import click
 
+from eap_cli.scaffolders.create_agent import create_agent
 from eap_cli.scaffolders.init import init_project
 
 
@@ -27,6 +28,20 @@ def init_cmd(target: Path, name: str | None, runtime: str, force: bool) -> None:
     except FileExistsError as e:
         raise click.ClickException(f"{e}. Re-run with --force to overwrite.") from e
     click.echo(f"Wrote {len(written)} files to {target}")
+
+
+@cli.command("create-agent")
+@click.option("--name", required=True, help="Agent name (used in template variables).")
+@click.option(
+    "--template",
+    required=True,
+    type=click.Choice(["research", "transactional"]),
+)
+def create_agent_cmd(name: str, template: str) -> None:
+    """Generate an agent from a template (overlays the current project)."""
+    target = Path.cwd()
+    written = create_agent(target, agent_name=name, template=template)
+    click.echo(f"Wrote {len(written)} files for {template} template.")
 
 
 if __name__ == "__main__":

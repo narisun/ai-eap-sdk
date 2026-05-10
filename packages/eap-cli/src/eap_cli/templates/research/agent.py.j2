@@ -1,0 +1,60 @@
+"""{{ agent_name }} — research agent (retrieval-style).
+
+Demonstrates: an EAP-Core agent that calls a `search_docs` tool, then
+asks the LLM to summarize, with citations recorded as retrieved_contexts
+on the trajectory.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+
+from eap_core import EnterpriseLLM, RuntimeConfig
+from eap_core.mcp import default_registry
+from eap_core.middleware.observability import ObservabilityMiddleware
+from eap_core.middleware.pii import PiiMaskingMiddleware
+from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
+from eap_core.middleware.sanitize import PromptInjectionMiddleware
+from eap_core.middleware.validate import OutputValidationMiddleware
+
+# Importing the tools registers them with default_registry().
+from tools import search_docs  # noqa: F401
+
+
+def _load_policy() -> dict:
+    return json.loads((Path(__file__).parent / "configs" / "policy.json").read_text())
+
+
+def build_client() -> EnterpriseLLM:
+    return EnterpriseLLM(
+        RuntimeConfig(provider="local", model="echo-1"),
+        middlewares=[
+            PromptInjectionMiddleware(),
+            PiiMaskingMiddleware(),
+            ObservabilityMiddleware(),
+            PolicyMiddleware(JsonPolicyEvaluator(_load_policy())),
+            OutputValidationMiddleware(),
+        ],
+        tool_registry=default_registry(),
+    )
+
+
+async def answer(query: str) -> str:
+    """Research-agent loop: search → reason → summarize."""
+    client = build_client()
+    docs = await client.invoke_tool("search_docs", {"query": query, "k": 3})
+    context = "\n---\n".join(d["text"] for d in docs)
+    resp = await client.generate_text(
+        f"Use ONLY the context to answer.\n\nCONTEXT:\n{context}\n\nQUESTION: {query}"
+    )
+    return resp.text
+
+
+async def run() -> None:
+    answer_text = await answer("What is the capital of France?")
+    print(answer_text)
+
+
+if __name__ == "__main__":
+    asyncio.run(run())
