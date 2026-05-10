@@ -68,3 +68,20 @@ def test_decorator_preserves_callable():
 
     import asyncio
     assert asyncio.run(echo("hi")) == "hi"
+
+
+def test_build_mcp_server_raises_import_error_when_mcp_missing(monkeypatch):
+    """build_mcp_server raises ImportError with helpful message when mcp is not installed."""
+    import sys
+    import unittest.mock as mock
+
+    from eap_core.mcp.registry import McpToolRegistry
+
+    reg = McpToolRegistry()
+
+    # Temporarily make the 'mcp' import fail
+    with mock.patch.dict(sys.modules, {"mcp": None, "mcp.server": None, "mcp.types": None}):
+        from eap_core.mcp.server import build_mcp_server
+        import pytest as _pytest
+        with _pytest.raises(ImportError, match="mcp"):
+            build_mcp_server(reg)

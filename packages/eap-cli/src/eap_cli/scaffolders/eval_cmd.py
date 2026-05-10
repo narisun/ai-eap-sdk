@@ -25,6 +25,10 @@ def _load_callable(spec: str) -> Callable[..., Any]:
     target, func = spec.split(":", 1)
     p = Path(target)
     if p.suffix == ".py":
+        # Ensure the agent's directory is on sys.path so relative imports work.
+        agent_dir = str(p.resolve().parent)
+        if agent_dir not in sys.path:
+            sys.path.insert(0, agent_dir)
         mod_spec = importlib.util.spec_from_file_location(p.stem, p)
         if mod_spec is None or mod_spec.loader is None:
             raise ImportError(f"could not load {target}")

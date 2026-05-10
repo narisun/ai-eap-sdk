@@ -56,3 +56,38 @@ def test_default_registry_is_singleton():
     a = default_registry()
     b = default_registry()
     assert a is b
+
+
+async def test_invoke_tool_that_raises_wraps_in_mcp_error(reg: McpToolRegistry):
+    @mcp_tool()
+    async def broken(x: int) -> int:
+        raise ValueError("boom")
+
+    reg.register(broken.spec)
+    with pytest.raises(MCPError, match="boom"):
+        await reg.invoke("broken", {"x": 1})
+
+
+async def test_invoke_tool_re_raises_mcp_error(reg: McpToolRegistry):
+    @mcp_tool()
+    async def passthrough(x: str) -> str:
+        raise MCPError(tool_name="passthrough", message="direct mcp error")
+
+    reg.register(passthrough.spec)
+    with pytest.raises(MCPError, match="direct mcp error"):
+        await reg.invoke("passthrough", {"x": "hi"})
+
+
+async def test_invoke_no_input_schema_skips_validation(reg: McpToolRegistry):
+    """A ToolSpec with empty input_schema should still dispatch successfully."""
+    @mcp_tool()
+    async def no_params() -> str:
+        return "ok"
+
+    reg.register(no_params.spec)
+    result = await reg.invoke("no_params", {})
+    assert result == "ok"
+
+
+def test_get_returns_none_for_missing(reg: McpToolRegistry):
+    assert reg.get("nonexistent") is None

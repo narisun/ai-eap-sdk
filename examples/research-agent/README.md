@@ -1,0 +1,21 @@
+# research-agent
+
+EAP-Core scaffolded agent project.
+
+## Run
+
+```bash
+python agent.py
+```
+
+## Test
+
+```bash
+pytest
+```
+
+## Eval
+
+```bash
+eap eval --dataset tests/golden_set.json
+```

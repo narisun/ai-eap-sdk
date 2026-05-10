@@ -44,3 +44,30 @@ def test_render_substitutes_name_in_filenames(tmp_path: Path):
     dst = tmp_path / "dst"
     render_template_dir(src, dst, {"name": "lookup_user"})
     assert (dst / "tools" / "lookup_user.py").read_text() == "# tool lookup_user\n"
+
+
+def test_maybe_substitute_name_no_name_key(tmp_path: Path):
+    """_maybe_substitute_name is a no-op when 'name' not in variables."""
+    from eap_cli.scaffolders.render import _maybe_substitute_name
+
+    p = Path("tools/__name__.py")
+    result = _maybe_substitute_name(p, {})
+    assert result == p
+
+
+def test_maybe_substitute_name_directory_segment(tmp_path: Path):
+    """__name__ appearing as a directory segment is also substituted."""
+    from eap_cli.scaffolders.render import _maybe_substitute_name
+
+    p = Path("__name__/foo.py")
+    result = _maybe_substitute_name(p, {"name": "mymod"})
+    assert result == Path("mymod/foo.py")
+
+
+def test_render_copies_non_j2_files_verbatim(tmp_path: Path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "data.json").write_text('{"key": "value"}')
+    dst = tmp_path / "dst"
+    render_template_dir(src, dst, {})
+    assert (dst / "data.json").read_text() == '{"key": "value"}'
