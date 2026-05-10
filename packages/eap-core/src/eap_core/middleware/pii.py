@@ -1,0 +1,112 @@
+"""PII masking middleware.
+
+Default behavior uses regex patterns and an in-context vault for
+re-identification. The Presidio path is enabled when `pii` extra is
+installed and `engine="presidio"` is passed.
+"""
+from __future__ import annotations
+
+import re
+import uuid
+from typing import Literal
+
+from eap_core.middleware.base import PassthroughMiddleware
+from eap_core.types import Chunk, Context, Message, Request, Response
+
+_DEFAULT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("EMAIL", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")),
+    ("SSN", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
+    ("PHONE", re.compile(r"\b\+?\d{1,3}[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}\b")),
+    ("CREDIT_CARD", re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b")),
+)
+
+
+def _replace_in_text(text: str, vault: dict[str, str], patterns) -> str:
+    out = text
+    for label, pat in patterns:
+        def _sub(m: re.Match[str], _label: str = label) -> str:
+            value = m.group(0)
+            token = f"<{_label}_{uuid.uuid4().hex[:8]}>"
+            vault[token] = value
+            return token
+        out = pat.sub(_sub, out)
+    return out
+
+
+def _content_iter(content):
+    if isinstance(content, str):
+        yield content
+    else:
+        for part in content:
+            if isinstance(part, dict) and "text" in part:
+                yield part["text"]
+
+
+class PiiMaskingMiddleware(PassthroughMiddleware):
+    name = "pii_masking"
+
+    def __init__(
+        self,
+        engine: Literal["regex", "presidio"] = "regex",
+        patterns=None,
+    ) -> None:
+        self._engine = engine
+        self._patterns = patterns or _DEFAULT_PATTERNS
+        self._presidio = None
+        if engine == "presidio":
+            self._init_presidio()
+
+    def _init_presidio(self) -> None:
+        try:
+            from presidio_analyzer import AnalyzerEngine  # type: ignore[import-not-found]
+            from presidio_anonymizer import AnonymizerEngine  # type: ignore[import-not-found]
+        except ImportError as e:
+            raise ImportError(
+                "engine='presidio' requires the [pii] extra: "
+                "pip install eap-core[pii]"
+            ) from e
+        self._presidio = (AnalyzerEngine(), AnonymizerEngine())
+
+    def _mask_text(self, text: str, vault: dict[str, str]) -> str:
+        if self._engine == "regex":
+            return _replace_in_text(text, vault, self._patterns)
+        analyzer, _ = self._presidio  # type: ignore[misc]
+        results = analyzer.analyze(text=text, language="en")
+        out = text
+        for r in sorted(results, key=lambda x: x.start, reverse=True):
+            original = out[r.start : r.end]
+            token = f"<{r.entity_type}_{uuid.uuid4().hex[:8]}>"
+            vault[token] = original
+            out = out[: r.start] + token + out[r.end :]
+        return out
+
+    def _mask_message(self, msg: Message, vault: dict[str, str]) -> Message:
+        if isinstance(msg.content, str):
+            return msg.model_copy(update={"content": self._mask_text(msg.content, vault)})
+        new_parts: list[dict] = []
+        for part in msg.content:
+            if isinstance(part, dict) and "text" in part:
+                new_parts.append({**part, "text": self._mask_text(part["text"], vault)})
+            else:
+                new_parts.append(part)
+        return msg.model_copy(update={"content": new_parts})
+
+    async def on_request(self, req: Request, ctx: Context) -> Request:
+        new_msgs = [self._mask_message(m, ctx.vault) for m in req.messages]
+        return req.model_copy(update={"messages": new_msgs})
+
+    async def on_response(self, resp: Response, ctx: Context) -> Response:
+        if not ctx.vault:
+            return resp
+        text = resp.text
+        for token, original in ctx.vault.items():
+            text = text.replace(token, original)
+        return resp.model_copy(update={"text": text})
+
+    async def on_stream_chunk(self, chunk: Chunk, ctx: Context) -> Chunk:
+        if not ctx.vault:
+            return chunk
+        text = chunk.text
+        for token, original in ctx.vault.items():
+            text = text.replace(token, original)
+        return chunk.model_copy(update={"text": text})
