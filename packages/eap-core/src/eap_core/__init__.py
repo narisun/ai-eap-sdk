@@ -45,6 +45,9 @@ from eap_core.exceptions import (
 # MCP tool authoring + registry
 from eap_core.mcp import MCPError, McpToolRegistry, ToolSpec, default_registry, mcp_tool
 
+# Memory abstraction
+from eap_core.memory import InMemoryStore, MemoryStore
+
 # Public data types
 from eap_core.types import Chunk, Context, Message, Request, Response
 
@@ -87,4 +90,7 @@ __all__ = [  # noqa: RUF022 — grouped semantically, not alphabetically
     "FaithfulnessScorer",
     "Trajectory",
     "TrajectoryRecorder",
+    # memory
+    "InMemoryStore",
+    "MemoryStore",
 ]

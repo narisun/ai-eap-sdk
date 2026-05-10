@@ -12,6 +12,67 @@ The same version applies to both workspace packages (`eap-core` and
 
 ## [Unreleased]
 
+### Added — AWS Bedrock AgentCore integration (Phase B)
+
+In-process adapters for AgentCore-managed services. Live calls are
+gated behind `EAP_ENABLE_REAL_RUNTIMES=1`; tests run deterministically
+without AWS credentials.
+
+- **`eap_core.memory`** (new module) — `MemoryStore` Protocol with
+  five operations (`remember`, `recall`, `list_keys`, `forget`,
+  `clear`), all async. `InMemoryStore` default impl (dict-backed,
+  per-session isolation) for tests and local development. Plus
+  `MemoryStore` is exported at the package root.
+- **`Context.memory_store` and `Context.session_id`** — new optional
+  fields on the per-request `Context`. Tools and middleware can read
+  / write memory through the same Protocol regardless of backend.
+  Existing tests untouched (defaults preserve old behavior).
+- **`AgentCoreMemoryStore`** — AgentCore Memory backend for the
+  `MemoryStore` Protocol. Construction is cheap (no I/O); every
+  method lazy-imports `boto3` and raises `NotImplementedError`
+  without `EAP_ENABLE_REAL_RUNTIMES=1`. Same env-flag pattern as
+  the Bedrock / Vertex runtime adapters.
+- **`register_code_interpreter_tools(registry, region=...)`** —
+  registers three `@mcp_tool` functions on a registry:
+  `execute_python`, `execute_javascript`, `execute_typescript`. Each
+  returns `{"stdout": str, "stderr": str, "exit_code": int}`. Tool
+  calls go through the full middleware chain so generated code is
+  sanitized / PII-checked / policy-gated / observability-recorded
+  before execution.
+- **`register_browser_tools(registry, region=...)`** — registers
+  five MCP tools for web interaction: `browser_navigate`,
+  `browser_click`, `browser_fill`, `browser_extract_text`,
+  `browser_screenshot`. Policy can deny navigate to specific
+  hostnames; every action records as an OTel span.
+- **`InboundJwtVerifier`** — verifies JWTs issued by AgentCore
+  Identity (or any OIDC IdP) at the HTTP boundary of an agent.
+  Fetches JWKS via OIDC discovery URL with TTL caching; validates
+  audience / scope / client / kid; rejects expired tokens. Uses
+  PyJWT (already a default dep) plus `cryptography` for RS256 key
+  loading.
+- **`jwt_dependency(verifier)`** — FastAPI dependency factory that
+  pulls the bearer token from the `Authorization` header and calls
+  `verifier.verify`. Drop-in `Depends(...)` for the generated
+  AgentCore `handler.py` route. Lazy-imports FastAPI; clear
+  `ImportError` if the `[a2a]` extra isn't installed.
+
+### Tests added (35 new tests)
+- `test_memory.py` (14 tests): Protocol conformance, round-trip,
+  session isolation, list_keys, forget / clear semantics,
+  overwrite, unicode handling, `Context` field plumbing.
+- `test_integrations_agentcore_phase_b.py` (21 tests):
+  `AgentCoreMemoryStore` Protocol conformance + env-flag gating +
+  cheap construction, all 5 methods raise without env flag.
+  Code Interpreter / Browser tool registration and schema shape.
+  `InboundJwtVerifier` accepts valid tokens, rejects wrong
+  audience / disallowed client / missing scope / unknown kid /
+  expired tokens; JWKS caching verified.
+
+### Stats
+- **200 tests passing** (up from 166 in Phase A).
+- Coverage holds. `ruff check`, `ruff format --check`, and
+  `mypy --strict` all green.
+
 ### Added — AWS Bedrock AgentCore integration (Phase A)
 - **`docs/integrations/aws-bedrock-agentcore.md`** — full integration
   guide. Positioning ("EAP-Core inside AgentCore"), service-by-service

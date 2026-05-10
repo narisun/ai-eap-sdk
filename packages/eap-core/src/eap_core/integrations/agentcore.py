@@ -123,7 +123,413 @@ def configure_for_agentcore(
     return True
 
 
-__all__ = [
+# ---------------------------------------------------------------------------
+# Phase B — In-process AgentCore service adapters
+# ---------------------------------------------------------------------------
+#
+# All adapters in this section lazy-import ``boto3`` inside their methods.
+# Construction must not pull boto3. Real network calls are gated behind
+# ``EAP_ENABLE_REAL_RUNTIMES=1`` so tests stay deterministic and CI doesn't
+# need AWS credentials.
+
+_AGENTCORE_GUIDE = (
+    "AgentCore adapter requires the [aws] extra and AWS credentials. "
+    "Set EAP_ENABLE_REAL_RUNTIMES=1 once configured."
+)
+
+
+def _real_runtimes_enabled() -> bool:
+    return os.environ.get("EAP_ENABLE_REAL_RUNTIMES") == "1"
+
+
+# ---- Memory ----------------------------------------------------------------
+
+
+class AgentCoreMemoryStore:
+    """AWS Bedrock AgentCore Memory backend for the ``MemoryStore`` Protocol.
+
+    Persists per-session short-term memory and long-term cross-session
+    facts to AgentCore Memory. Construction is cheap (no I/O); methods
+    lazy-import boto3 and call the AgentCore Memory API.
+
+    Live calls are gated behind ``EAP_ENABLE_REAL_RUNTIMES=1``. Without
+    the flag, every method raises ``NotImplementedError`` with a clear
+    "wire credentials" message — same pattern as the Bedrock / Vertex
+    runtime adapters.
+    """
+
+    name: str = "agentcore"
+
+    def __init__(
+        self,
+        *,
+        memory_id: str,
+        region: str = "us-east-1",
+    ) -> None:
+        self._memory_id = memory_id
+        self._region = region
+
+    def _client(self) -> Any:
+        try:
+            import boto3
+        except ImportError as e:
+            raise ImportError(
+                "AgentCoreMemoryStore requires the [aws] extra: pip install eap-core[aws]"
+            ) from e
+        return boto3.client("bedrock-agentcore", region_name=self._region)
+
+    async def remember(self, session_id: str, key: str, value: str) -> None:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_AGENTCORE_GUIDE)
+        client = self._client()  # pragma: no cover  — exercised in cloud workflow
+        client.put_memory_record(  # pragma: no cover
+            memoryId=self._memory_id,
+            sessionId=session_id,
+            recordKey=key,
+            recordValue=value,
+        )
+
+    async def recall(self, session_id: str, key: str) -> str | None:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_AGENTCORE_GUIDE)
+        client = self._client()  # pragma: no cover
+        try:  # pragma: no cover
+            resp = client.get_memory_record(
+                memoryId=self._memory_id,
+                sessionId=session_id,
+                recordKey=key,
+            )
+            value = resp.get("recordValue")
+            return str(value) if value is not None else None
+        except client.exceptions.ResourceNotFoundException:  # pragma: no cover
+            return None
+
+    async def list_keys(self, session_id: str) -> list[str]:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_AGENTCORE_GUIDE)
+        client = self._client()  # pragma: no cover
+        resp = client.list_memory_records(  # pragma: no cover
+            memoryId=self._memory_id, sessionId=session_id
+        )
+        return [r["recordKey"] for r in resp.get("records", [])]  # pragma: no cover
+
+    async def forget(self, session_id: str, key: str) -> None:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_AGENTCORE_GUIDE)
+        client = self._client()  # pragma: no cover
+        client.delete_memory_record(  # pragma: no cover
+            memoryId=self._memory_id, sessionId=session_id, recordKey=key
+        )
+
+    async def clear(self, session_id: str) -> None:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_AGENTCORE_GUIDE)
+        client = self._client()  # pragma: no cover
+        client.delete_memory_session(  # pragma: no cover
+            memoryId=self._memory_id, sessionId=session_id
+        )
+
+
+# ---- Code Interpreter ------------------------------------------------------
+
+
+def register_code_interpreter_tools(
+    registry: Any,
+    *,
+    region: str = "us-east-1",
+    session_id: str | None = None,
+) -> None:
+    """Register AgentCore Code Interpreter MCP tools on a registry.
+
+    Adds three ``@mcp_tool``-decorated functions:
+
+    - ``execute_python(code: str) -> dict`` — Python in an AgentCore sandbox.
+    - ``execute_javascript(code: str) -> dict`` — JavaScript runtime.
+    - ``execute_typescript(code: str) -> dict`` — TypeScript runtime.
+
+    The dict returns ``{"stdout": str, "stderr": str, "exit_code": int}``.
+    Tools call ``bedrock-agentcore`` via boto3 when
+    ``EAP_ENABLE_REAL_RUNTIMES=1``; otherwise they raise
+    ``NotImplementedError``.
+
+    Tools run through the user's middleware chain when invoked via
+    ``client.invoke_tool(...)`` — sanitize / PII / policy / observability
+    all apply to the agent-generated code that flows through them. This
+    is intentional: code interpretation is one of the highest-risk
+    agentic capabilities and must traverse the safety chain.
+    """
+    from eap_core.mcp.decorator import mcp_tool
+
+    def _execute(language: str, code: str) -> dict[str, Any]:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_AGENTCORE_GUIDE)
+        try:  # pragma: no cover
+            import boto3
+        except ImportError as e:  # pragma: no cover
+            raise ImportError("Code Interpreter tools require the [aws] extra") from e
+        client = boto3.client("bedrock-agentcore", region_name=region)  # pragma: no cover
+        resp = client.invoke_code_interpreter(  # pragma: no cover
+            language=language, code=code, sessionId=session_id
+        )
+        return {  # pragma: no cover
+            "stdout": resp.get("stdout", ""),
+            "stderr": resp.get("stderr", ""),
+            "exit_code": resp.get("exitCode", 0),
+        }
+
+    @mcp_tool(description="Execute Python code in an AgentCore Code Interpreter sandbox.")
+    async def execute_python(code: str) -> dict[str, Any]:
+        return _execute("python", code)
+
+    @mcp_tool(description="Execute JavaScript code in an AgentCore Code Interpreter sandbox.")
+    async def execute_javascript(code: str) -> dict[str, Any]:
+        return _execute("javascript", code)
+
+    @mcp_tool(description="Execute TypeScript code in an AgentCore Code Interpreter sandbox.")
+    async def execute_typescript(code: str) -> dict[str, Any]:
+        return _execute("typescript", code)
+
+    registry.register(execute_python.spec)  # type: ignore[attr-defined]
+    registry.register(execute_javascript.spec)  # type: ignore[attr-defined]
+    registry.register(execute_typescript.spec)  # type: ignore[attr-defined]
+
+
+# ---- Browser ---------------------------------------------------------------
+
+
+def register_browser_tools(
+    registry: Any,
+    *,
+    region: str = "us-east-1",
+    session_id: str | None = None,
+) -> None:
+    """Register AgentCore Browser MCP tools on a registry.
+
+    Adds five ``@mcp_tool``-decorated functions for web interaction:
+
+    - ``browser_navigate(url: str) -> dict`` — navigate to a URL.
+    - ``browser_click(selector: str) -> dict`` — click a CSS selector.
+    - ``browser_fill(selector: str, value: str) -> dict`` — fill an input.
+    - ``browser_extract_text(selector: str = "body") -> str`` — read text.
+    - ``browser_screenshot() -> dict`` — capture base64-encoded PNG.
+
+    Live calls go through boto3 to ``bedrock-agentcore`` and are gated
+    by ``EAP_ENABLE_REAL_RUNTIMES=1``.
+
+    Like Code Interpreter tools, browser operations flow through the
+    user's middleware chain on each ``invoke_tool`` call. Policy can
+    deny ``browser_navigate`` to specific hostnames; observability
+    records every browser action as a span.
+    """
+    from eap_core.mcp.decorator import mcp_tool
+
+    def _browser_call(action: str, **kwargs: Any) -> dict[str, Any]:
+        if not _real_runtimes_enabled():
+            raise NotImplementedError(_AGENTCORE_GUIDE)
+        try:  # pragma: no cover
+            import boto3
+        except ImportError as e:  # pragma: no cover
+            raise ImportError("Browser tools require the [aws] extra") from e
+        client = boto3.client("bedrock-agentcore", region_name=region)  # pragma: no cover
+        resp = client.invoke_browser_action(  # pragma: no cover
+            action=action, sessionId=session_id, **kwargs
+        )
+        return dict(resp)  # pragma: no cover
+
+    @mcp_tool(description="Navigate the AgentCore Browser to a URL.")
+    async def browser_navigate(url: str) -> dict[str, Any]:
+        return _browser_call("navigate", url=url)
+
+    @mcp_tool(description="Click an element by CSS selector in the AgentCore Browser.")
+    async def browser_click(selector: str) -> dict[str, Any]:
+        return _browser_call("click", selector=selector)
+
+    @mcp_tool(description="Fill an input field by CSS selector.")
+    async def browser_fill(selector: str, value: str) -> dict[str, Any]:
+        return _browser_call("fill", selector=selector, value=value)
+
+    @mcp_tool(description="Extract text from the current page (default: body).")
+    async def browser_extract_text(selector: str = "body") -> str:
+        result = _browser_call("extract_text", selector=selector)
+        return str(result.get("text", ""))
+
+    @mcp_tool(description="Capture a screenshot of the current page as base64 PNG.")
+    async def browser_screenshot() -> dict[str, Any]:
+        return _browser_call("screenshot")
+
+    registry.register(browser_navigate.spec)  # type: ignore[attr-defined]
+    registry.register(browser_click.spec)  # type: ignore[attr-defined]
+    registry.register(browser_fill.spec)  # type: ignore[attr-defined]
+    registry.register(browser_extract_text.spec)  # type: ignore[attr-defined]
+    registry.register(browser_screenshot.spec)  # type: ignore[attr-defined]
+
+
+# ---- Inbound JWT verification ---------------------------------------------
+
+
+class InboundJwtVerifier:
+    """Verify JWTs issued by AgentCore Identity (or any OIDC IdP).
+
+    Used at the HTTP boundary of an agent — before the request reaches
+    the LLM middleware chain. Inside AgentCore Runtime, this is already
+    done by the configured inbound authorizer (see
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/inbound-jwt-authorizer.html);
+    you only need this when:
+
+    - Running the agent outside AgentCore Runtime (own infra, Lambda,
+      Cloud Run) and you want the same auth model.
+    - Doing defense-in-depth: re-verify inside the agent even though
+      AgentCore already did at the edge.
+
+    Standard usage with our generated AgentCore handler.py is via the
+    FastAPI dependency factory (``jwt_dependency``).
+    """
+
+    def __init__(
+        self,
+        *,
+        discovery_url: str,
+        allowed_audiences: list[str] | None = None,
+        allowed_scopes: list[str] | None = None,
+        allowed_clients: list[str] | None = None,
+        jwks_cache_ttl_seconds: int = 600,
+    ) -> None:
+        self._discovery_url = discovery_url
+        self._allowed_audiences = set(allowed_audiences or [])
+        self._allowed_scopes = set(allowed_scopes or [])
+        self._allowed_clients = set(allowed_clients or [])
+        self._cache_ttl = jwks_cache_ttl_seconds
+        self._jwks: list[dict[str, Any]] = []
+        self._jwks_fetched_at: float = 0.0
+
+    def _refresh_jwks(self, http_get: Any) -> None:
+        """Fetch the JWKS from the discovery URL.
+
+        ``http_get`` is a callable returning a response-like object with
+        ``.json()``; injected for testability. In production code call
+        ``verify(token, http_get=httpx.get)``.
+        """
+        # 1. fetch the OIDC discovery doc, find jwks_uri
+        meta_resp = http_get(self._discovery_url)
+        meta = meta_resp.json()
+        jwks_uri = meta.get("jwks_uri")
+        if not jwks_uri:
+            raise ValueError(f"discovery doc at {self._discovery_url} has no jwks_uri")
+        # 2. fetch the JWKS itself
+        jwks_resp = http_get(jwks_uri)
+        keys = jwks_resp.json().get("keys", [])
+        self._jwks = keys
+        import time as _time
+
+        self._jwks_fetched_at = _time.time()
+
+    def _maybe_refresh_jwks(self, http_get: Any) -> None:
+        import time as _time
+
+        if not self._jwks or (_time.time() - self._jwks_fetched_at) > self._cache_ttl:
+            self._refresh_jwks(http_get)
+
+    def verify(self, token: str, *, http_get: Any | None = None) -> dict[str, Any]:
+        """Verify a JWT and return its claims.
+
+        Raises a JWT-flavored exception (from ``PyJWT``) if the token is
+        invalid, expired, has the wrong audience/scope/client, or is
+        signed by an unknown key.
+        """
+        import jwt
+
+        if http_get is None:
+            import httpx
+
+            http_get = httpx.get
+        self._maybe_refresh_jwks(http_get)
+
+        # PyJWT picks the right key by kid header automatically given a JWKS set.
+        from jwt.algorithms import RSAAlgorithm
+
+        unverified = jwt.get_unverified_header(token)
+        kid = unverified.get("kid")
+        signing_key: Any = None
+        for k in self._jwks:
+            if k.get("kid") == kid:
+                signing_key = RSAAlgorithm.from_jwk(k)
+                break
+        if signing_key is None:
+            raise jwt.InvalidTokenError(f"no JWKS key matches kid={kid!r}")
+
+        claims = jwt.decode(
+            token,
+            signing_key,
+            algorithms=["RS256", "RS384", "RS512"],
+            audience=list(self._allowed_audiences) if self._allowed_audiences else None,
+            options={"verify_aud": bool(self._allowed_audiences)},
+        )
+
+        if self._allowed_clients:
+            client_id = claims.get("client_id") or claims.get("azp")
+            if client_id not in self._allowed_clients:
+                raise jwt.InvalidTokenError(f"client_id {client_id!r} not allowed")
+
+        if self._allowed_scopes:
+            token_scopes = set((claims.get("scope") or "").split())
+            if not (token_scopes & self._allowed_scopes):
+                raise jwt.InvalidTokenError("no allowed scope present in token")
+
+        return claims
+
+
+def jwt_dependency(verifier: InboundJwtVerifier) -> Any:
+    """Build a FastAPI dependency that verifies the inbound bearer token.
+
+    Usage in your generated AgentCore ``handler.py``::
+
+        from fastapi import Depends
+        from eap_core.integrations.agentcore import (
+            InboundJwtVerifier,
+            jwt_dependency,
+        )
+
+        verifier = InboundJwtVerifier(
+            discovery_url="https://your-idp/.well-known/openid-configuration",
+            allowed_audiences=["my-agent-audience"],
+        )
+
+        @app.post("/invocations", dependencies=[Depends(jwt_dependency(verifier))])
+        async def invocations(req: InvocationRequest): ...
+    """
+    try:
+        from fastapi import Header, HTTPException
+    except ImportError as e:
+        raise ImportError(
+            "jwt_dependency requires the [a2a] extra (FastAPI). "
+            "Install with: pip install eap-core[a2a]"
+        ) from e
+
+    async def _dep(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        if not authorization or not authorization.lower().startswith("bearer "):
+            raise HTTPException(status_code=401, detail="missing bearer token")
+        token = authorization.split(None, 1)[1].strip()
+        import jwt as _jwt
+
+        try:
+            return verifier.verify(token)
+        except _jwt.InvalidTokenError as e:
+            raise HTTPException(status_code=401, detail=str(e)) from e
+
+    return _dep
+
+
+__all__ = [  # noqa: RUF022 — grouped by phase, not alphabetically
+    # Phase A
     "OIDCTokenExchange",
     "configure_for_agentcore",
+    # Phase B — Memory
+    "AgentCoreMemoryStore",
+    # Phase B — Code Interpreter
+    "register_code_interpreter_tools",
+    # Phase B — Browser
+    "register_browser_tools",
+    # Phase B — Inbound JWT
+    "InboundJwtVerifier",
+    "jwt_dependency",
 ]

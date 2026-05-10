@@ -31,10 +31,11 @@ Observability, Cedar-based Policy, etc.). EAP-Core provides the
 | **Observability** (OTel → CloudWatch) | `ObservabilityMiddleware` already emits OTel GenAI spans; `configure_for_agentcore()` helper wires the OTLP exporter | **Phase A — shipped** |
 | **Identity** (workload IDs, OAuth in/out) | `OIDCTokenExchange.from_agentcore()` factory points at AgentCore Identity | **Phase A — shipped** |
 | **Policy** (Cedar at the Gateway tier) | Our `PolicyMiddleware` runs the same Cedar policy in-process. Defense in depth. | **Aligned** (no new code) |
-| **Memory** (short/long-term, cross-session) | `MemoryStore` Protocol + `[agentcore-memory]` extra | Phase B |
+| **Memory** (short/long-term, cross-session) | `MemoryStore` Protocol + `InMemoryStore` (default) + `AgentCoreMemoryStore` | **Phase B — shipped** |
 | **Gateway** (APIs/Lambdas → MCP) | `GatewayClient` for outbound; `eap publish-to-gateway` for inbound | Phase C |
-| **Code Interpreter** (Python/JS sandboxes) | `[agentcore-code-interpreter]` extra wraps as MCP tools | Phase B |
-| **Browser** (cloud browser) | `[agentcore-browser]` extra wraps as MCP tools | Phase B |
+| **Code Interpreter** (Python/JS sandboxes) | `register_code_interpreter_tools()` — three MCP tools | **Phase B — shipped** |
+| **Browser** (cloud browser) | `register_browser_tools()` — five MCP tools | **Phase B — shipped** |
+| **Inbound JWT verification** | `InboundJwtVerifier` + `jwt_dependency()` (FastAPI) | **Phase B — shipped** |
 | **Payments** (x402 microtransactions) | `PaymentMiddleware` intercepts 402 responses | Phase D |
 | **Evaluations** (trace-based eval) | Bidirectional adapters: export `Trajectory` → AgentCore Eval; consume AgentCore Eval results as a `Scorer` | Phase D |
 | **Registry** (org-wide tool/agent catalog) | `RegistryClient` to publish/pull `AgentCard` | Phase D |
@@ -152,25 +153,100 @@ process. **Use both** — same `configs/policy.json` (or `.cedar` file)
 enforced at two tiers. If the Gateway is bypassed (direct call,
 internal API), the agent still enforces the policy.
 
-## Phase B — planned (in-process AgentCore service adapters)
+## Phase B — what's shipped
 
-- **`[agentcore-memory]` extra** — `MemoryStore` Protocol with an
-  AgentCore-backed implementation. Plumbs through `Context` so
-  middleware can read/write conversation and long-term memory.
-  Compatible with the SDK's existing "BYO state" stance — Memory is
-  opt-in.
-- **`[agentcore-code-interpreter]` extra** — wraps the Code
-  Interpreter sandbox as `@mcp_tool` functions (`execute_python`,
-  `execute_javascript`, `execute_typescript`). Tool calls go through
-  the normal `client.invoke_tool` path so they're sanitized,
-  policy-gated, and recorded in the trajectory.
-- **`[agentcore-browser]` extra** — wraps the Browser tool API as
-  MCP tools. Exposes Playwright-equivalent primitives
-  (`navigate`, `click`, `fill`, `extract_text`, etc.).
-- **`InboundJwtMiddleware`** — verifies the caller JWT on incoming
-  requests to the agent. Pairs with AgentCore Identity's inbound JWT
-  authorizer for cases where the agent is invoked outside AgentCore
-  Runtime (e.g. behind another API gateway).
+Phase B is in. EAP-Core now exposes in-process abstractions for
+AgentCore Memory, Code Interpreter, Browser, and an inbound JWT
+verifier. Live AgentCore calls are gated behind
+`EAP_ENABLE_REAL_RUNTIMES=1` (same env-flag pattern as the Bedrock /
+Vertex runtime adapters); without the flag, every method raises a
+clear `NotImplementedError` with a "wire credentials" message.
+
+### Memory — `eap_core.memory` + `AgentCoreMemoryStore`
+
+```python
+from eap_core.memory import InMemoryStore, MemoryStore
+from eap_core.integrations.agentcore import AgentCoreMemoryStore
+from eap_core.types import Context
+
+# Dev / tests — process-local dict.
+ctx = Context(memory_store=InMemoryStore(), session_id="session-1")
+
+# Production — AgentCore Memory.
+ctx = Context(
+    memory_store=AgentCoreMemoryStore(memory_id="my-memory-id", region="us-east-1"),
+    session_id="session-1",
+)
+
+await ctx.memory_store.remember("session-1", "favorite_seat", "window")
+seat = await ctx.memory_store.recall("session-1", "favorite_seat")
+```
+
+The `MemoryStore` Protocol has five methods (`remember`, `recall`,
+`list_keys`, `forget`, `clear`). Both backends are
+`runtime_checkable` Protocol-conformant. `Context` now carries an
+optional `memory_store` field and `session_id` for per-session
+isolation.
+
+### Code Interpreter — `register_code_interpreter_tools()`
+
+```python
+from eap_core.integrations.agentcore import register_code_interpreter_tools
+from eap_core.mcp import default_registry
+
+register_code_interpreter_tools(default_registry(), region="us-east-1")
+
+# Now ``client.invoke_tool("execute_python", {"code": "..."})`` runs
+# through the full middleware chain (sanitize / PII / policy / OTel /
+# validate) before hitting the AgentCore Code Interpreter sandbox.
+```
+
+Registers three `@mcp_tool` functions: `execute_python`,
+`execute_javascript`, `execute_typescript`. Each returns
+`{"stdout": str, "stderr": str, "exit_code": int}`.
+
+### Browser — `register_browser_tools()`
+
+```python
+from eap_core.integrations.agentcore import register_browser_tools
+
+register_browser_tools(default_registry(), region="us-east-1")
+```
+
+Registers five tools: `browser_navigate`, `browser_click`,
+`browser_fill`, `browser_extract_text`, `browser_screenshot`. Every
+browser action runs through the same middleware chain as any other
+tool — policy rules can deny `browser_navigate` to specific
+hostnames, observability records every action.
+
+### Inbound JWT verification — `InboundJwtVerifier`
+
+```python
+from eap_core.integrations.agentcore import InboundJwtVerifier, jwt_dependency
+from fastapi import Depends
+
+verifier = InboundJwtVerifier(
+    discovery_url="https://your-idp.example/.well-known/openid-configuration",
+    allowed_audiences=["my-agent"],
+    allowed_scopes=["agent:invoke"],
+)
+
+@app.post("/invocations", dependencies=[Depends(jwt_dependency(verifier))])
+async def invocations(req: InvocationRequest): ...
+```
+
+`InboundJwtVerifier` fetches JWKS from the OIDC discovery URL,
+caches keys, and validates audience / scope / client claims against
+the configured allow-lists. The `jwt_dependency()` factory builds a
+FastAPI `Depends`-friendly callable that pulls the bearer token from
+the `Authorization` header.
+
+**When to use this:** outside AgentCore Runtime (your own infra,
+Lambda, Cloud Run) and you want the same auth model; or as defense
+in depth inside AgentCore Runtime (the configured inbound
+authorizer already verifies upstream, but a second check inside the
+agent makes audit replay simpler and protects against
+misconfiguration).
 
 ## Phase C — planned (Gateway integration)
 

@@ -42,10 +42,30 @@ class Chunk(BaseModel):
 
 @dataclass
 class Context:
-    """Per-request mutable container shared across middlewares."""
+    """Per-request mutable container shared across middlewares.
+
+    Fields:
+        vault: PII re-identification table; keys are ``<TYPE_xxxxxxxx>``
+            tokens, values are the original PII fragments. Scoped to
+            this request only.
+        metadata: Free-form scratch space shared across middlewares.
+            Convention: namespace keys (``gen_ai.*``, ``policy.*``,
+            ``tenant.*``, etc.).
+        span: Active OpenTelemetry span if observability middleware ran.
+        identity: ``NonHumanIdentity`` for this request.
+        request_id: UUID for tracing and correlation.
+        memory_store: Optional backend implementing the ``MemoryStore``
+            Protocol from ``eap_core.memory``. Tools and middleware
+            can read/write conversational or long-term agent memory
+            here when a backend is wired in.
+        session_id: Identifier for the session this request belongs to.
+            Memory operations use this to isolate per-session data.
+    """
 
     vault: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     span: Any = None
     identity: Any = None
     request_id: str = ""
+    memory_store: Any = None
+    session_id: str = ""
