@@ -299,15 +299,13 @@ Templates are Jinja2 files (`*.j2`). The renderer
   implementation, green test, commit. ~30 commits across the four
   phases.
 
----
+### Post-merge CI and quality fixes
 
-## [0.1.0-post-merge] — 2026-05-10 — CI and quality fixes
+Changes that surfaced when the post-merge CI ran for the first time
+(workspace dependency-groups + extras forwarders + mypy overrides).
+Same 0.1.0 release; corrections rolled into the tag.
 
-Changes after the initial 0.1.0 merge to `main` that surfaced when
-the post-merge CI ran for the first time. Same `0.1.0` version
-number — these are corrections to the released artifacts.
-
-### Fixed
+#### Fixed
 - **CI was failing because `uv sync --dev` was a no-op.** No
   `[dependency-groups.dev]` existed at the workspace root, so `uv run
   pytest`/`ruff`/`mypy` couldn't find their binaries. Added a
@@ -338,7 +336,7 @@ number — these are corrections to the released artifacts.
   the wrong path — `tests/**/*.py` never matched the actual test
   files at `packages/eap-core/tests/`. Fixed to `**/tests/**/*.py`.
 
-### Changed
+#### Changed
 - **CI workflow** updated to use `uv sync --all-packages --group dev
   [--extra <name>]` patterns. Dropped `pii` from the test-extras
   matrix (spaCy model issue); added `mcp`, `a2a`, `eval`.
@@ -353,15 +351,12 @@ number — these are corrections to the released artifacts.
 - **`ruff format`** applied across the tree (~70 files reformatted to
   match the configured style).
 
----
+### Documentation, examples, and `eap create-mcp-server`
 
-## [0.1.0-extras] — 2026-05-10 — README, examples, developer guide
+Final additions before the 0.1.0 tag — improve the user experience
+and close two real gaps without changing the public API surface.
 
-Continued additions on top of 0.1.0. Same version on disk — these
-are documentation and CLI-extension changes that improve the user
-experience without changing the public API surface.
-
-### Added
+#### Added
 - **`eap create-mcp-server <DIR>`** — new CLI command and template
   for scaffolding standalone MCP-stdio server projects (separate
   artifact from agent projects). 4 unit tests + 1 e2e test cover
@@ -395,8 +390,9 @@ experience without changing the public API surface.
   policy engines), an anti-patterns refuse list, the versioning and
   deprecation playbook, a codebase tour, the testing philosophy, and
   a future-proofing checklist.
+- **`CHANGELOG.md`** — this file.
 
-### Fixed
+#### Fixed
 - **mcp_server template's `server.py.j2`** had import order that ruff
   isort wanted reorganized. Updated the template so future scaffolds
   produce clean code without needing `--fix`.
@@ -404,7 +400,7 @@ experience without changing the public API surface.
   alphabetically sorted (grouped semantically by category instead);
   added `# noqa: RUF022` with rationale.
 
-### Changed
+#### Changed
 - **README's repository-layout section** now lists all three example
   projects and points at `docs/developer-guide.md` for contributors.
 
