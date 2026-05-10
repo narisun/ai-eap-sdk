@@ -38,7 +38,6 @@ def test_registry_raises_on_unknown_provider():
         reg.create(RuntimeConfig(provider="bogus", model="m"))
 
 
-@pytest.mark.skip(reason="enabled after Task 12 lands cloud adapters")
 async def test_registry_loads_default_entry_points():
     reg = AdapterRegistry.from_entry_points()
     assert "local" in reg.providers()
