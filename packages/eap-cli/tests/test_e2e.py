@@ -55,6 +55,42 @@ def test_scaffold_transactional_then_run_subprocess(tmp_path: Path, runner, monk
     assert "amount_cents" in out
 
 
+def test_scaffold_mcp_server_imports_and_builds(tmp_path: Path, runner, monkeypatch):
+    """The scaffolded MCP server imports cleanly and builds an mcp.Server.
+
+    Skipped without the [mcp] extra. This validates the template — the
+    full stdio loop is exercised in the [mcp] extras test.
+    """
+    pytest.importorskip("mcp")
+    target = tmp_path / "my-mcp"
+    res = runner.invoke(cli, ["create-mcp-server", str(target), "--name", "my-mcp"])
+    assert res.exit_code == 0, res.output
+
+    # Run a Python subprocess that imports the scaffolded server module and
+    # builds an MCP server from the registered tools. Anything more than that
+    # blocks on stdin.
+    smoke = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; sys.path.insert(0, '.');"
+                " from eap_core.mcp import default_registry;"
+                " from eap_core.mcp.server import build_mcp_server;"
+                " from tools import example_tool;"
+                " s = build_mcp_server(default_registry(), server_name='my-mcp');"
+                " print('tools=', len(default_registry().list_tools()))"
+            ),
+        ],
+        cwd=target,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert "tools= 1" in smoke.stdout
+
+
 def test_scaffold_research_then_eval_subprocess(tmp_path: Path, runner, monkeypatch):
     target = tmp_path / "research"
     runner.invoke(cli, ["init", str(target), "--name", "research", "--runtime", "local"])

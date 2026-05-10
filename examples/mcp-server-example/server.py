@@ -1,4 +1,4 @@
-"""{{ server_name }} — standalone MCP-stdio server.
+"""mcp-server-example — standalone MCP-stdio server.
 
 Run as a subprocess from any MCP-aware client (Claude Desktop,
 Claude Code, IDE extensions, or another EAP-Core agent):
@@ -21,7 +21,7 @@ from eap_core.mcp.server import run_stdio
 
 
 async def main() -> None:
-    await run_stdio(default_registry(), server_name="{{ server_name }}")
+    await run_stdio(default_registry(), server_name="mcp-server-example")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,49 @@
+# mcp-server-example
+
+A standalone **MCP server** scaffolded by EAP-Core. Exposes tools over
+stdio so any MCP-aware client (Claude Code, Claude Desktop, IDE
+extensions, other EAP-Core agents) can call them.
+
+## Run
+
+```bash
+python server.py
+```
+
+The server reads MCP messages from stdin and writes responses to
+stdout. Most users invoke it as a subprocess rather than running it
+directly.
+
+## Add a tool
+
+```bash
+eap create-tool --name lookup_account --mcp
+```
+
+This drops a typed stub into ``tools/<name>.py``. Edit the body to
+call your real backend. Inputs/outputs are validated against JSON
+Schema auto-generated from your type hints.
+
+For tools that require authentication:
+
+```bash
+eap create-tool --name transfer_funds --mcp --auth-required
+```
+
+This sets ``requires_auth=True`` on the spec; calling agents must hold
+a valid token (per the EAP-Core NHI / OIDC token-exchange flow).
+
+## Connect from Claude Code
+
+Add this server to your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "mcp-server-example": {
+      "command": "python",
+      "args": ["/absolute/path/to/mcp-server-example/server.py"]
+    }
+  }
+}
+```
