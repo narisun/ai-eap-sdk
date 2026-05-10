@@ -7,11 +7,16 @@ from eap_core.eval.faithfulness import (
     LLMJudge,
     Verdict,
 )
+from eap_core.eval.runner import CaseResult, EvalCase, EvalReport, EvalRunner
 from eap_core.eval.trajectory import Step, Trajectory, TrajectoryRecorder
 
 __all__ = [
+    "CaseResult",
     "ClaimResult",
     "DeterministicJudge",
+    "EvalCase",
+    "EvalReport",
+    "EvalRunner",
     "FaithfulnessResult",
     "FaithfulnessScorer",
     "Judge",
