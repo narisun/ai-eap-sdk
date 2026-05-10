@@ -8,6 +8,13 @@ import click
 
 from eap_cli.scaffolders.create_agent import create_agent
 from eap_cli.scaffolders.create_tool import create_tool
+from eap_cli.scaffolders.deploy import (
+    _real_deploy_enabled,
+    deploy_gcp,
+    package_aws,
+    package_gcp,
+    upload_aws,
+)
 from eap_cli.scaffolders.eval_cmd import run_eval
 from eap_cli.scaffolders.init import init_project
 
@@ -80,6 +87,44 @@ def eval_cmd(dataset: Path, agent_spec: str, report_fmt: str, threshold: float, 
                    f"(passed {report.passed_count}/{report.passed_count + report.failed_count})")
     if report.failed_count > 0:
         raise click.exceptions.Exit(1)
+
+
+@cli.command("deploy")
+@click.option("--runtime", type=click.Choice(["aws", "gcp"]), required=True)
+@click.option("--bucket", default=None, help="S3 bucket for AWS uploads.")
+@click.option("--service", default="eap-agent", help="Cloud Run service name.")
+@click.option("--dry-run", is_flag=True, help="Show plan, write nothing.")
+def deploy_cmd(runtime: str, bucket: str | None, service: str, dry_run: bool) -> None:
+    """Package the project for AWS or GCP deployment."""
+    project = Path.cwd()
+    if dry_run:
+        click.echo(f"[dry-run] would package {runtime} target for {project}")
+        return
+    if runtime == "aws":
+        zip_path = package_aws(project)
+        click.echo(f"Packaged: {zip_path}")
+        if bucket:
+            if _real_deploy_enabled():
+                where = upload_aws(zip_path, bucket)
+                click.echo(f"Uploaded: {where}")
+            else:
+                click.echo(
+                    f"Set EAP_ENABLE_REAL_DEPLOY=1 to upload. "
+                    f"Otherwise: aws s3 cp {zip_path} s3://{bucket}/"
+                )
+        else:
+            click.echo(f"Use: aws s3 cp {zip_path} s3://<bucket>/")
+    else:
+        target = package_gcp(project, service=service)
+        click.echo(f"Packaged: {target}")
+        if _real_deploy_enabled():
+            where = deploy_gcp(target, service)
+            click.echo(f"Deployed: {where}")
+        else:
+            click.echo(
+                f"Set EAP_ENABLE_REAL_DEPLOY=1 to deploy. "
+                f"Otherwise: gcloud run deploy {service} --source {target}"
+            )
 
 
 if __name__ == "__main__":
