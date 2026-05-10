@@ -1,0 +1,37 @@
+[project]
+name = "ai-eap-sdk-workspace"
+version = "0.0.0"
+description = "Workspace root for the EAP-Core SDK"
+requires-python = ">=3.11"
+
+[tool.uv.workspace]
+members = ["packages/eap-core"]
+
+[tool.uv.sources]
+eap-core = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["packages/eap-core/src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "S", "ASYNC", "RUF"]
+ignore = ["S101"]  # assert allowed in tests
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S", "B"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["packages/eap-core/src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["packages/eap-core/tests"]
+addopts = "--strict-markers -ra"
+markers = [
+    "cloud: tests that hit real cloud APIs (skipped without EAP_ENABLE_REAL_RUNTIMES=1)",
+    "extras: tests that require optional extras",
+]
