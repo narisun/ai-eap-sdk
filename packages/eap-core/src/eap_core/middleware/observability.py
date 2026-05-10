@@ -15,10 +15,11 @@ from eap_core.types import Context, Request, Response
 
 # `_otel_trace` is annotated as Any so the optional opentelemetry-api
 # integration works regardless of whether the SDK ships py.typed markers
-# or whether the package is installed at all.
+# or whether the package is installed at all. Use absolute submodule
+# import to avoid mypy attr-defined warnings on the namespace package.
 _otel_trace: Any
 try:
-    from opentelemetry import trace as _otel_trace_module
+    import opentelemetry.trace as _otel_trace_module  # type: ignore[import-not-found,unused-ignore]
 
     _otel_trace = _otel_trace_module
     _HAS_OTEL = True

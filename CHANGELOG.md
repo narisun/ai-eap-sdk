@@ -12,7 +12,40 @@ The same version applies to both workspace packages (`eap-core` and
 
 ## [Unreleased]
 
-Nothing yet. Open a PR.
+### Added — AWS Bedrock AgentCore integration (Phase A)
+- **`docs/integrations/aws-bedrock-agentcore.md`** — full integration
+  guide. Positioning ("EAP-Core inside AgentCore"), service-by-service
+  mapping table (11 AgentCore services × what we have / gap / approach),
+  Phase A specifics, and Phases B–D plan.
+- **`eap deploy --runtime agentcore`** — packages the project as an
+  ARM64 Docker container implementing the AgentCore HTTP protocol
+  contract (`POST /invocations`, `GET /ping`, port 8080). Generates
+  `Dockerfile`, `handler.py` (FastAPI wrapper around the user's entry
+  function), and a deploy `README.md`. Live build via
+  `EAP_ENABLE_REAL_DEPLOY=1`.
+- **`eap_core.integrations.agentcore`** module:
+  - `OIDCTokenExchange.from_agentcore(region=..., workload_identity_id=...)`
+    — factory that points the existing RFC 8693 client at AgentCore
+    Identity's regional token endpoint. Everything downstream
+    (`NonHumanIdentity` cache, per-tool token attachment) works
+    unchanged.
+  - `configure_for_agentcore(service_name=..., endpoint=..., headers=...)`
+    — sets up OTel SDK with OTLP exporter so traces flow into
+    AgentCore Observability (CloudWatch). Graceful no-op without the
+    `[otel]` extra.
+- **15 new tests** for the deploy packager (Dockerfile, handler
+  routes, custom entry, dry-run, live-deploy gating, ASGI
+  end-to-end smoke test) and the integration helpers (regional
+  endpoint, env-var overrides, RFC 8693 round-trip, OTel
+  configuration).
+
+### Changed — install instructions (no public PyPI)
+- README, `eap-core/README.md`, `eap-cli/README.md` updated. EAP-Core
+  is **not** published to public PyPI; install from this repo via
+  `uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.1.0#subdirectory=packages/eap-core"`
+  or the equivalent for an internal package index.
+- README adds explicit guidance on building wheels for a private
+  index (AWS CodeArtifact, Azure Artifacts, internal devpi).
 
 ---
 

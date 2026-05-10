@@ -147,11 +147,17 @@ unconfigured install**.
 
 ## Install
 
+EAP-Core is an internal SDK; it is **not published to public PyPI**.
+Install from source.
+
 You need Python 3.11 or newer. We use [`uv`](https://docs.astral.sh/uv/)
 for dependency management — the workspace and lockfile assume it.
 
+### Working from the repository
+
 ```bash
-# from the repo root
+git clone https://github.com/narisun/ai-eap-sdk.git
+cd ai-eap-sdk
 uv sync --all-packages --group dev
 ```
 
@@ -160,6 +166,30 @@ This installs:
 - `eap-core` — the SDK (importable as `eap_core`)
 - `eap-cli` — the `eap` CLI (entry point: `eap`)
 - dev tooling (pytest, ruff, mypy)
+
+### Adding to a downstream project
+
+In your project's `pyproject.toml`, depend on EAP-Core directly from
+the git repo (pin to a tag for stability):
+
+```toml
+[project]
+dependencies = [
+    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.1.0#subdirectory=packages/eap-core",
+]
+```
+
+Or via `uv add`:
+
+```bash
+uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.1.0#subdirectory=packages/eap-core"
+uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.1.0#subdirectory=packages/eap-cli"
+```
+
+If you operate a private package index (e.g. AWS CodeArtifact, Azure
+Artifacts, an internal devpi), upload built wheels there and depend on
+them by name. The build is `uv build` from each `packages/<name>/`
+directory.
 
 To enable an optional extra at install time:
 
