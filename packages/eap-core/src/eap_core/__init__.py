@@ -12,6 +12,15 @@ internals), import from the submodule directly::
     from eap_core.runtimes import BaseRuntimeAdapter, AdapterRegistry
 """
 
+import logging
+
+# Per the Python `logging` Cookbook, libraries should attach a NullHandler
+# to their top-level logger so that consumers who haven't configured
+# logging don't see records on `lastResort` (stderr). This runs before
+# subpackage imports so anything that logs at import time inherits it.
+# (E402 is silenced for this file in pyproject.toml.)
+logging.getLogger("eap_core").addHandler(logging.NullHandler())
+
 from eap_core._version import __version__
 
 # A2A AgentCard (for agent discoverability)

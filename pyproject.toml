@@ -57,6 +57,9 @@ ignore = [
     "E501",  # long lines OK in tests
     "E402",  # tests/extras/ uses `pytest.importorskip` then late-imports — standard pytest pattern
 ]
+"packages/eap-core/src/eap_core/__init__.py" = [
+    "E402",  # NullHandler must be attached before subpackage imports run
+]
 
 [tool.mypy]
 strict = true

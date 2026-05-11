@@ -79,6 +79,14 @@ def test_default_registry_not_in_eap_core_all():
     assert "default_registry" not in eap_core.__all__
 
 
+def test_default_registry_not_in_eap_core_mcp_all():
+    """C10 removed default_registry from eap_core.__all__ but it remained
+    in eap_core.mcp.__all__ — close that submodule path too."""
+    import eap_core.mcp
+
+    assert "default_registry" not in eap_core.mcp.__all__
+
+
 async def test_invoke_tool_that_raises_wraps_in_mcp_error(reg: McpToolRegistry):
     @mcp_tool()
     async def broken(x: int) -> int:
