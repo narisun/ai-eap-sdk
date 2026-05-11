@@ -16,6 +16,61 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.7.0] — 2026-05-11 — Cedar engine + coverage ratchet
+
+First minor release after the v0.6.x doc / packaging / test-quality
+patch series. Two substantive deliverables, both additive — no
+public API or wire-format breaking changes; v0.6.3 installs upgrade
+cleanly.
+
+### Added
+
+- **Real Cedar engine adapter (`CedarPolicyEvaluator`)** behind the
+  existing `[policy-cedar]` extra. Drops in as a one-line replacement
+  for `JsonPolicyEvaluator` for users who need Cedar's full DSL
+  (entity hierarchies, `when`/`unless` clauses with attribute access,
+  `like` / `in` operators). The JSON evaluator remains the default —
+  Cedar is opt-in via `pip install eap-core[policy-cedar]`.
+  Decision-parity tests lock five representative scenarios so cedarpy
+  bumps surface behavior drift.
+- **Cloud integration mocked-runtime tests.** ~15 new tests across
+  `integrations/agentcore.py` and `integrations/vertex.py` exercise
+  the `EAP_ENABLE_REAL_RUNTIMES=1` paths with patched boto3 / google
+  client constructors. Shared `tests/_cloud_mocks.py` fixtures
+  (`mock_boto3_client`, `mock_vertex_publisher`,
+  `real_runtimes_enabled`). H18/H19 *live*-runtime tests remain
+  deferred.
+
+### Fixed
+
+- **Coverage gate ratcheted back to 90%.** v0.6.2 temporarily lowered
+  `tool.coverage.report.fail_under` from 90% to 86% to align the gate
+  with measured reality while v0.6.x patches landed. v0.7.0 closes
+  the gap via the Cedar adapter + targeted gap-fill tests across
+  observability middleware, `_version.py` fallback paths, policy
+  evaluator edge cases, memory abstract raises, CLI scaffolder error
+  branches, and the cloud-mock tests above. Real coverage now
+  ≥92.30%.
+- **Coverage-related doc references updated.** `README.md` and
+  `docs/developer-guide.md` §9.2 / §10 advance from the v0.6.x
+  "temporary 86% gate" language to "gate 90%". Historical
+  references in CHANGELOG / plan docs intentionally untouched.
+
+### Internal
+
+- **`_version.py` refactor (eap-core + eap-cli).** Extracted
+  `_version_from_pyproject(path: Path)` so wheel-install fallback
+  paths are directly testable without monkeypatching `Path`. Public
+  surface unchanged.
+
+### Stats
+
+- 576 tests passing (up from 467 in v0.6.3).
+- Coverage: 92.30% against 90% floor.
+- Lint, format, strict mypy, coverage gate — all green.
+
+---
+
 ## [0.6.3] — 2026-05-11 — Patch release
 
 Patch closing the three Medium-severity findings + one Low from the
