@@ -50,12 +50,18 @@ async def test_invoke_gated_by_env_flag():
         await c.invoke("foo", {"x": 1})
 
 
-def test_bearer_header_empty_without_identity():
+@pytest.mark.asyncio
+async def test_bearer_header_empty_without_identity():
     c = VertexGatewayClient(gateway_url="https://gw.example.com/mcp")
-    assert c._bearer_header() == {}
+    assert await c._bearer_header() == {}
 
 
-def test_bearer_header_uses_identity():
+@pytest.mark.asyncio
+async def test_bearer_header_uses_identity():
+    # ``VertexAgentIdentityToken`` keeps a SYNC ``get_token`` (wraps
+    # google.auth, which is sync). The gateway's ``_bearer_header`` is
+    # async and detects sync-vs-async tokens via ``asyncio.iscoroutine``
+    # — so a sync identity like this one still flows through cleanly.
     class FakeIdentity:
         def get_token(self, *, audience: str | None = None, scope: str = "") -> str:
             return f"token-for-{audience}-{scope}"
@@ -65,8 +71,27 @@ def test_bearer_header_uses_identity():
         identity=FakeIdentity(),
         scope="ai.write",
     )
-    h = c._bearer_header()
+    h = await c._bearer_header()
     assert h == {"Authorization": "Bearer token-for-https://gw.example.com/mcp-ai.write"}
+
+
+@pytest.mark.asyncio
+async def test_bearer_header_supports_async_identity():
+    """H2: ``NonHumanIdentity.get_token`` is async. ``_bearer_header``
+    must await it; the awaitable-aware dispatch in ``_bearer_header``
+    handles both sync (Vertex) and async (NHI) identities."""
+
+    class AsyncIdentity:
+        async def get_token(self, *, audience: str | None = None, scope: str = "") -> str:
+            return f"async-token-{audience}-{scope}"
+
+    c = VertexGatewayClient(
+        gateway_url="https://gw.example.com/mcp",
+        identity=AsyncIdentity(),
+        scope="read",
+    )
+    h = await c._bearer_header()
+    assert h == {"Authorization": "Bearer async-token-https://gw.example.com/mcp-read"}
 
 
 def test_request_id_increments_per_call():

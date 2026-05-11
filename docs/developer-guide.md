@@ -813,10 +813,12 @@ trusts ``expires_at`` (minus a small buffer) for staleness decisions.
 
 **What to keep in mind:**
 
-- The cache in `NonHumanIdentity` is keyed on `(audience, scope)` and
-  uses a 5-second buffer before expiry to avoid race conditions.
-  Don't subclass to disable caching; instead pass `token_ttl=0` on
-  your IdP for tests.
+- The cache in `NonHumanIdentity` is keyed on `(audience, scope)`,
+  uses a 5-second buffer before expiry, and the cache-miss path is
+  serialized by an `asyncio.Lock` so N concurrent callers issue
+  exactly one IdP request (H2). `get_token` is therefore `async` —
+  every call site must `await` it. Don't subclass to disable caching;
+  instead pass `token_ttl=0` on your IdP for tests.
 - Roles are read from `principal.roles` by the policy middleware;
   populate them in your IdP's `issue` if your policy needs them.
 

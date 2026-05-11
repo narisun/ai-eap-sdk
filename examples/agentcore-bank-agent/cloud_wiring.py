@@ -104,7 +104,7 @@ def build_token_exchange() -> OIDCTokenExchange:
 
         nhi = build_identity()
         exchange = build_token_exchange()
-        assertion = nhi.get_token(audience="...", scope="...")
+        assertion = await nhi.get_token(audience="...", scope="...")
         bearer = await exchange.exchange(
             subject_token=assertion, audience="...", scope="..."
         )

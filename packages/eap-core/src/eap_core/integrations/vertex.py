@@ -498,10 +498,19 @@ class VertexGatewayClient:
         self._auth = auth
         self._next_request_id = 0
 
-    def _bearer_header(self) -> dict[str, str]:
+    async def _bearer_header(self) -> dict[str, str]:
+        """Return an Authorization header from the identity when configured.
+
+        Delegates the sync-vs-async ``get_token`` dispatch to
+        ``eap_core.identity.resolve_token`` so this client and the
+        AgentCore sibling share one awaitable-aware shim — no drift if
+        the identity Protocol evolves.
+        """
         if self._identity is None:
             return {}
-        token = self._identity.get_token(audience=self._audience, scope=self._scope)
+        from eap_core.identity import resolve_token
+
+        token = await resolve_token(self._identity, audience=self._audience, scope=self._scope)
         return {"Authorization": f"Bearer {token}"}
 
     def _next_id(self) -> int:
@@ -517,7 +526,7 @@ class VertexGatewayClient:
             "method": method,
             "params": params,
         }
-        headers = {"Content-Type": "application/json", **self._bearer_header()}
+        headers = {"Content-Type": "application/json", **(await self._bearer_header())}
         post_kwargs: dict[str, Any] = {"json": payload, "headers": headers}
         if self._auth is not None:
             post_kwargs["auth"] = self._auth

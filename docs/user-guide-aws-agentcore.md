@@ -170,7 +170,7 @@ and (when configured) use `OIDCTokenExchange.exchange(...)` to swap
 it. For your own code that needs a tool-callable Bearer:
 
 ```python
-assertion = nhi.get_token(audience="https://api.bank.example", scope="read")
+assertion = await nhi.get_token(audience="https://api.bank.example", scope="read")
 bearer = await exchange.exchange(
     subject_token=assertion,
     audience="https://api.bank.example",
@@ -532,8 +532,9 @@ nhi = NonHumanIdentity(
 )
 exchange = OIDCTokenExchange.from_agentcore(region="us-east-1")
 # Use `nhi` wherever an `identity=` is accepted; round-trip through
-# `exchange.exchange(subject_token=nhi.get_token(...), ...)` when
-# you need a downstream tool-callable Bearer.
+# `exchange.exchange(subject_token=await nhi.get_token(...), ...)`
+# when you need a downstream tool-callable Bearer (get_token is async
+# so it can serialize concurrent IdP calls behind an asyncio.Lock).
 ```
 
 **Production** — implement the `IdentityProvider` Protocol against
