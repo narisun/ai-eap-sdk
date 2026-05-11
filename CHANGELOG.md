@@ -16,6 +16,46 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.5.1] — 2026-05-11 — Patch release
+
+Closes the actionable findings from the v0.5.0 independent pre-prod
+review. No public API or wire-format changes; existing v0.5.0 installs
+are compatible. Patch release per SemVer.
+
+### Fixed
+
+- **H-N1** — `examples/transactional-agent/agent.py` and
+  `examples/vertex-bank-agent/agent.py` now wire an identity into
+  `EnterpriseLLM`, so the C5 dispatcher enforcement (introduced in
+  v0.5.0) no longer breaks them on first run. New CI smoke test in
+  `packages/eap-cli/tests/test_examples_smoke.py` parametrized over
+  every shipped example — catches this drift class on every PR.
+- **H-N2** — `InboundJwtVerifier.averify` is a new async sibling of
+  `verify`; uses `httpx.AsyncClient` internally. `jwt_dependency` now
+  calls `averify` so the FastAPI handler doesn't block its event loop
+  on JWKS fetch. Concurrent cache misses single-flight via an
+  `asyncio.Lock` on the verifier. Sync `verify` is preserved for
+  non-async callers — backwards compatible. Sync and async cache-
+  populated signals unified (both use `_jwks_fetched_at > 0`) so an
+  IdP that returns `{"keys": []}` no longer triggers infinite refetch
+  on either path. https / same-origin / advertised-issuer checks
+  extracted to a shared `_validate_discovery_meta` helper so future
+  hardening can't land in one path and miss the other.
+- **M-N5** — `jwt_dependency` HTTPException detail is now a fixed
+  string ("invalid token" or "missing bearer token"). Internal PyJWT
+  error text is logged at INFO via `logging.getLogger(__name__)` and
+  no longer reflected to the client. The `raise ... from None` blocks
+  `__cause__` leakage; `__suppress_context__` blocks default-traceback
+  `__context__` leakage. Closes the auth-oracle surface flagged in
+  the review.
+
+### Stats
+
+- 440 tests passing (up from 434 in v0.5.0 environment; +6 new).
+- Lint, format, strict mypy all green.
+
+---
+
 ## [0.5.0] — 2026-05-11 — Security hardening release
 
 Closes every Critical and security-flavored High finding from the v0.4.0
