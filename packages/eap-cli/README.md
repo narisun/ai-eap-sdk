@@ -14,7 +14,7 @@ right schema, eval golden-set ready to run) in one command.
 The canonical install snippets — pin convention, workspace sync, and
 downstream `uv add` flow — live in the top-level
 [`README.md` §Install](../../README.md#install). The version pin is
-`@v0.6.0`. `eap-cli` re-exports `eap-core`'s extras (so an
+`@v0.6.3`. `eap-cli` re-exports `eap-core`'s extras (so an
 `eap-cli[aws]` install pulls `boto3` for the AgentCore-aware
 `eap deploy --runtime agentcore` codepath).
 

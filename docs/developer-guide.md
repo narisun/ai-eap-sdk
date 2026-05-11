@@ -1452,7 +1452,8 @@ Before merging a non-trivial change, walk through this checklist.
 ### Tests
 
 - [ ] Did `pytest -m "not extras and not cloud"` stay green and
-      ≥90% coverage?
+      meet the coverage gate? (Currently `86%`; see §9.2 for the
+      v0.7.0 ratchet-back-to-90% plan.)
 - [ ] Did each `--extra` matrix entry stay green?
 - [ ] Did `ruff check && ruff format --check && mypy` stay clean?
 

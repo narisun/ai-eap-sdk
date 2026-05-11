@@ -70,8 +70,8 @@ For a downstream project, depend on EAP-Core directly:
 # pyproject.toml
 [project]
 dependencies = [
-    "eap-core[aws,otel,mcp] @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-core",
-    "eap-cli @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-cli",
+    "eap-core[aws,otel,mcp] @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.3#subdirectory=packages/eap-core",
+    "eap-cli @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.3#subdirectory=packages/eap-cli",
 ]
 ```
 

@@ -212,22 +212,24 @@ the git repo (pin to a tag for stability):
 ```toml
 [project]
 dependencies = [
-    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-core",
+    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.3#subdirectory=packages/eap-core",
 ]
 ```
 
 Or via `uv add`:
 
 ```bash
-uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-core"
-uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-cli"
+uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.3#subdirectory=packages/eap-core"
+uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.3#subdirectory=packages/eap-cli"
 ```
 
-> The install snippets pin `@v0.6.0` deliberately — patch releases
-> (v0.6.1, v0.6.2, ...) are docs / config-only and the code surface
-> is identical to v0.6.0. To get the latest patched docs without
-> changing your installed code, `git pull` your clone or bump to
-> the latest patch tag.
+> Pin to the latest patch tag in the v0.6 line (`@v0.6.3` as of this
+> writing). Patch releases on EAP-Core may carry packaging-shape
+> changes — for example, v0.6.2 added forwarded extras to `eap-cli`,
+> so `eap-cli[aws]` only resolves with `@v0.6.2` or newer. Bumping
+> to a later patch is a single-character edit and gets you the
+> latest fixes and CHANGELOG context. Minor (`v0.7.x`) and major
+> releases keep their own pins.
 
 If you operate a private package index (e.g. AWS CodeArtifact, Azure
 Artifacts, an internal devpi), upload built wheels there and depend on
@@ -656,7 +658,7 @@ ai-eap-sdk/
 └── pyproject.toml                           # uv workspace root
 ```
 
-**Status:** v0.6.1 (docs refreshed in v0.6.1, code surface v0.6.0) — review-debt clean; full integrations with AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine. All v0.4.0 Criticals + v0.5.0/v0.5.1 follow-ups closed.
+**Status:** v0.6.3 — review-debt clean; full integrations with AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine. All v0.4.0 Criticals + v0.5.0 / v0.5.1 / v0.6.x follow-ups closed.
 
 ---
 
