@@ -23,7 +23,7 @@ def test_build_card_reads_skills_from_registry():
     reg = McpToolRegistry()
 
     @mcp_tool(description="Look up an account.")
-    async def lookup_account(id: str) -> dict:
+    async def lookup_account(id: str) -> dict[str, str]:
         return {}
 
     @mcp_tool(description="Transfer funds.", requires_auth=True)

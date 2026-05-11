@@ -17,7 +17,7 @@ def test_request_required_fields():
 
 def test_request_rejects_unknown_role():
     with pytest.raises(ValidationError):
-        Message(role="bogus", content="x")
+        Message(role="bogus", content="x")  # type: ignore[arg-type]
 
 
 def test_response_carries_payload_and_usage():

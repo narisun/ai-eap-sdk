@@ -310,9 +310,9 @@ def register_code_interpreter_tools(
     async def execute_typescript(code: str) -> dict[str, Any]:
         return _execute("typescript", code)
 
-    registry.register(execute_python.spec)  # type: ignore[attr-defined]
-    registry.register(execute_javascript.spec)  # type: ignore[attr-defined]
-    registry.register(execute_typescript.spec)  # type: ignore[attr-defined]
+    registry.register(execute_python.spec)
+    registry.register(execute_javascript.spec)
+    registry.register(execute_typescript.spec)
 
 
 # ---- Browser ---------------------------------------------------------------
@@ -378,11 +378,11 @@ def register_browser_tools(
     async def browser_screenshot() -> dict[str, Any]:
         return _browser_call("screenshot")
 
-    registry.register(browser_navigate.spec)  # type: ignore[attr-defined]
-    registry.register(browser_click.spec)  # type: ignore[attr-defined]
-    registry.register(browser_fill.spec)  # type: ignore[attr-defined]
-    registry.register(browser_extract_text.spec)  # type: ignore[attr-defined]
-    registry.register(browser_screenshot.spec)  # type: ignore[attr-defined]
+    registry.register(browser_navigate.spec)
+    registry.register(browser_click.spec)
+    registry.register(browser_fill.spec)
+    registry.register(browser_extract_text.spec)
+    registry.register(browser_screenshot.spec)
 
 
 # ---- Inbound JWT verification ---------------------------------------------

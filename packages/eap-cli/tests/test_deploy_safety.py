@@ -250,7 +250,7 @@ def test_generated_handlers_are_ruff_f401_clean(tmp_path: Path) -> None:
     if ruff is None:
         pytest.skip("ruff binary not on PATH")
 
-    auth_modes: list[dict | None] = [
+    auth_modes: list[dict[str, object] | None] = [
         None,  # --allow-unauthenticated
         {
             "discovery_url": "https://idp/.well-known/openid-configuration",

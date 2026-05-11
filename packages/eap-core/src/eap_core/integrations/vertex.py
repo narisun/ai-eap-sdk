@@ -353,9 +353,9 @@ def register_code_sandbox_tools(
         r = await sandbox.execute("typescript", code)
         return {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.exit_code}
 
-    registry.register(execute_python.spec)  # type: ignore[attr-defined]
-    registry.register(execute_javascript.spec)  # type: ignore[attr-defined]
-    registry.register(execute_typescript.spec)  # type: ignore[attr-defined]
+    registry.register(execute_python.spec)
+    registry.register(execute_javascript.spec)
+    registry.register(execute_typescript.spec)
 
 
 # ---- Browser Sandbox -------------------------------------------------------
@@ -469,11 +469,11 @@ def register_browser_sandbox_tools(
 
         return {"png_base64": base64.b64encode(png).decode("ascii") if png else ""}
 
-    registry.register(browser_navigate.spec)  # type: ignore[attr-defined]
-    registry.register(browser_click.spec)  # type: ignore[attr-defined]
-    registry.register(browser_fill.spec)  # type: ignore[attr-defined]
-    registry.register(browser_extract_text.spec)  # type: ignore[attr-defined]
-    registry.register(browser_screenshot.spec)  # type: ignore[attr-defined]
+    registry.register(browser_navigate.spec)
+    registry.register(browser_click.spec)
+    registry.register(browser_fill.spec)
+    registry.register(browser_extract_text.spec)
+    registry.register(browser_screenshot.spec)
 
 
 # ---------------------------------------------------------------------------

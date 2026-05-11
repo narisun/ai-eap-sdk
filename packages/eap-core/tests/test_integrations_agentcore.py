@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 import pytest
 
@@ -51,7 +53,7 @@ class _MockTransport(httpx.AsyncBaseTransport):
 
 async def test_from_agentcore_token_exchange_works_against_mock():
     """Sanity check: the AgentCore-flavored client still does RFC 8693 exchange."""
-    captured: dict = {}
+    captured: dict[str, Any] = {}
 
     def handler(req: httpx.Request) -> httpx.Response:
         captured["url"] = str(req.url)

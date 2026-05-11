@@ -98,7 +98,7 @@ class _FakeBotoClient:
 
     exceptions = _FakeBotoExceptions()
 
-    def __init__(self, *, raises: BaseException | None, response: dict | None = None):
+    def __init__(self, *, raises: BaseException | None, response: dict[str, object] | None = None):
         self._raises = raises
         self._response = response or {}
 
@@ -243,7 +243,7 @@ def _make_test_keypair_and_jwks() -> tuple[str, str, dict[str, Any]]:
         format=serialization.PrivateFormat.TraditionalOpenSSL,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode()
-    pub_jwk_json = RSAAlgorithm.to_jwk(key.public_key())  # type: ignore[no-untyped-call]
+    pub_jwk_json = RSAAlgorithm.to_jwk(key.public_key())
     import json
 
     pub_jwk = json.loads(pub_jwk_json)

@@ -34,17 +34,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [otel, mcp, a2a, policy-cedar, eval]
+        extra: [otel, mcp, a2a, policy-cedar, eval, pii]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
       - run: uv sync --all-packages --group dev --extra ${{ matrix.extra }}
-      - run: uv run pytest packages/eap-core/tests/extras -v -m extras
-
-  # Note: the [pii] extras test is intentionally not in CI yet — it requires
-  # the spaCy `en_core_web_lg` model (~600MB) which can't be auto-downloaded
-  # inside a uv-managed venv (no `pip` on PATH). Run locally with:
-  #   uv pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
-  #   uv run pytest packages/eap-core/tests/extras/test_pii_presidio.py
+      # The [pii] extra needs a spaCy language model (~600MB) before Presidio
+      # can run. The model isn't on PyPI as a normal dependency; we install
+      # it via `spacy download` into the uv-managed venv.
+      - name: Download spaCy model for [pii]
+        if: matrix.extra == 'pii'
+        run: uv run python -m spacy download en_core_web_sm
+      - name: Run [pii] tests
+        if: matrix.extra == 'pii'
+        run: uv run pytest packages/eap-core/tests/extras/test_pii_presidio.py -v
+      - name: Run extras tests
+        if: matrix.extra != 'pii'
+        run: uv run pytest packages/eap-core/tests/extras -v -m extras

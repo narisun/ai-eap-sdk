@@ -64,7 +64,12 @@ ignore = [
 [tool.mypy]
 strict = true
 python_version = "3.11"
-files = ["packages/eap-core/src", "packages/eap-cli/src"]
+files = [
+    "packages/eap-core/src",
+    "packages/eap-cli/src",
+    "packages/eap-core/tests",
+    "packages/eap-cli/tests",
+]
 
 # Third-party libraries that don't ship `py.typed` markers or whose type
 # stubs aren't available — silence mypy's import-untyped errors at import
@@ -97,6 +102,41 @@ module = [
     "opentelemetry.*",
 ]
 ignore_missing_imports = true
+
+# Tests use pytest fixture idioms (untyped fixture params, monkeypatch
+# callbacks, etc.) that don't compose well with full strict mode. We still
+# type-check tests for obvious drift, but relax the no-untyped-def family
+# and a few pytest-shaped error codes.
+#
+# Module patterns:
+# - `tests.*` matches eap-core tests (they form a package via tests/__init__.py)
+# - The bare module names match eap-cli tests, which mypy sees as top-level
+#   modules (no tests/__init__.py); the basename becomes the module name.
+#   mypy rejects `test_*` (partial-component glob); we enumerate instead.
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+    "conftest",
+    "test_create_agent",
+    "test_create_mcp_server",
+    "test_create_tool",
+    "test_deploy",
+    "test_deploy_agentcore",
+    "test_deploy_safety",
+    "test_deploy_vertex",
+    "test_e2e",
+    "test_eval_cmd",
+    "test_examples_smoke",
+    "test_init",
+    "test_main",
+    "test_publish_gateway",
+    "test_render",
+]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+warn_return_any = false
+disallow_untyped_decorators = false
+disallow_untyped_calls = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

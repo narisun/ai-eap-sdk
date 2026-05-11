@@ -4,11 +4,25 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from typing import Any, get_type_hints
+from typing import Any, Protocol, get_type_hints
 
 from pydantic import TypeAdapter
 
 from eap_core.mcp.types import ToolSpec
+
+
+class _SpecCarrier(Protocol):
+    """Structural protocol for functions decorated by `@mcp_tool`.
+
+    The decorator attaches a `.spec` attribute to the wrapped callable so
+    downstream code (registry, tests, server) can read tool metadata
+    without a separate lookup. Typing the decorator's return as this
+    protocol lets mypy see the `.spec` attribute on consumers.
+    """
+
+    spec: ToolSpec
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
 def _schema_for_param(annotation: Any) -> dict[str, Any]:
@@ -49,8 +63,8 @@ def mcp_tool(
     name: str | None = None,
     description: str | None = None,
     requires_auth: bool = False,
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    def wrap(fn: Callable[..., Any]) -> Callable[..., Any]:
+) -> Callable[[Callable[..., Any]], _SpecCarrier]:
+    def wrap(fn: Callable[..., Any]) -> _SpecCarrier:
         spec = ToolSpec(
             name=name or fn.__name__,
             description=description or (inspect.getdoc(fn) or "").strip(),
@@ -61,6 +75,6 @@ def mcp_tool(
             is_async=inspect.iscoroutinefunction(fn),
         )
         fn.spec = spec  # type: ignore[attr-defined]
-        return fn
+        return fn  # type: ignore[return-value]
 
     return wrap

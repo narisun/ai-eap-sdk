@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from eap_core.exceptions import RealRuntimeDisabledError
@@ -112,12 +114,12 @@ async def test_rpc_with_stub_http_returns_result(monkeypatch):
         status_code = 200
 
         @staticmethod
-        def json() -> dict:
+        def json() -> dict[str, object]:
             return {"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "t"}]}}
 
         text = ""
 
-    captured: dict = {}
+    captured: dict[str, Any] = {}
 
     class FakeAsyncClient:
         async def post(self, url: str, **kwargs):
@@ -145,7 +147,7 @@ async def test_rpc_propagates_error_body(monkeypatch):
         status_code = 200
 
         @staticmethod
-        def json() -> dict:
+        def json() -> dict[str, object]:
             return {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -175,7 +177,7 @@ async def test_rpc_propagates_http_status(monkeypatch):
         text = "service unavailable"
 
         @staticmethod
-        def json() -> dict:
+        def json() -> dict[str, object]:
             return {}
 
     class FakeAsyncClient:
@@ -215,7 +217,7 @@ async def test_aclose_closes_owned_http_only():
 
     # Self-constructed: owned; aclose closes.
     c2 = VertexGatewayClient(gateway_url="https://gw.example.com/mcp")
-    c2._http = FakeAsyncClient()  # type: ignore[assignment]
+    c2._http = FakeAsyncClient()
     c2._owns_http = True
     await c2.aclose()
     assert closed["v"] is True

@@ -79,8 +79,8 @@ async def test_synthesize_handles_all_field_types():
         score: int
         weight: float
         active: bool
-        tags: list
-        props: dict
+        tags: list[str]
+        props: dict[str, str]
         other: str | None = None
 
     obj = _synthesize_default(Schema)
@@ -99,7 +99,7 @@ async def test_synthesize_handles_default_factory():
     from eap_core.runtimes.local import _synthesize_default
 
     class Schema(BaseModel):
-        items: list = Field(default_factory=list)
+        items: list[str] = Field(default_factory=list)
 
     obj = _synthesize_default(Schema)
     assert obj["items"] == []

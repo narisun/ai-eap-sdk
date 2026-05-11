@@ -283,7 +283,7 @@ def _make_test_keypair_and_jwks() -> tuple[str, str, dict[str, Any]]:
     ).decode()
     import json
 
-    pub_jwk = json.loads(RSAAlgorithm.to_jwk(key.public_key()))  # type: ignore[no-untyped-call]
+    pub_jwk = json.loads(RSAAlgorithm.to_jwk(key.public_key()))
     pub_jwk["kid"] = "test-key-1"
     return pem, "test-key-1", {"keys": [pub_jwk]}
 

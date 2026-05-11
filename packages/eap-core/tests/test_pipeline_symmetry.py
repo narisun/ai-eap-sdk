@@ -42,7 +42,7 @@ async def test_run_stream_calls_on_error_when_on_request_raises() -> None:
 
     async def terminal(r: Request, c: Context):
         async def gen():
-            yield "never"  # type: ignore[misc]
+            yield "never"
 
         async for x in gen():  # pragma: no cover — never reached
             yield x

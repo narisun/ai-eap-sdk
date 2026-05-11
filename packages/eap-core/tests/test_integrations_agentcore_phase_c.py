@@ -217,7 +217,8 @@ async def test_add_gateway_to_registry_registers_proxy_specs():
         {"name": "lookup_account", "description": "Look up an account.", "inputSchema": {}},
         {"name": "get_balance", "description": "Get a balance.", "inputSchema": {}},
     ]
-    count = add_gateway_to_registry(reg, gw, specs)
+    # `_StubGateway` is duck-typed to `GatewayClient` (only `invoke` is used).
+    count = add_gateway_to_registry(reg, gw, specs)  # type: ignore[arg-type]
     assert count == 2
     assert {s.name for s in reg.list_tools()} == {"lookup_account", "get_balance"}
 
@@ -241,7 +242,7 @@ def test_add_gateway_to_registry_skips_unnamed_specs():
         {"name": "good", "description": "ok", "inputSchema": {}},
         {"description": "no name", "inputSchema": {}},  # missing name
     ]
-    count = add_gateway_to_registry(reg, _StubGateway(), specs)
+    count = add_gateway_to_registry(reg, _StubGateway(), specs)  # type: ignore[arg-type]
     assert count == 1
 
 
@@ -254,7 +255,9 @@ def test_add_gateway_to_registry_marks_proxies_as_auth_required():
             return None
 
     add_gateway_to_registry(
-        reg, _StubGateway(), [{"name": "x", "description": "", "inputSchema": {}}]
+        reg,
+        _StubGateway(),  # type: ignore[arg-type]
+        [{"name": "x", "description": "", "inputSchema": {}}],
     )
     spec = reg.get("x")
     assert spec is not None
@@ -273,7 +276,7 @@ def test_add_gateway_to_registry_handles_input_schema_aliases():
     schema_b = {"type": "object", "properties": {"b": {"type": "integer"}}}
     add_gateway_to_registry(
         reg,
-        _StubGateway(),
+        _StubGateway(),  # type: ignore[arg-type]
         [
             {"name": "via_camel", "description": "", "inputSchema": schema_a},
             {"name": "via_snake", "description": "", "input_schema": schema_b},
