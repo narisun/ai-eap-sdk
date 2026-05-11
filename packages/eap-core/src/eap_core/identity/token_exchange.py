@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Self
+
 import httpx
 
 from eap_core.exceptions import IdentityError
@@ -13,7 +15,11 @@ SUBJECT_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:jwt"  # noqa: S105
 class OIDCTokenExchange:
     def __init__(self, token_endpoint: str, http: httpx.AsyncClient | None = None) -> None:
         self._endpoint = token_endpoint
+        # Track http-client ownership: if the caller passed in their own
+        # ``http``, we treat that pool as borrowed and refuse to close it
+        # on their behalf. ``aclose`` only closes pools we created.
         self._http = http or httpx.AsyncClient()
+        self._owns_http = http is None
 
     async def exchange(self, *, subject_token: str, audience: str, scope: str) -> str:
         body = {
@@ -40,4 +46,11 @@ class OIDCTokenExchange:
         return data["access_token"]
 
     async def aclose(self) -> None:
-        await self._http.aclose()
+        if self._owns_http:
+            await self._http.aclose()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.aclose()

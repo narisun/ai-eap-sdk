@@ -543,8 +543,11 @@ issued workload identity assertion):
 ```python
 class KMSIdentityProvider:
     def issue(self, *, client_id, audience, scope, roles=None):
-        # call KMS to sign a JWT and return it
-        return signed_jwt_string
+        # Call KMS to sign a JWT; you must also know its absolute expiry.
+        # The second tuple element is the wall-clock second the token
+        # expires (``time.time()`` domain) — NonHumanIdentity uses it to
+        # decide when the cached entry is stale.
+        return signed_jwt_string, expires_at
 ```
 
 Then point the NHI at it. The cache (5-second buffer before expiry)

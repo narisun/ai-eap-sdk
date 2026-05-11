@@ -795,11 +795,21 @@ class IdentityProvider(Protocol):
         audience: str,
         scope: str,
         roles: list[str] | None = None,
-    ) -> str: ...
+    ) -> tuple[str, float]:
+        """Return (token, expires_at_wall_time).
+
+        ``expires_at_wall_time`` is the unix-epoch second the token expires
+        (``time.time()`` clock domain). ``NonHumanIdentity`` uses this to
+        manage its cache TTL accurately without probing private attributes
+        on the provider.
+        """
+        ...
 ```
 
-Anything that returns a string token is acceptable. The downstream
-consumer (the tool dispatcher) just attaches it as a Bearer header.
+Return the signed token together with its absolute expiry. The downstream
+consumer (the tool dispatcher) just attaches the token as a Bearer
+header; ``NonHumanIdentity`` keys its cache on ``(audience, scope)`` and
+trusts ``expires_at`` (minus a small buffer) for staleness decisions.
 
 **What to keep in mind:**
 

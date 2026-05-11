@@ -165,7 +165,13 @@ async def test_rpc_propagates_http_status(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_aclose_closes_underlying_http():
+async def test_aclose_closes_owned_http_only():
+    """``aclose`` closes the pool only when ``VertexGatewayClient`` created it.
+
+    A caller-supplied ``http=`` is treated as borrowed — closing it on the
+    caller's behalf would break their app if they still use that pool
+    elsewhere. See Task 8 (H1) httpx-ownership tracking.
+    """
     closed = {"v": False}
 
     class FakeAsyncClient:
@@ -175,6 +181,15 @@ async def test_aclose_closes_underlying_http():
         async def aclose(self) -> None:
             closed["v"] = True
 
-    c = VertexGatewayClient(gateway_url="https://gw.example.com/mcp", http=FakeAsyncClient())
+    # Caller-supplied: borrowed; aclose must NOT close.
+    borrowed = FakeAsyncClient()
+    c = VertexGatewayClient(gateway_url="https://gw.example.com/mcp", http=borrowed)
     await c.aclose()
+    assert closed["v"] is False, "borrowed http client must not be closed by aclose"
+
+    # Self-constructed: owned; aclose closes.
+    c2 = VertexGatewayClient(gateway_url="https://gw.example.com/mcp")
+    c2._http = FakeAsyncClient()  # type: ignore[assignment]
+    c2._owns_http = True
+    await c2.aclose()
     assert closed["v"] is True

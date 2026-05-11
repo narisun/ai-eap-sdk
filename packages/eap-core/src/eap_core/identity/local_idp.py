@@ -41,19 +41,30 @@ class LocalIdPStub:
         audience: str,
         scope: str,
         roles: list[str] | None = None,
-    ) -> str:
-        now = int(time.time())
+    ) -> tuple[str, float]:
+        """Issue a fresh JWT and return ``(token, expires_at_wall_time)``.
+
+        ``expires_at`` is wall-clock seconds (``time.time()``) so callers can
+        compare it directly to the JWT's ``exp`` claim. Previously the stub
+        returned only the token and ``NonHumanIdentity`` had to read a
+        private ``_ttl`` attribute (layering violation, plus broken for any
+        IdP that didn't expose ``_ttl``). The Protocol now surfaces expiry
+        explicitly — see ``IdentityProvider`` in ``nhi.py``.
+        """
+        now = time.time()
+        exp = now + max(self._ttl, 1)
         payload: dict[str, Any] = {
             "iss": "local-idp",
             "sub": client_id,
             "aud": audience,
             "scope": scope,
             "roles": roles or [],
-            "iat": now,
-            "exp": now + max(self._ttl, 1),
+            "iat": int(now),
+            "exp": int(exp),
             "jti": secrets.token_hex(8),  # unique per call; ensures distinct JWTs
         }
-        return jwt.encode(payload, self._secret, algorithm="HS256")
+        token = jwt.encode(payload, self._secret, algorithm="HS256")
+        return token, exp
 
     def verify(self, token: str, *, expected_audience: str) -> dict[str, Any]:
         """Verify a JWT and return its claims.

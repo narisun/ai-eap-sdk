@@ -52,6 +52,8 @@ class EnterpriseLLM:
         identity: NonHumanIdentity | None = None,
         registry: AdapterRegistry | None = None,
         tool_registry: McpToolRegistry | None = None,
+        token_exchange: Any | None = None,
+        owned: list[Any] | None = None,
     ) -> None:
         self._config = runtime_config
         self._registry = registry or AdapterRegistry.from_entry_points()
@@ -59,6 +61,18 @@ class EnterpriseLLM:
         self._pipeline = MiddlewarePipeline(middlewares or [])
         self._identity = identity
         self._tool_registry = tool_registry
+        # IdP-side components (token exchange, gateway clients, …) often
+        # own their own httpx pool. ``aclose`` walks this list so users
+        # don't have to remember to close each piece they wired in. Pass
+        # ``owned=[...]`` for arbitrary extras; ``token_exchange`` is a
+        # convenience kwarg that simply appends to ``_owned_components``.
+        # We deliberately do NOT keep a ``self._token_exchange`` attribute:
+        # exposing one creates a false API surface (nothing else on the
+        # client reads it). Callers that need to reach the exchange after
+        # construction should retain their own reference.
+        self._owned_components: list[Any] = list(owned or [])
+        if token_exchange is not None:
+            self._owned_components.append(token_exchange)
 
     @property
     def sync(self) -> SyncProxy:
@@ -191,3 +205,7 @@ class EnterpriseLLM:
 
     async def aclose(self) -> None:
         await self._adapter.aclose()
+        for component in self._owned_components:
+            close = getattr(component, "aclose", None)
+            if close is not None:
+                await close()

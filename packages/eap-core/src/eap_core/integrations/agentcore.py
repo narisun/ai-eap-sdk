@@ -664,7 +664,10 @@ class GatewayClient:
         self._identity = identity
         self._audience = audience or gateway_url
         self._scope = scope
+        # Track http-client ownership: callers that supply their own pool
+        # keep ownership; we only close pools we created in ``aclose``.
         self._http = http or httpx.AsyncClient(timeout=timeout_seconds)
+        self._owns_http = http is None
         self._auth = auth
         self._next_request_id = 0
 
@@ -741,7 +744,14 @@ class GatewayClient:
         return content  # pragma: no cover
 
     async def aclose(self) -> None:
-        await self._http.aclose()
+        if self._owns_http:
+            await self._http.aclose()
+
+    async def __aenter__(self) -> GatewayClient:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.aclose()
 
 
 def add_gateway_to_registry(
