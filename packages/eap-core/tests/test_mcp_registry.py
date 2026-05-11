@@ -1,3 +1,5 @@
+import warnings
+
 import pytest
 
 from eap_core.mcp.decorator import mcp_tool
@@ -57,9 +59,24 @@ async def test_invoke_supports_sync_function(reg: McpToolRegistry):
 
 
 def test_default_registry_is_singleton():
-    a = default_registry()
-    b = default_registry()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        a = default_registry()
+        b = default_registry()
     assert a is b
+
+
+def test_default_registry_emits_deprecation_warning():
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        default_registry()
+        assert any(issubclass(rec.category, DeprecationWarning) for rec in w)
+
+
+def test_default_registry_not_in_eap_core_all():
+    import eap_core
+
+    assert "default_registry" not in eap_core.__all__
 
 
 async def test_invoke_tool_that_raises_wraps_in_mcp_error(reg: McpToolRegistry):

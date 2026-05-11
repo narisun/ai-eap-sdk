@@ -7,7 +7,7 @@ acquires one via the configured identity before the function fires.
 
 from __future__ import annotations
 
-from eap_core.mcp import default_registry, mcp_tool
+from eap_core.mcp import mcp_tool
 
 _LEDGER: dict[str, dict] = {}
 
@@ -30,6 +30,3 @@ async def transfer_funds(
     }
     _LEDGER[idempotency_key] = result
     return result
-
-
-default_registry().register(transfer_funds.spec)

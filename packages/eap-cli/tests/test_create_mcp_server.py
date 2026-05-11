@@ -27,7 +27,12 @@ def test_create_mcp_server_writes_runnable_skeleton(tmp_path: Path):
     server_text = (target / "server.py").read_text()
     assert "my-mcp" in server_text
     assert "run_stdio" in server_text
-    assert "default_registry" in server_text
+    # The scaffolded server now constructs an explicit ``McpToolRegistry``
+    # instead of leaning on the deprecated ``default_registry()`` singleton.
+    assert "McpToolRegistry" in server_text
+    # No *call* to the deprecated singleton remains (a comment referencing
+    # the migration history is fine).
+    assert "default_registry()" not in server_text
 
     # pyproject must depend on the [mcp] extra
     py_text = (target / "pyproject.toml").read_text()

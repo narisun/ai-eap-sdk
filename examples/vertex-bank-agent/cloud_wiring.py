@@ -33,7 +33,7 @@ from eap_core.integrations.vertex import (
     register_browser_sandbox_tools,
     register_code_sandbox_tools,
 )
-from eap_core.mcp import McpToolRegistry, default_registry
+from eap_core.mcp import McpToolRegistry
 from eap_core.payments import PaymentBackend
 
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "my-gcp-project")
@@ -236,7 +236,7 @@ def _main() -> None:
     print(f"  payments      : {type(build_payments()).__name__}")
     scorer = build_eval_scorer()
     print(f"  eval scorer   : {type(scorer).__name__ if scorer else '(none — local scorers only)'}")
-    cloud_tools = register_cloud_tools(default_registry())
+    cloud_tools = register_cloud_tools(McpToolRegistry())
     print(f"  cloud tools   : {cloud_tools or '(none — would register 8 in live mode)'}")
 
 

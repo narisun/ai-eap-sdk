@@ -11,15 +11,22 @@ import json
 import uuid
 from pathlib import Path
 
-from tools import get_account, transfer_funds  # noqa: F401  # registers tools
+from tools.get_account import get_account
+from tools.transfer_funds import transfer_funds
 
 from eap_core import EnterpriseLLM, RuntimeConfig
-from eap_core.mcp import default_registry
+from eap_core.mcp import McpToolRegistry
 from eap_core.middleware.observability import ObservabilityMiddleware
 from eap_core.middleware.pii import PiiMaskingMiddleware
 from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
 from eap_core.middleware.sanitize import PromptInjectionMiddleware
 from eap_core.middleware.validate import OutputValidationMiddleware
+
+# Explicit per-process tool registry — replaces the deprecated
+# ``default_registry()`` singleton.
+REGISTRY = McpToolRegistry()
+REGISTRY.register(get_account.spec)
+REGISTRY.register(transfer_funds.spec)
 
 
 def _load_policy() -> dict:
@@ -36,7 +43,7 @@ def build_client() -> EnterpriseLLM:
             PolicyMiddleware(JsonPolicyEvaluator(_load_policy())),
             OutputValidationMiddleware(),
         ],
-        tool_registry=default_registry(),
+        tool_registry=REGISTRY,
     )
 
 

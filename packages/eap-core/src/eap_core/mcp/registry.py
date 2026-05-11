@@ -70,7 +70,21 @@ _DEFAULT: McpToolRegistry | None = None
 
 
 def default_registry() -> McpToolRegistry:
-    """Module-level singleton the @mcp_tool decorator can auto-register into."""
+    """Process-wide singleton — DEPRECATED.
+
+    Module-level state is unsafe under concurrent multi-tenant agents
+    (developer-guide §6.7). Construct an ``McpToolRegistry()`` explicitly
+    and pass to ``EnterpriseLLM(tool_registry=...)``.
+    """
+    import warnings
+
+    warnings.warn(
+        "default_registry() is deprecated and will be removed in v0.6.0. "
+        "Construct an McpToolRegistry() explicitly and pass it to "
+        "EnterpriseLLM(tool_registry=...).",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
     global _DEFAULT
     if _DEFAULT is None:
         _DEFAULT = McpToolRegistry()

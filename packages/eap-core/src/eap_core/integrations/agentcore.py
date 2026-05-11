@@ -764,9 +764,10 @@ def add_gateway_to_registry(
     Note: ``tool_specs`` is passed in (rather than fetched here) so this
     helper stays sync-friendly. Typical usage::
 
+        registry = McpToolRegistry()
         gw = GatewayClient(gateway_url=..., identity=nhi)
         specs = await gw.list_tools()
-        add_gateway_to_registry(default_registry(), gw, specs)
+        add_gateway_to_registry(registry, gw, specs)
     """
     from eap_core.mcp.types import ToolSpec
 

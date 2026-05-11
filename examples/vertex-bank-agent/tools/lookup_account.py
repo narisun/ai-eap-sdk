@@ -6,7 +6,7 @@ tool would call your bank's account-service via the Gateway.
 
 from __future__ import annotations
 
-from eap_core.mcp import default_registry, mcp_tool
+from eap_core.mcp import mcp_tool
 
 _ACCOUNTS: dict[str, dict] = {
     "acct-1": {"id": "acct-1", "balance_cents": 50000, "owner": "alice"},
@@ -20,6 +20,3 @@ async def lookup_account(account_id: str) -> dict:
         account_id,
         {"id": account_id, "balance_cents": 0, "owner": None},
     )
-
-
-default_registry().register(lookup_account.spec)

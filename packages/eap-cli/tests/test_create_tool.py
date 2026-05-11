@@ -16,7 +16,11 @@ def test_create_tool_writes_typed_stub(tmp_path: Path, monkeypatch):
     body = tool_file.read_text()
     assert "@mcp_tool" in body
     assert "async def lookup_account" in body
-    assert "default_registry().register" in body
+    # Tool stubs no longer auto-register into the deprecated
+    # ``default_registry()`` singleton — they're plain decorated
+    # functions the user wires into their own ``McpToolRegistry``.
+    assert "default_registry" not in body
+    assert "McpToolRegistry" in body or "REGISTRY.register" in body
 
 
 def test_create_tool_with_auth_required_marks_spec(tmp_path: Path, monkeypatch):

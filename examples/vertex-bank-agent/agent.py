@@ -22,10 +22,11 @@ from cloud_wiring import (
     register_cloud_tools,
     wire_observability,
 )
-from tools import lookup_account, transfer_funds  # noqa: F401  # registers tools
+from tools.lookup_account import lookup_account
+from tools.transfer_funds import transfer_funds
 
 from eap_core import EnterpriseLLM, RuntimeConfig
-from eap_core.mcp import default_registry
+from eap_core.mcp import McpToolRegistry
 from eap_core.middleware.observability import ObservabilityMiddleware
 from eap_core.middleware.pii import PiiMaskingMiddleware
 from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
@@ -37,6 +38,13 @@ from eap_core.payments import PaymentRequired
 # any cross-instance coherence, and rebuilding per call would defeat
 # the cache.
 MEMORY = build_memory()
+
+# Explicit per-process tool registry — replaces the deprecated
+# ``default_registry()`` module-level singleton. Constructed once at
+# module import; agents in other processes get their own instance.
+REGISTRY = McpToolRegistry()
+REGISTRY.register(lookup_account.spec)
+REGISTRY.register(transfer_funds.spec)
 
 
 def _load_policy() -> dict:
@@ -64,7 +72,7 @@ def build_client() -> EnterpriseLLM:
             PolicyMiddleware(JsonPolicyEvaluator(_load_policy())),
             OutputValidationMiddleware(),
         ],
-        tool_registry=default_registry(),
+        tool_registry=REGISTRY,
     )
 
 
@@ -127,7 +135,7 @@ async def publish_agent_card() -> str:
     card = build_card(
         name="bank-agent",
         description="Bank account assistant — balance lookups and transfers.",
-        skills_from=default_registry(),
+        skills_from=REGISTRY,
     )
     registry = build_registry()
     return await registry.publish(
@@ -143,7 +151,7 @@ async def publish_agent_card() -> str:
 async def run() -> None:
     """Smoke-test the agent end-to-end."""
     wire_observability()
-    cloud_tools = register_cloud_tools(default_registry())
+    cloud_tools = register_cloud_tools(REGISTRY)
 
     mode = "LIVE" if cloud_live() else "STUB"
     print(f"=== bank-agent (mode: {mode}) ===")

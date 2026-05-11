@@ -13,15 +13,19 @@ from __future__ import annotations
 
 import asyncio
 
-# Importing the tool modules triggers @mcp_tool registration on import.
-from tools import example_tool  # noqa: F401
+from tools.example_tool import echo
 
-from eap_core.mcp import default_registry
+from eap_core.mcp import McpToolRegistry
 from eap_core.mcp.server import run_stdio
+
+# Explicit per-process tool registry — module-level state is unsafe
+# under concurrent multi-tenant agents (developer-guide §6.7).
+REGISTRY = McpToolRegistry()
+REGISTRY.register(echo.spec)
 
 
 async def main() -> None:
-    await run_stdio(default_registry(), server_name="{{ server_name }}")
+    await run_stdio(REGISTRY, server_name="{{ server_name }}")
 
 
 if __name__ == "__main__":

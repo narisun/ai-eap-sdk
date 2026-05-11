@@ -4,7 +4,7 @@ Replace `_DOCS` with your real retriever (vector DB, BM25, etc.).
 """
 from __future__ import annotations
 
-from eap_core.mcp import default_registry, mcp_tool
+from eap_core.mcp import mcp_tool
 
 _DOCS: list[dict] = [
     {"id": "doc-1", "text": "Paris is the capital of France."},
@@ -19,6 +19,3 @@ async def search_docs(query: str, k: int = 3) -> list[dict]:
     q = query.lower()
     hits = [d for d in _DOCS if any(w in d["text"].lower() for w in q.split())]
     return hits[:k] if hits else _DOCS[:k]
-
-
-default_registry().register(search_docs.spec)

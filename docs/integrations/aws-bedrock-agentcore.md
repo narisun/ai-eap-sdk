@@ -192,9 +192,10 @@ isolation.
 
 ```python
 from eap_core.integrations.agentcore import register_code_interpreter_tools
-from eap_core.mcp import default_registry
+from eap_core.mcp import McpToolRegistry
 
-register_code_interpreter_tools(default_registry(), region="us-east-1")
+registry = McpToolRegistry()
+register_code_interpreter_tools(registry, region="us-east-1")
 
 # Now ``client.invoke_tool("execute_python", {"code": "..."})`` runs
 # through the full middleware chain (sanitize / PII / policy / OTel /
@@ -210,7 +211,7 @@ Registers three `@mcp_tool` functions: `execute_python`,
 ```python
 from eap_core.integrations.agentcore import register_browser_tools
 
-register_browser_tools(default_registry(), region="us-east-1")
+register_browser_tools(registry, region="us-east-1")
 ```
 
 Registers five tools: `browser_navigate`, `browser_click`,
@@ -264,15 +265,16 @@ from eap_core.integrations.agentcore import (
     GatewayClient,
     add_gateway_to_registry,
 )
-from eap_core.mcp import default_registry
+from eap_core.mcp import McpToolRegistry
 
+registry = McpToolRegistry()
 gw = GatewayClient(
     gateway_url="https://your-gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
     identity=nhi,            # NonHumanIdentity — supplies OAuth tokens
     audience="my-gateway",   # token audience for scope binding
 )
 specs = await gw.list_tools()
-add_gateway_to_registry(default_registry(), gw, specs)
+add_gateway_to_registry(registry, gw, specs)
 
 # Now any tool the gateway hosts is reachable through the local
 # registry with full middleware chain enforcement.

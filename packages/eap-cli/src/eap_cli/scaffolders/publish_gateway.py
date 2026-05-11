@@ -16,12 +16,26 @@ from typing import Any
 
 
 def _load_user_registry(entry: str) -> Any:
-    """Import the user's project module by spec; return ``default_registry()``.
+    """Import the user's project module by spec; return the registry it populates.
 
     ``entry`` is a path like ``agent.py`` or ``tools/__init__.py`` —
     importing it triggers the ``@mcp_tool`` decorator side-effect that
-    registers tools with ``default_registry()``.
+    registers tools. We support both styles:
+
+    - new (preferred): the user constructs an explicit ``McpToolRegistry``
+      and exposes it on the module as ``REGISTRY`` (the scaffolded
+      convention; lowercase ``registry`` is also accepted);
+    - legacy: the user's tools call the deprecated ``default_registry()``
+      to register, in which case we read it back (suppressing the
+      DeprecationWarning emitted by the read since we know it's
+      transitional).
+
+    Raises if the module exposes both ``registry`` and ``REGISTRY`` (ambiguous)
+    or if the resolved registry is empty (silent zero-tool spec is the worst
+    possible failure mode — fail loudly instead).
     """
+    import warnings
+
     p = Path(entry)
     if not p.exists():
         raise FileNotFoundError(f"entry file not found: {entry}")
@@ -32,9 +46,37 @@ def _load_user_registry(entry: str) -> Any:
     module = importlib.util.module_from_spec(mod_spec)
     sys.modules[mod_spec.name] = module
     mod_spec.loader.exec_module(module)
-    from eap_core.mcp import default_registry
 
-    return default_registry()
+    has_lower = getattr(module, "registry", None) is not None
+    has_upper = getattr(module, "REGISTRY", None) is not None
+
+    if has_lower and has_upper:
+        raise RuntimeError(
+            f"{entry} exposes both `registry` and `REGISTRY` — pick one "
+            f"(REGISTRY is the scaffolded convention)"
+        )
+
+    # Prefer the scaffolded convention.
+    registry = getattr(module, "REGISTRY", None) or getattr(module, "registry", None)
+
+    if registry is None:
+        # Legacy fallback to default_registry() — wrap warning.
+        from eap_core.mcp.registry import default_registry
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            registry = default_registry()
+
+    if not registry.list_tools():
+        raise RuntimeError(
+            f"no tools found after importing {entry}: expose an McpToolRegistry "
+            f"as `REGISTRY` on the module and register tools onto it explicitly. "
+            f"Example:\n"
+            f"    REGISTRY = McpToolRegistry()\n"
+            f"    REGISTRY.register(my_tool.spec)\n"
+        )
+
+    return registry
 
 
 def publish_to_gateway(
@@ -104,11 +146,12 @@ the project as an HTTP operation Gateway can host.
    from eap_core.integrations.agentcore import (
        GatewayClient, add_gateway_to_registry,
    )
-   from eap_core.mcp import default_registry
+   from eap_core.mcp import McpToolRegistry
 
+   registry = McpToolRegistry()
    gw = GatewayClient(gateway_url="https://your-gateway.example", identity=nhi)
    specs = await gw.list_tools()
-   add_gateway_to_registry(default_registry(), gw, specs)
+   add_gateway_to_registry(registry, gw, specs)
    # now `client.invoke_tool("<tool_name>", {{...}})` flows through the
    # local middleware chain and forwards to the gateway.
    ```

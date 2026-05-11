@@ -342,21 +342,17 @@ def test_publish_to_gateway_writes_openapi_and_readme(tmp_path, monkeypatch):
     from click.testing import CliRunner
     from eap_cli.main import cli
 
-    # Reset the singleton so other tests' tools don't leak in
-    import eap_core.mcp.registry as reg_mod
-
-    reg_mod._DEFAULT = None
-
     project = tmp_path / "demo"
     project.mkdir()
     (project / "agent.py").write_text(
-        "from eap_core.mcp import default_registry, mcp_tool\n"
+        "from eap_core.mcp import McpToolRegistry, mcp_tool\n"
         "\n"
         "@mcp_tool(description='Look up an account.')\n"
         "async def lookup_account(account_id: str) -> dict:\n"
         "    return {'id': account_id}\n"
         "\n"
-        "default_registry().register(lookup_account.spec)\n"
+        "registry = McpToolRegistry()\n"
+        "registry.register(lookup_account.spec)\n"
     )
     monkeypatch.chdir(project)
 
@@ -401,14 +397,3 @@ def test_publish_to_gateway_missing_entry_errors_clearly(tmp_path, monkeypatch):
     runner = CliRunner()
     result = runner.invoke(cli, ["publish-to-gateway", "--entry", "missing.py"])
     assert result.exit_code != 0
-
-
-@pytest.fixture(autouse=True)
-def _reset_default_registry():
-    """Each test starts with a fresh default registry."""
-    import eap_core.mcp.registry as reg_mod
-
-    saved = reg_mod._DEFAULT
-    reg_mod._DEFAULT = None
-    yield
-    reg_mod._DEFAULT = saved

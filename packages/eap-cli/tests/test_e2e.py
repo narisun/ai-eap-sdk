@@ -75,11 +75,10 @@ def test_scaffold_mcp_server_imports_and_builds(tmp_path: Path, runner, monkeypa
             "-c",
             (
                 "import sys; sys.path.insert(0, '.');"
-                " from eap_core.mcp import default_registry;"
                 " from eap_core.mcp.server import build_mcp_server;"
-                " from tools import example_tool;"
-                " s = build_mcp_server(default_registry(), server_name='my-mcp');"
-                " print('tools=', len(default_registry().list_tools()))"
+                " import server as srv;"
+                " s = build_mcp_server(srv.REGISTRY, server_name='my-mcp');"
+                " print('tools=', len(srv.REGISTRY.list_tools()))"
             ),
         ],
         cwd=target,

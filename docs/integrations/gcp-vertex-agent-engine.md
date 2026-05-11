@@ -167,7 +167,7 @@ from eap_core.integrations.vertex import (
     VertexCodeSandbox,
     register_code_sandbox_tools,
 )
-from eap_core.mcp.registry import default_registry
+from eap_core.mcp import McpToolRegistry
 
 # Direct use of the CodeSandbox Protocol:
 sb = VertexCodeSandbox(project_id="my-proj")
@@ -176,7 +176,8 @@ print(result.stdout)    # "4\n"
 print(result.exit_code) # 0
 
 # Register MCP tools the agent can call:
-register_code_sandbox_tools(default_registry(), project_id="my-proj")
+registry = McpToolRegistry()
+register_code_sandbox_tools(registry, project_id="my-proj")
 # Now the LLM can call execute_python / execute_javascript / execute_typescript.
 ```
 
@@ -189,9 +190,8 @@ risk agentic capabilities and must flow through the safety chain.
 
 ```python
 from eap_core.integrations.vertex import register_browser_sandbox_tools
-from eap_core.mcp.registry import default_registry
 
-register_browser_sandbox_tools(default_registry(), project_id="my-proj")
+register_browser_sandbox_tools(registry, project_id="my-proj")
 # Agent can call: browser_navigate, browser_click, browser_fill,
 # browser_extract_text, browser_screenshot.
 ```

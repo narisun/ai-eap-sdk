@@ -234,10 +234,11 @@ AgentCore Code Interpreter is a sandboxed Python/JS/TS execution
 environment. Register the three default tools on your registry:
 
 ```python
-from eap_core.mcp import default_registry
+from eap_core.mcp import McpToolRegistry
 from eap_core.integrations.agentcore import register_code_interpreter_tools
 
-register_code_interpreter_tools(default_registry(), region="us-east-1")
+registry = McpToolRegistry()
+register_code_interpreter_tools(registry, region="us-east-1")
 ```
 
 This adds three MCP tools: `execute_python`, `execute_javascript`,
@@ -261,7 +262,7 @@ Same pattern for AgentCore Browser:
 ```python
 from eap_core.integrations.agentcore import register_browser_tools
 
-register_browser_tools(default_registry(), region="us-east-1")
+register_browser_tools(registry, region="us-east-1")
 ```
 
 Registers five MCP tools: `browser_navigate`, `browser_click`,
@@ -310,7 +311,6 @@ JSON-RPC 2.0. EAP-Core has a thin client:
 
 ```python
 from eap_core.integrations.agentcore import GatewayClient, add_gateway_to_registry
-from eap_core.mcp import default_registry
 
 gw = GatewayClient(
     gateway_url="https://my-gw.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
@@ -321,7 +321,7 @@ gw = GatewayClient(
 
 # Pull the remote tools and register them as local proxies.
 specs = await gw.list_tools()
-add_gateway_to_registry(default_registry(), gw, specs)
+add_gateway_to_registry(registry, gw, specs)
 ```
 
 After this, `client.invoke_tool("remote_tool", {...})` dispatches
@@ -354,24 +354,23 @@ servers, and skills. Publish your A2A AgentCard:
 ```python
 from eap_core import build_card
 from eap_core.integrations.agentcore import RegistryClient
-from eap_core.mcp import default_registry
 
 card = build_card(
     name="my-bank-agent",
     description="Bank account assistant.",
-    skills_from=default_registry(),
+    skills_from=registry,
 )
 
-registry = RegistryClient(registry_name="bank-platform", region="us-east-1")
-record_id = await registry.publish_agent_card(card)
+agent_registry = RegistryClient(registry_name="bank-platform", region="us-east-1")
+record_id = await agent_registry.publish_agent_card(card)
 
 # Discover others:
-hits = await registry.search("retrieval", max_results=10)
+hits = await agent_registry.search("retrieval", max_results=10)
 ```
 
-`skills_from=default_registry()` reads the live tool registry, so the
-advertised AgentCard skills can never drift from the agent's actual
-tools. `RegistryClient` satisfies the `AgentRegistry` Protocol — same
+`skills_from=registry` reads the live tool registry, so the advertised
+AgentCard skills can never drift from the agent's actual tools.
+`RegistryClient` satisfies the `AgentRegistry` Protocol — same
 shape as `InMemoryAgentRegistry` and `VertexAgentRegistry`, so the
 calling code stays portable.
 
@@ -575,7 +574,7 @@ Two ways to invoke:
 **MCP tool path** (LLM-driven, traverses middleware):
 
 ```python
-register_code_interpreter_tools(default_registry(), region="us-east-1")
+register_code_interpreter_tools(registry, region="us-east-1")
 # LLM can now call execute_python with generated code.
 ```
 
@@ -586,7 +585,7 @@ Protocol:
 # The AgentCore code-interpreter doesn't ship a CodeSandbox impl
 # directly (it's wired as MCP tools). For direct execution, call the
 # registered tool through the registry:
-result = await default_registry().invoke("execute_python", {"code": "print(2+2)"})
+result = await registry.invoke("execute_python", {"code": "print(2+2)"})
 # {"stdout": "4\n", "stderr": "", "exit_code": 0}
 ```
 
@@ -655,10 +654,10 @@ result = await gw.invoke("remote_tool", {"arg": "value"})
 await gw.aclose()
 ```
 
-Use `add_gateway_to_registry(default_registry(), gw, tools)` to
-register remote tools as local proxies. After that, your agent code
-treats them like any other tool — the middleware chain runs locally
-before each forward.
+Use `add_gateway_to_registry(registry, gw, tools)` to register remote
+tools as local proxies on your `McpToolRegistry`. After that, your
+agent code treats them like any other tool — the middleware chain runs
+locally before each forward.
 
 For SigV4 instead of OAuth (the AWS-native option), pass `auth=` (an
 httpx auth object) instead of `identity=`.
@@ -682,10 +681,9 @@ To programmatically construct the OpenAPI:
 
 ```python
 from eap_core.integrations.agentcore import export_tools_as_openapi
-from eap_core.mcp import default_registry
 
 spec = export_tools_as_openapi(
-    default_registry(),
+    registry,
     title="my-agent tools",
     version="1.0.0",
     server_url="https://my-agent.example.com",
@@ -904,10 +902,10 @@ error to the user and let them top up.
 
 **Tools registered but the LLM doesn't call them.**
 
-Check the AgentCard — `build_card(skills_from=default_registry())`
-reads the live registry, so if a tool registered after the card was
-built it won't be advertised. Rebuild and re-publish the card after
-adding tools.
+Check the AgentCard — `build_card(skills_from=registry)` reads the
+live registry, so if a tool registered after the card was built it
+won't be advertised. Rebuild and re-publish the card after adding
+tools.
 
 ---
 

@@ -233,11 +233,12 @@ Vertex Agent Sandbox is the managed code-execution environment.
 Register the three default tools on your registry:
 
 ```python
-from eap_core.mcp import default_registry
+from eap_core.mcp import McpToolRegistry
 from eap_core.integrations.vertex import register_code_sandbox_tools
 
+registry = McpToolRegistry()
 register_code_sandbox_tools(
-    default_registry(),
+    registry,
     project_id="my-gcp-project",
     location="us-central1",
 )
@@ -276,7 +277,7 @@ Same pattern for Vertex Browser Sandbox:
 from eap_core.integrations.vertex import register_browser_sandbox_tools
 
 register_browser_sandbox_tools(
-    default_registry(),
+    registry,
     project_id="my-gcp-project",
     location="us-central1",
 )
@@ -360,9 +361,8 @@ identical `invoke(name, args)` signatures:
 
 ```python
 from eap_core.integrations.agentcore import add_gateway_to_registry
-from eap_core.mcp import default_registry
 
-add_gateway_to_registry(default_registry(), gw, specs)
+add_gateway_to_registry(registry, gw, specs)
 ```
 
 After this, `client.invoke_tool("remote_tool", {...})` dispatches
@@ -397,20 +397,19 @@ servers, and skills. Publish your A2A AgentCard:
 ```python
 from eap_core import build_card
 from eap_core.integrations.vertex import VertexAgentRegistry
-from eap_core.mcp import default_registry
 
 card = build_card(
     name="my-bank-agent",
     description="Bank account assistant.",
-    skills_from=default_registry(),
+    skills_from=registry,
 )
 
-registry = VertexAgentRegistry(
+agent_registry = VertexAgentRegistry(
     project_id="my-gcp-project",
     location="us-central1",
     registry_id="bank-platform",
 )
-record_id = await registry.publish({
+record_id = await agent_registry.publish({
     "name": card.name,
     "record_type": "AGENT",
     "description": card.description,
@@ -418,14 +417,14 @@ record_id = await registry.publish({
 })
 
 # Discover others:
-hits = await registry.search("retrieval", max_results=10)
+hits = await agent_registry.search("retrieval", max_results=10)
 ```
 
-`skills_from=default_registry()` reads the live tool registry, so the
-advertised AgentCard skills can never drift from the agent's actual
-tools. `VertexAgentRegistry` satisfies the `AgentRegistry` Protocol —
-same shape as `InMemoryAgentRegistry` and AgentCore's
-`RegistryClient`, so the calling code stays portable.
+`skills_from=registry` reads the live tool registry, so the advertised
+AgentCard skills can never drift from the agent's actual tools.
+`VertexAgentRegistry` satisfies the `AgentRegistry` Protocol — same
+shape as `InMemoryAgentRegistry` and AgentCore's `RegistryClient`, so
+the calling code stays portable.
 
 > **Note:** `VertexAgentRegistry.publish(record)` requires a
 > top-level `name` field — the SDK validates this *before* the env
@@ -663,7 +662,7 @@ Two ways to invoke:
 **MCP tool path** (LLM-driven, traverses middleware):
 
 ```python
-register_code_sandbox_tools(default_registry(), project_id="...")
+register_code_sandbox_tools(registry, project_id="...")
 # LLM can now call execute_python with generated code.
 ```
 
@@ -744,12 +743,12 @@ result = await gw.invoke("remote_tool", {"arg": "value"})
 await gw.aclose()
 ```
 
-Use `add_gateway_to_registry(default_registry(), gw, tools)` (from
+Use `add_gateway_to_registry(registry, gw, tools)` (from
 `eap_core.integrations.agentcore`) to register remote tools as local
-proxies — both gateway clients have the same shape, so the helper
-works against either cloud. After that, your agent code treats them
-like any other tool — the middleware chain runs locally before each
-forward.
+proxies on your `McpToolRegistry` — both gateway clients have the
+same shape, so the helper works against either cloud. After that, your
+agent code treats them like any other tool — the middleware chain runs
+locally before each forward.
 
 For non-Bearer auth, pass `auth=` (an httpx auth object) instead of
 `identity=`.
@@ -773,10 +772,9 @@ To programmatically construct the OpenAPI:
 
 ```python
 from eap_core.integrations.agentcore import export_tools_as_openapi
-from eap_core.mcp import default_registry
 
 spec = export_tools_as_openapi(
-    default_registry(),
+    registry,
     title="my-agent tools",
     version="1.0.0",
     server_url="https://my-agent.example.com",
@@ -1050,10 +1048,10 @@ error to the user and let them top up.
 
 **Tools registered but the LLM doesn't call them.**
 
-Check the AgentCard — `build_card(skills_from=default_registry())`
-reads the live registry, so if a tool registered after the card was
-built it won't be advertised. Rebuild and re-publish the card after
-adding tools.
+Check the AgentCard — `build_card(skills_from=registry)` reads the
+live registry, so if a tool registered after the card was built it
+won't be advertised. Rebuild and re-publish the card after adding
+tools.
 
 ---
 
