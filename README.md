@@ -3,10 +3,12 @@
 A **thin, standard-first** Python SDK and CLI for building agentic AI
 solutions where **safety, observability, and compliance are the
 default**, not an afterthought. EAP-Core wraps low-level cloud LLM
-runtimes (AWS Bedrock AgentCore, Google Vertex AI, plus a runnable
-local runtime) behind a single client interface and routes every
-request through a middleware chain that enforces cross-cutting
-concerns automatically.
+runtimes (AWS Bedrock, Google Vertex AI, plus a runnable local
+runtime) behind a single client interface and routes every request
+through a middleware chain that enforces cross-cutting concerns
+automatically. The same agent code runs unmodified against
+**AWS Bedrock AgentCore** and **GCP Vertex Agent Engine** — both
+cloud platforms are wired through vendor-neutral Protocols.
 
 You write business logic in plain Python. EAP-Core handles the rest.
 
@@ -79,6 +81,25 @@ Cross-cutting concerns are real, replaceable middleware:
 | `OutputValidationMiddleware` | Pydantic v2 (always required) | — | — |
 | `TrajectoryRecorder` | JSONL writer (always available) | — | — |
 
+Vendor-neutral Protocols at the top level — pick the in-process
+default for tests/dev, swap in a cloud-backed implementation for
+production. The same agent code works on either cloud:
+
+| Protocol | In-process default | AWS Bedrock AgentCore impl | GCP Vertex Agent Engine impl |
+|---|---|---|---|
+| `MemoryStore` | `InMemoryStore` | `AgentCoreMemoryStore` | `VertexMemoryBankStore` |
+| `CodeSandbox` | `InProcessCodeSandbox` | (AgentCore Code Interpreter) | `VertexCodeSandbox` |
+| `BrowserSandbox` | `NoopBrowserSandbox` | (AgentCore Browser) | `VertexBrowserSandbox` |
+| `AgentRegistry` | `InMemoryAgentRegistry` | `RegistryClient` | `VertexAgentRegistry` |
+| `PaymentBackend` | `InMemoryPaymentBackend` | `PaymentClient` (x402) | `AP2PaymentClient` (AP2) |
+| `ThreatDetector` | `RegexThreatDetector` | — | — |
+| `NonHumanIdentity`-shaped | `LocalIdPStub` | `OIDCTokenExchange` | `VertexAgentIdentityToken` |
+
+See [`docs/integrations/aws-bedrock-agentcore.md`](docs/integrations/aws-bedrock-agentcore.md)
+and [`docs/integrations/gcp-vertex-agent-engine.md`](docs/integrations/gcp-vertex-agent-engine.md)
+for the full per-cloud surface (gateways, observability wiring,
+deploy targets, eval scorers, payments).
+
 Other cross-cutting concerns wired at the SDK level:
 
 - **Non-Human Identity (NHI)** — `NonHumanIdentity` issues
@@ -138,6 +159,8 @@ exists:
   access from agent identity to tool resource.
 - **Pydantic v2** — every public data structure is a Pydantic model
   or dataclass; JSON Schema for free.
+- **x402 / AP2** — agent-payment protocols for microtransactions,
+  abstracted behind the `PaymentBackend` Protocol.
 
 Vendor-specific glue (Bedrock client, Vertex client, Presidio, Cedar)
 lives behind optional extras, **never on the hot path of an
@@ -175,15 +198,15 @@ the git repo (pin to a tag for stability):
 ```toml
 [project]
 dependencies = [
-    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.2.0#subdirectory=packages/eap-core",
+    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.3.0#subdirectory=packages/eap-core",
 ]
 ```
 
 Or via `uv add`:
 
 ```bash
-uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.2.0#subdirectory=packages/eap-core"
-uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.2.0#subdirectory=packages/eap-cli"
+uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.3.0#subdirectory=packages/eap-core"
+uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.3.0#subdirectory=packages/eap-cli"
 ```
 
 If you operate a private package index (e.g. AWS CodeArtifact, Azure
@@ -194,11 +217,14 @@ directory.
 To enable an optional extra at install time:
 
 ```bash
-uv sync --all-packages --group dev --extra otel  # OTel SDK + OTLP exporter
-uv sync --all-packages --group dev --extra pii   # Microsoft Presidio
-uv sync --all-packages --group dev --extra mcp   # official MCP SDK (stdio server)
-uv sync --all-packages --group dev --extra a2a   # FastAPI for AgentCard route
-uv sync --all-packages --group dev --extra eval  # Ragas adapter
+uv sync --all-packages --group dev --extra otel          # OTel SDK + OTLP exporter
+uv sync --all-packages --group dev --extra pii           # Microsoft Presidio
+uv sync --all-packages --group dev --extra mcp           # official MCP SDK (stdio server)
+uv sync --all-packages --group dev --extra a2a           # FastAPI for AgentCard route
+uv sync --all-packages --group dev --extra eval          # Ragas adapter
+uv sync --all-packages --group dev --extra aws           # boto3 — AgentCore integration
+uv sync --all-packages --group dev --extra gcp           # google-cloud-aiplatform — Vertex integration
+uv sync --all-packages --group dev --extra policy-cedar  # cedarpy — production policy engine
 ```
 
 Or install everything:
@@ -345,17 +371,27 @@ Golden-set format:
 ### `eap deploy`
 
 ```bash
-eap deploy --runtime aws|gcp [--bucket BUCKET | --service NAME] [--dry-run]
+eap deploy --runtime aws|gcp|agentcore|vertex-agent-engine \
+           [--bucket BUCKET | --service NAME] \
+           [--entry agent.py:answer] [--region REGION] [--dry-run]
 ```
 
 Packages your project for deployment:
 
 - **`--runtime aws`** — produces `dist/agent.zip` matching the Lambda
-  / Bedrock AgentCore handler layout. Prints the `aws s3 cp` command
-  to upload.
+  handler layout. Prints the `aws s3 cp` command to upload.
 - **`--runtime gcp`** — produces `dist/agent/` with a `Dockerfile` and
   `cloudbuild.yaml` for Cloud Run. Prints the `gcloud run deploy`
   command.
+- **`--runtime agentcore`** — produces `dist/agentcore/` with an
+  ARM64 Dockerfile + FastAPI handler that satisfies AgentCore
+  Runtime's contract (`POST /invocations`, `GET /ping`, port 8080).
+  README walks through ECR push and AgentCore Runtime registration.
+- **`--runtime vertex-agent-engine`** — produces
+  `dist/vertex-agent-engine/` with a Cloud Run-compatible image
+  (`linux/amd64`, `PORT` env, `EXPOSE 8080`) and a FastAPI handler
+  exposing `POST /invocations` + `GET /health`. README walks through
+  Artifact Registry push and Vertex Agent Engine registration.
 
 Live cloud calls are gated behind `EAP_ENABLE_REAL_DEPLOY=1` —
 packaging is safe in CI, deploy is opt-in.
@@ -491,6 +527,15 @@ exporter. No SDK code changes.
       tokenizer is a starter, Presidio is the production-grade choice.
 - [ ] Run `eap eval` in CI against your golden set with a meaningful
       `--threshold`. Fail the build on regressions.
+- [ ] If deploying to **AWS Bedrock AgentCore**: install `[aws]`,
+      call `configure_for_agentcore()` at startup, and follow
+      `dist/agentcore/README.md` for ECR push + AgentCore Runtime
+      registration. See [`docs/integrations/aws-bedrock-agentcore.md`](docs/integrations/aws-bedrock-agentcore.md).
+- [ ] If deploying to **GCP Vertex Agent Engine**: install `[gcp]`,
+      call `configure_for_vertex_observability()` at startup, and
+      follow `dist/vertex-agent-engine/README.md` for Artifact Registry
+      push + Vertex registration. See
+      [`docs/integrations/gcp-vertex-agent-engine.md`](docs/integrations/gcp-vertex-agent-engine.md).
 
 ---
 
@@ -499,23 +544,38 @@ exporter. No SDK code changes.
 ```
 ai-eap-sdk/
 ├── packages/
-│   ├── eap-core/                # the SDK
-│   └── eap-cli/                 # the `eap` CLI
+│   ├── eap-core/                            # the SDK
+│   │   └── src/eap_core/
+│   │       ├── integrations/                # cloud-platform adapters
+│   │       │   ├── agentcore.py             # AWS Bedrock AgentCore (11 services)
+│   │       │   └── vertex.py                # GCP Vertex Agent Engine
+│   │       ├── sandbox.py                   # CodeSandbox / BrowserSandbox Protocols
+│   │       ├── discovery.py                 # AgentRegistry Protocol
+│   │       ├── payments.py                  # PaymentBackend + PaymentRequired
+│   │       ├── security.py                  # ThreatDetector Protocol
+│   │       └── memory.py                    # MemoryStore Protocol
+│   └── eap-cli/                             # the `eap` CLI
 ├── examples/
-│   ├── research-agent/          # retrieval-style reference project
-│   ├── transactional-agent/     # action-style with auth-required tools
-│   └── mcp-server-example/      # standalone MCP-stdio server
+│   ├── research-agent/                      # retrieval-style reference project
+│   ├── transactional-agent/                 # action-style with auth-required tools
+│   └── mcp-server-example/                  # standalone MCP-stdio server
 ├── docs/
-│   ├── developer-guide.md       # for engineers extending the SDK
+│   ├── developer-guide.md                   # for engineers extending the SDK
+│   ├── integrations/
+│   │   ├── aws-bedrock-agentcore.md         # full AgentCore positioning + per-phase usage
+│   │   └── gcp-vertex-agent-engine.md       # full Vertex positioning + per-phase usage
 │   └── superpowers/
-│       ├── specs/               # full design spec
-│       └── plans/               # implementation plans (Plans 1–4)
-└── pyproject.toml               # uv workspace root
+│       ├── specs/                           # full design spec
+│       └── plans/                           # implementation plans (Plans 1–4)
+└── pyproject.toml                           # uv workspace root
 ```
 
-**Status:** walking-skeleton complete. Cloud adapters are
-shape-correct stubs gated behind `EAP_ENABLE_REAL_RUNTIMES=1`; flip
-the flag and configure creds for real Bedrock / Vertex calls.
+**Status:** v0.3.0 — full integrations with AWS Bedrock AgentCore
+(11 services) and GCP Vertex Agent Engine. The same agent code runs
+unmodified on both clouds via the vendor-neutral Protocols above. All
+live cloud calls are gated behind `EAP_ENABLE_REAL_RUNTIMES=1` (and
+`EAP_ENABLE_REAL_DEPLOY=1` for `eap deploy` packaging) — flip the
+flags and configure creds when you're ready to hit production.
 
 ---
 
@@ -536,7 +596,7 @@ before merging non-trivial changes.
 
 ```bash
 uv sync --all-packages --all-extras --group dev   # install everything
-uv run pytest --cov                                # 153 tests, ~93% coverage
+uv run pytest --cov                                # 342 tests, ≥90% coverage
 uv run ruff check && uv run ruff format --check    # lint + format
 uv run mypy                                        # strict type-check
 ```

@@ -915,7 +915,66 @@ for the CLI:
 This is by design (§2.9). Keep it that way: scaffolders stay pure
 Python, Click bindings stay in `main.py`.
 
-### 5.7 New policy engines
+### 5.7 New cloud-platform integrations
+
+A "cloud-platform integration" wires EAP-Core's vendor-neutral
+Protocols to a managed agent platform (AWS Bedrock AgentCore, GCP
+Vertex Agent Engine, Azure AI Foundry Agent Service, etc.). It is
+**not** the same thing as a new LLM provider (§5.1) — LLM adapters
+go under `runtimes/`, platform integrations go under `integrations/`.
+
+The shape is established by `integrations/agentcore.py` and
+`integrations/vertex.py`. A new integration follows the same
+template:
+
+1. **Pick the Protocols you'll implement.** Look at
+   `eap_core.memory.MemoryStore`,
+   `eap_core.sandbox.CodeSandbox` / `BrowserSandbox`,
+   `eap_core.discovery.AgentRegistry`,
+   `eap_core.payments.PaymentBackend`. If the cloud has the
+   equivalent service, implement the Protocol. If it has something
+   genuinely new, propose a new Protocol first and only ship the
+   integration after the Protocol lands.
+2. **One file per cloud.** `integrations/<cloud>.py` carries every
+   class. Group by phase with section comments (A: deploy + identity
+   + observability; B: managed memory + sandboxes; C: gateway;
+   D: registry + payments + eval).
+3. **Lazy-import the cloud SDK** inside each class's `_client()`
+   helper or method. Construction must not touch the network or
+   import the SDK.
+4. **Gate live calls** behind `EAP_ENABLE_REAL_RUNTIMES=1` so CI runs
+   without credentials. Methods raise `NotImplementedError` with a
+   setup hint when the flag is unset.
+5. **Add a new extra** under `[project.optional-dependencies]` that
+   pulls the cloud's SDK. Forward it at the workspace root.
+6. **Add a deploy target.** Extend
+   `packages/eap-cli/src/eap_cli/scaffolders/deploy.py` with a
+   `package_<cloud>()` function and a `deploy_<cloud>()` function
+   (the latter gated by `EAP_ENABLE_REAL_DEPLOY=1`). Wire the new
+   `--runtime` choice in `main.py`. Generate a Dockerfile +
+   handler that matches the cloud's HTTP contract.
+7. **Match the CodeSandbox / BrowserSandbox surface** so existing
+   `client.invoke_tool(...)` calls keep working when the user swaps
+   backends. The middleware chain runs **before** the cloud sandbox
+   sees the data — preserve that contract.
+8. **Tests follow the AgentCore / Vertex phase split:** four files
+   under `tests/test_integrations_<cloud>_phase_<a|b|c|d>.py`.
+   Tests assert env-flag gating, Protocol conformance via
+   `isinstance(..., MemoryStore)`, and stub-mode behavior. Live
+   tests are marked `@pytest.mark.cloud` and run only in the
+   separate cloud-credential CI lane.
+9. **Document the integration** at
+   `docs/integrations/<cloud>-<platform>.md`. Include the
+   cross-cloud equivalence table (Protocol ↔ AWS impl ↔ GCP impl ↔
+   your new impl) and per-phase usage walkthroughs. Add a row to the
+   README's Protocol table for each Protocol you implemented.
+
+**The point is: a new cloud is plug-in, not a fork.** If the design
+forces you to add a hook on the middleware Protocol or a new
+top-level Protocol just to integrate one cloud, stop and reconsider —
+the abstraction probably needs to land in core first.
+
+### 5.8 New policy engines
 
 If a new policy DSL emerges (Rego succession, Cedar v3, OpenFGA,
 etc.):
@@ -1063,13 +1122,21 @@ the warning and forwards to the new name.
 | `EnterpriseLLM` public methods | Stable. SemVer applies. |
 | `Middleware` Protocol | Stable. Adding a method is breaking. |
 | `BaseRuntimeAdapter` ABC | Stable. |
+| `MemoryStore` Protocol | Stable. Adding a method is breaking. |
+| `CodeSandbox` / `BrowserSandbox` Protocols | Stable. Adding a method is breaking. |
+| `AgentRegistry` Protocol | Stable. Adding a method is breaking. |
+| `PaymentBackend` Protocol + `PaymentRequired` | Stable. |
+| `ThreatDetector` Protocol + `ThreatAssessment` | Stable. |
 | `Request` / `Response` / `Chunk` / `Message` | Stable on the wire. |
 | `AgentCard` / `Skill` | Stable on the wire (A2A spec). |
 | `Trajectory` | Stable on the wire (eval/audit consumers). |
+| `SandboxResult` | Stable. |
 | Default middleware classes | Stable behavior; impl details may change. |
+| In-process Protocol defaults (`InMemoryStore`, `InProcessCodeSandbox`, etc.) | Stable behavior; impl details may change. |
 | Templates | May change between minors; not part of the API. |
 | `_*` private symbols | No stability guarantee. |
-| Cloud adapter network calls | Behind `EAP_ENABLE_REAL_RUNTIMES=1`; may evolve as vendor SDKs change. |
+| Cloud adapter network calls (`runtimes/`) | Behind `EAP_ENABLE_REAL_RUNTIMES=1`; may evolve as vendor SDKs change. |
+| Cloud integration classes (`integrations/agentcore`, `integrations/vertex`) | Constructors + Protocol methods stable. Wire calls behind `EAP_ENABLE_REAL_RUNTIMES=1`; may evolve as cloud APIs change. |
 
 ### 7.4 Python version policy
 
@@ -1110,6 +1177,11 @@ src/eap_core/
 ├── config.py            # RuntimeConfig, IdentityConfig, EvalConfig
 ├── exceptions.py        # exception hierarchy
 ├── types.py             # Request/Response/Chunk/Message/Context
+├── memory.py            # MemoryStore Protocol + InMemoryStore default
+├── sandbox.py           # CodeSandbox / BrowserSandbox Protocols + in-process defaults
+├── discovery.py         # AgentRegistry Protocol + InMemoryAgentRegistry default
+├── payments.py          # PaymentBackend Protocol + PaymentRequired + InMemoryPaymentBackend
+├── security.py          # ThreatDetector Protocol + RegexThreatDetector default
 ├── middleware/          # the chain of responsibility
 │   ├── base.py
 │   ├── pipeline.py      # the onion executor
@@ -1124,6 +1196,9 @@ src/eap_core/
 │   ├── local.py
 │   ├── bedrock.py       # env-gated
 │   └── vertex.py        # env-gated
+├── integrations/        # cloud-platform integrations (lazy + env-gated)
+│   ├── agentcore.py     # AWS Bedrock AgentCore — 11 services (Phases A–D)
+│   └── vertex.py        # GCP Vertex Agent Engine — parallel surface
 ├── identity/            # NHI + OAuth 2.1 + RFC 8693
 │   ├── nhi.py
 │   ├── token_exchange.py
@@ -1146,6 +1221,22 @@ src/eap_core/
     ├── fixtures.py
     └── responses.py
 ```
+
+**Two-layer separation between `runtimes/` and `integrations/`:**
+
+- `runtimes/` holds **LLM adapters** — they call `messages/completions`
+  on a model provider (Bedrock LLM, Vertex LLM, or local mock). They
+  satisfy `BaseRuntimeAdapter` and are picked by `RuntimeConfig(provider=...)`.
+- `integrations/` holds **agent-platform adapters** — the
+  cross-cutting agent infrastructure each cloud offers around LLMs
+  (managed memory, sandboxes, gateways, registries, payments, eval).
+  They satisfy the vendor-neutral Protocols in
+  `sandbox.py` / `discovery.py` / `payments.py` / `memory.py` and are
+  wired in at the seam where your agent code instantiates them.
+
+The split keeps the LLM swap (`provider="bedrock"` vs
+`provider="vertex"`) independent of the agent-platform swap
+(`AgentCoreMemoryStore` vs `VertexMemoryBankStore`).
 
 **One file = one responsibility.** If a file grows beyond 250 lines or
 starts to cover multiple concerns, split it before you keep adding.
@@ -1179,7 +1270,10 @@ This way, every CLI command is reusable as a library function.
 
 ```
 docs/
-├── developer-guide.md             # this file
+├── developer-guide.md                       # this file
+├── integrations/
+│   ├── aws-bedrock-agentcore.md             # AgentCore positioning + per-service mapping
+│   └── gcp-vertex-agent-engine.md           # Vertex positioning + per-service mapping
 └── superpowers/
     ├── specs/2026-05-10-eap-core-design.md
     └── plans/
@@ -1190,8 +1284,10 @@ docs/
 ```
 
 The spec is the source of truth for *intent*. The plans document the
-*how*. This guide explains the *why*. Keep them in sync — if a plan
-diverges from the spec during implementation, update the spec.
+*how*. This guide explains the *why*. The per-cloud integration docs
+explain the *how* of each platform mapping. Keep them in sync — if a
+plan diverges from the spec during implementation, update the spec;
+when you add or change a cloud integration, update the matching doc.
 
 ---
 
