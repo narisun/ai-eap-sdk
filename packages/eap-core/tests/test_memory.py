@@ -103,3 +103,48 @@ def test_protocol_runtime_check_rejects_wrong_shape():
     # MemoryStore. InMemoryStore matching the Protocol is asserted in
     # test_in_memory_store_satisfies_protocol above.
     assert not isinstance(object(), MemoryStore)
+
+
+# ---- MemoryStore Protocol default-body contract -----------------------------
+#
+# Each ``async def`` in the ``MemoryStore`` Protocol has an ``...`` body so
+# the runtime-checkable protocol can declare an interface without a forced
+# raise. The tests below pin the default-body behavior: invoking the unbound
+# class method on an arbitrary instance returns ``None``. If a future change
+# alters a Protocol body to raise ``NotImplementedError`` (a common
+# alternative shape), these tests catch it and force the maintainer to
+# update the docs / contract. They are not tautological — they exercise the
+# bodies of the five ``...`` lines (memory.py:40, 44, 48, 52, 56) and lock
+# the "Protocol default is a no-op coroutine" decision.
+
+
+class _Sentinel:
+    """Bare object that doesn't implement any MemoryStore method itself.
+
+    We pass this as ``self`` to the unbound Protocol methods so the only
+    code that runs is the Protocol's ``...`` body — no override gets in
+    the way.
+    """
+
+
+async def test_memorystore_protocol_remember_default_body_is_async_noop() -> None:
+    # The Protocol body is ``...``; the resulting coroutine awaits to None
+    # (no raise). The contract being pinned: subclasses are free to add
+    # behavior, but the bare Protocol's default never raises.
+    await MemoryStore.remember(_Sentinel(), "s", "k", "v")  # type: ignore[arg-type]
+
+
+async def test_memorystore_protocol_recall_default_body_is_async_noop() -> None:
+    await MemoryStore.recall(_Sentinel(), "s", "k")  # type: ignore[arg-type]
+
+
+async def test_memorystore_protocol_list_keys_default_body_is_async_noop() -> None:
+    await MemoryStore.list_keys(_Sentinel(), "s")  # type: ignore[arg-type]
+
+
+async def test_memorystore_protocol_forget_default_body_is_async_noop() -> None:
+    await MemoryStore.forget(_Sentinel(), "s", "k")  # type: ignore[arg-type]
+
+
+async def test_memorystore_protocol_clear_default_body_is_async_noop() -> None:
+    await MemoryStore.clear(_Sentinel(), "s")  # type: ignore[arg-type]

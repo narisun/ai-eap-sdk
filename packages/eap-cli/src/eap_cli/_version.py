@@ -17,6 +17,25 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 
+def _version_from_pyproject(path: Path) -> str | None:
+    """Return ``project.version`` from a ``pyproject.toml`` at ``path``.
+
+    Returns ``None`` when the path doesn't exist, the file can't be
+    read, the TOML is malformed, the ``[project]`` table lacks a
+    ``version`` key, or the resolved value isn't a string. Extracted
+    as a module-private helper so the fallback paths are directly
+    testable without monkeypatching ``Path``.
+    """
+    if not path.is_file():
+        return None
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        resolved = data["project"]["version"]
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        return None
+    return resolved if isinstance(resolved, str) else None
+
+
 def _version_from_source_tree() -> str | None:
     """Return pyproject.toml::project.version if running from source.
 
@@ -24,15 +43,7 @@ def _version_from_source_tree() -> str | None:
     `parents[2]` is `packages/eap-cli/` for source trees. For wheel
     installs there's no pyproject.toml at that path.
     """
-    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
-    if not pyproject.is_file():
-        return None
-    try:
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-        resolved = data["project"]["version"]
-    except (OSError, KeyError, tomllib.TOMLDecodeError):
-        return None
-    return resolved if isinstance(resolved, str) else None
+    return _version_from_pyproject(Path(__file__).resolve().parents[2] / "pyproject.toml")
 
 
 _source_version = _version_from_source_tree()

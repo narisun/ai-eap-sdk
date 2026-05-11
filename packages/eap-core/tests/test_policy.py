@@ -281,6 +281,171 @@ async def test_policy_middleware_refuses_without_trusted_action():
         await mw.on_request(req, ctx)
 
 
+# ---- Evaluator branch coverage (policy.py:47, 60, 64, 72, 76) --------------
+
+
+class _PrincipalLike:
+    def __init__(self, client_id: str, roles: tuple[str, ...] = ()) -> None:
+        self.client_id = client_id
+        self.roles = roles
+
+
+def test_forbid_with_empty_unless_clause_is_always_suppressed():
+    """Covers policy.py:47 — ``_condition_holds`` returns True when the
+    ``unless`` dict has no ``principal_has_role`` key (the early-return
+    at line 46 is bypassed; line 47 ``return True`` runs).
+
+    Semantically, an ``unless: {}`` clause says "this forbid is always
+    suppressed" — the condition is trivially true, so the forbid never
+    triggers. The decision falls through to default-deny because no
+    permit rule was specified.
+    """
+    doc = {
+        "rules": [
+            {
+                "id": "forbid-with-empty-unless",
+                "effect": "forbid",
+                "principal": "*",
+                "action": "*",
+                "resource": "*",
+                "unless": {},
+            }
+        ]
+    }
+    e = JsonPolicyEvaluator(doc)
+    decision = e.evaluate(_PrincipalLike("alice"), "read", "doc:1")
+    # _condition_holds({}, ...) → True → forbid suppressed → default deny.
+    assert decision.allow is False
+    assert decision.rule_id == "default-deny"
+
+
+def test_forbid_with_empty_unless_is_suppressed_letting_permit_match():
+    """Companion to the test above: an ``unless: {}`` forbid is fully
+    suppressed, so a downstream permit can run and authorize the request.
+    This pins ``_condition_holds({}, ...) is True`` (policy.py:47) from
+    the other side — observable as ``allow=True`` on the permit rule.
+    """
+    doc = {
+        "rules": [
+            {
+                "id": "forbid-suppressed",
+                "effect": "forbid",
+                "principal": "*",
+                "action": "*",
+                "resource": "*",
+                "unless": {},
+            },
+            {
+                "id": "permit-all",
+                "effect": "permit",
+                "principal": "*",
+                "action": "*",
+                "resource": "*",
+            },
+        ]
+    }
+    e = JsonPolicyEvaluator(doc)
+    decision = e.evaluate(_PrincipalLike("alice"), "read", "doc:1")
+    assert decision.allow is True
+    assert decision.rule_id == "permit-all"
+
+
+def test_forbid_principal_mismatch_continues_to_permit():
+    """Covers policy.py:60 — forbid rule's principal != current principal_id
+    must ``continue`` past this rule, letting a downstream permit match.
+    Without the ``continue``, the forbid would erroneously block any caller.
+    """
+    doc = {
+        "rules": [
+            {
+                "id": "forbid-other-user",
+                "effect": "forbid",
+                "principal": "other-user",
+                "action": "*",
+                "resource": "*",
+            },
+            {
+                "id": "permit-all",
+                "effect": "permit",
+                "principal": "*",
+                "action": "*",
+                "resource": "*",
+            },
+        ]
+    }
+    e = JsonPolicyEvaluator(doc)
+    decision = e.evaluate(_PrincipalLike("alice"), "read", "doc:1")
+    assert decision.allow is True
+    assert decision.rule_id == "permit-all"
+
+
+def test_forbid_resource_mismatch_continues_to_permit():
+    """Covers policy.py:64 — forbid rule's resource != current resource
+    must ``continue``, letting a downstream permit match."""
+    doc = {
+        "rules": [
+            {
+                "id": "forbid-secret-doc",
+                "effect": "forbid",
+                "principal": "*",
+                "action": "*",
+                "resource": "secret-doc",
+            },
+            {
+                "id": "permit-all",
+                "effect": "permit",
+                "principal": "*",
+                "action": "*",
+                "resource": "*",
+            },
+        ]
+    }
+    e = JsonPolicyEvaluator(doc)
+    decision = e.evaluate(_PrincipalLike("alice"), "read", "public-doc")
+    assert decision.allow is True
+    assert decision.rule_id == "permit-all"
+
+
+def test_permit_principal_mismatch_falls_through_to_default_deny():
+    """Covers policy.py:72 — permit rule's principal != current principal_id
+    must ``continue``. With no later permit, default-deny applies."""
+    doc = {
+        "rules": [
+            {
+                "id": "permit-alice-only",
+                "effect": "permit",
+                "principal": "alice",
+                "action": "*",
+                "resource": "*",
+            },
+        ]
+    }
+    e = JsonPolicyEvaluator(doc)
+    decision = e.evaluate(_PrincipalLike("bob"), "read", "doc:1")
+    assert decision.allow is False
+    assert decision.rule_id == "default-deny"
+
+
+def test_permit_resource_mismatch_falls_through_to_default_deny():
+    """Covers policy.py:76 — permit rule's resource != current resource
+    must ``continue``. With no later permit, default-deny applies."""
+    doc = {
+        "rules": [
+            {
+                "id": "permit-specific-resource",
+                "effect": "permit",
+                "principal": "*",
+                "action": "*",
+                "resource": "public-doc",
+            },
+        ]
+    }
+    e = JsonPolicyEvaluator(doc)
+    decision = e.evaluate(_PrincipalLike("alice"), "read", "private-doc")
+    assert decision.allow is False
+    assert decision.rule_id == "default-deny"
+
+
 @pytest.mark.asyncio
 async def test_policy_middleware_refuses_without_trusted_resource():
     """Even when policy.action is set, missing policy.resource must
