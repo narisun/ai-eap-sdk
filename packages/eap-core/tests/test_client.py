@@ -106,6 +106,35 @@ async def test_client_aclose_calls_adapter_aclose():
     await client.aclose()
 
 
+@pytest.mark.asyncio
+async def test_enterprise_llm_aclose_runs_all_components_even_if_one_raises():
+    """aclose must invoke aclose() on every owned component, surfacing failures
+    as ExceptionGroup. A raising adapter must not skip identity/exchange closure."""
+    from eap_core import EnterpriseLLM, RuntimeConfig
+
+    closed = []
+
+    class RaisingAclose:
+        async def aclose(self):
+            closed.append("raising")
+            raise RuntimeError("test boom")
+
+    class SilentAclose:
+        async def aclose(self):
+            closed.append("silent")
+
+    client = EnterpriseLLM(
+        RuntimeConfig(provider="local", model="x"),
+        owned=[RaisingAclose(), SilentAclose()],
+    )
+    with pytest.raises(ExceptionGroup) as exc_info:
+        await client.aclose()
+    # Both ran despite one raising
+    assert set(closed) == {"raising", "silent"}
+    assert len(exc_info.value.exceptions) == 1
+    assert any(isinstance(e, RuntimeError) for e in exc_info.value.exceptions)
+
+
 async def test_to_messages_accepts_dict_list():
     from eap_core.client import _to_messages
 

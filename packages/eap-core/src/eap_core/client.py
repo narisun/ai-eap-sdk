@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from typing import Any
 
 from pydantic import BaseModel
@@ -209,8 +209,30 @@ class EnterpriseLLM:
         return resp.payload
 
     async def aclose(self) -> None:
-        await self._adapter.aclose()
+        """Close the runtime adapter + every owned component.
+
+        All aclose() calls run regardless of failures; collected exceptions
+        are re-raised as an ExceptionGroup (PEP 654, Python 3.11+).
+
+        Components are closed **concurrently** via ``asyncio.gather``. If
+        multiple components share an underlying resource (e.g., an
+        externally-owned ``httpx.AsyncClient``), close that resource yourself
+        rather than relying on shared ownership — concurrent ``aclose()``
+        calls on the same pool are undefined.
+        """
+        closers: list[Awaitable[None]] = [self._adapter.aclose()]
         for component in self._owned_components:
-            close = getattr(component, "aclose", None)
-            if close is not None:
-                await close()
+            if hasattr(component, "aclose"):
+                closers.append(component.aclose())
+
+        results = await asyncio.gather(*closers, return_exceptions=True)
+        # gather(return_exceptions=True) only catches Exception subclasses;
+        # BaseException (KeyboardInterrupt, SystemExit) propagates immediately
+        # and is unreachable here. ExceptionGroup is also bound to Exception
+        # (mypy strict).
+        failures = [r for r in results if isinstance(r, Exception)]
+        if failures:
+            raise ExceptionGroup(
+                f"{len(failures)} component(s) failed to aclose cleanly",
+                failures,
+            )
