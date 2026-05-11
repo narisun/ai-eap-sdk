@@ -1399,26 +1399,16 @@ unknown markers fail loudly.
 
 ### 9.2 Coverage gate
 
-`tool.coverage.report.fail_under = 86` enforces ≥86% coverage on the
-default `test-core` run. Modules whose code paths only run with extras
-installed are added to `tool.coverage.run.omit`. Mixed modules
-(default path + extras path) use `# pragma: no cover` on the
-extras-gated branches.
+The coverage gate is set at **90%** (`tool.coverage.report.fail_under`
+in `pyproject.toml`). This was the target from v0.4.0 through the
+v0.6.x line — temporarily lowered to 86% in v0.6.2 to align the gate
+with measured reality while the codebase caught up, then ratcheted
+back to 90% in v0.7.0. Future regressions that drop coverage below
+90% will fail CI.
 
-The 86% gate is a **temporary cap** introduced in v0.6.2 because the
-canonical CI command was failing at 87.22% against a 90% gate (caught
-by the v0.6.1 pre-prod review). The plan for v0.7.0 is to ratchet
-back to ≥90% by adding focused unit tests for the currently-omitted
-branches in `integrations/` and `middleware/observability.py`. Until
-then:
-
-If your change drops coverage below 86%:
-
-1. Add a focused unit test for the new code.
-2. If the new code is genuinely extras-only, add `# pragma: no cover`
-   to the relevant lines.
-3. Do not lower the gate further without a corresponding ratchet-up
-   plan in the same PR.
+If you need to lower it again, treat it as a code review-worthy
+decision — the gate is the floor for "what's acceptable in main", not
+a configurable convenience.
 
 ### 9.3 What we test
 
@@ -1492,8 +1482,7 @@ Before merging a non-trivial change, walk through this checklist.
 ### Tests
 
 - [ ] Did `pytest -m "not extras and not cloud"` stay green and
-      meet the coverage gate? (Currently `86%`; see §9.2 for the
-      v0.7.0 ratchet-back-to-90% plan.)
+      meet the coverage gate? (90%, set in pyproject.toml.)
 - [ ] Did each `--extra` matrix entry stay green?
 - [ ] Did `ruff check && ruff format --check && mypy` stay clean?
 
