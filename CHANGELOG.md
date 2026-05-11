@@ -16,6 +16,49 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.7.1] — 2026-05-11 — MCP server JSON serialization fix
+
+Patch fixing a serialization bug surfaced by the SDK validation
+exercise (bankdw + sfcrm MCP servers + cross-domain agent in
+`examples/`). Tool returns of type `pydantic.BaseModel` were being
+emitted to the MCP stream via `str(result)`, which produces a
+Python-specific repr (`name='alice' count=5`) rather than JSON.
+Any non-Python MCP client consuming an EAP-Core MCP server would
+have received unparseable text. No public API or wire-format
+changes for non-BaseModel returns; existing v0.7.0 installs upgrade
+cleanly.
+
+### Fixed
+
+- **`eap_core.mcp.server`: tool returns now properly JSON-serialized.**
+  Extracted `_serialize_for_text_content` which routes `BaseModel`
+  through `model_dump_json()` and `dict`/`list` through
+  `json.dumps(..., default=str)` before embedding in
+  `TextContent.text`. Primitives (str/int/bool/None) preserve the
+  prior `str()` behavior so tools returning raw text continue to
+  work identically. Eight regression tests in
+  `packages/eap-core/tests/extras/test_mcp_server.py` lock the
+  contract for BaseModel, dict, list, str, int, None, and the
+  `default=str` fallback for non-JSON-serializable values.
+
+### Stats
+
+- 576 non-extras tests passing (unchanged from v0.7.0).
+- Extras tests grow by +7 (1 → 8 in `test_mcp_server.py`); total
+  Cedar + MCP extras tests now 17.
+- Coverage: ≥90% (unchanged).
+- All gauntlets green.
+
+### Behavior change worth flagging for upgraders
+
+Tools returning `pydantic.BaseModel` will now emit JSON to MCP
+clients. If you have an MCP client downstream that was parsing
+the v0.7.0 Python repr, switch it to JSON parsing. Tools returning
+`dict` / `list` also switch from Python repr to JSON. Tools
+returning primitives (`str`, `int`, `bool`, `None`) are unchanged.
+
+---
+
 ## [0.7.0] — 2026-05-11 — Cedar engine + coverage ratchet
 
 First minor release after the v0.6.x doc / packaging / test-quality
