@@ -1,0 +1,46 @@
+Id,Name,Type,Industry,AccountNumber,Ownership,Phone,Website,BillingStreet,BillingCity,BillingState,BillingPostalCode,BillingCountry,AnnualRevenue,NumberOfEmployees,Rating
+001000000000001AAA,Microsoft Corp.,Customer - Direct,Banking Client,ACC-1000,Public,(649) 184-4891,https://www.microsoftcorp.com,100 Market St,Seattle,WA,98101,USA,469000000,3769,Warm
+001000000000002AAA,Ford Motor Company,Customer - Direct,Banking Client,ACC-1001,Private,(373) 850-0228,https://www.fordmotorcompany.com,250 Innovation Ave,Detroit,MI,48226,USA,266000000,2516,Cold
+001000000000003AAA,Sysco Corporation,Customer - Direct,Banking Client,ACC-1002,Subsidiary,(562) 376-3899,https://www.syscocorporation.com,500 Commerce Blvd,Chicago,IL,60601,USA,277000000,17577,Hot
+001000000000004AAA,Marathon Petroleum,Customer - Direct,Banking Client,ACC-1003,Public,(246) 763-7908,https://www.marathonpetroleum.com,1200 Main St,Houston,TX,77002,USA,260000000,9210,Warm
+001000000000005AAA,Walgreens Boots Alliance,Customer - Direct,Banking Client,ACC-1004,Public,(631) 488-5291,https://www.walgreensbootsalliance.com,75 River Rd,Phoenix,AZ,85004,USA,520000000,18020,Warm
+001000000000006AAA,Delta Air Lines,Customer - Direct,Banking Client,ACC-1005,Public,(274) 604-0149,https://www.deltaairlines.com,840 Industrial Pkwy,Atlanta,GA,30303,USA,419000000,1469,Warm
+001000000000007AAA,General Motors,Customer - Direct,Banking Client,ACC-1006,Public,(835) 475-3383,https://www.generalmotors.com,300 Enterprise Dr,Dallas,TX,75201,USA,805000000,9255,Warm
+001000000000008AAA,CVS Health,Customer - Direct,Banking Client,ACC-1007,Public,(420) 032-3479,https://www.cvshealth.com,1900 Harbor Way,Boston,MA,02110,USA,763000000,18263,Hot
+001000000000009AAA,Exxon Mobil,Customer - Direct,Banking Client,ACC-1008,Public,(787) 538-3023,https://www.exxonmobil.com,4100 Summit Ave,Minneapolis,MN,55402,USA,614000000,19964,Warm
+001000000000010AAA,United Parcel Service (UPS),Customer - Direct,Banking Client,ACC-1009,Public,(710) 623-8817,https://www.unitedparcelservice(ups).com,980 Capital Plaza,New York,NY,10005,USA,595000000,12245,Cold
+001000000000011AAA,Office Depot,Customer - Direct,Banking Client,ACC-1010,Public,(200) 945-3867,https://www.officedepot.com,100 Market St,Miami,FL,33131,USA,479000000,10179,Warm
+001000000000012AAA,Digital Realty Trust,Customer - Direct,Banking Client,ACC-1011,Public,(714) 565-1188,https://www.digitalrealtytrust.com,250 Innovation Ave,Denver,CO,80202,USA,299000000,6949,Warm
+001000000000013AAA,Starbucks Corp.,Customer - Direct,Banking Client,ACC-1012,Subsidiary,(758) 736-9671,https://www.starbuckscorp.com,500 Commerce Blvd,San Francisco,CA,94105,USA,262000000,1162,Cold
+001000000000014AAA,"Amazon.com, Inc.",Customer - Direct,Banking Client,ACC-1013,Public,(794) 835-6701,https://www.amazoncominc.com,1200 Main St,Los Angeles,CA,90017,USA,118000000,16768,Warm
+001000000000015AAA,Boeing,Customer - Direct,Banking Client,ACC-1014,Subsidiary,(207) 935-9405,https://www.boeing.com,75 River Rd,Portland,OR,97204,USA,897000000,8747,Warm
+001000000000016AAA,Target Corp.,Customer - Direct,Banking Client,ACC-1015,Public,(817) 139-1951,https://www.targetcorp.com,840 Industrial Pkwy,Charlotte,NC,28202,USA,249000000,5999,Warm
+001000000000017AAA,IBM,Customer - Direct,Banking Client,ACC-1016,Public,(297) 652-8336,https://www.ibm.com,300 Enterprise Dr,Nashville,TN,37219,USA,213000000,17063,Cold
+001000000000018AAA,Costco Wholesale,Customer - Direct,Banking Client,ACC-1017,Public,(853) 536-7660,https://www.costcowholesale.com,1900 Harbor Way,St. Louis,MO,63101,USA,979000000,17029,Warm
+001000000000019AAA,Procter & Gamble,Customer - Direct,Banking Client,ACC-1018,Subsidiary,(416) 841-5297,https://www.procter&gamble.com,4100 Summit Ave,Columbus,OH,43215,USA,272000000,19622,Cold
+001000000000020AAA,Cisco Systems,Customer - Direct,Banking Client,ACC-1019,Subsidiary,(553) 773-7541,https://www.ciscosystems.com,980 Capital Plaza,Raleigh,NC,27601,USA,837000000,7787,Cold
+001000000000021AAA,Alphabet Inc.,Customer - Direct,Banking Client,ACC-1020,Private,(276) 484-6545,https://www.alphabetinc.com,100 Market St,Seattle,WA,98101,USA,331000000,19931,Warm
+001000000000022AAA,PepsiCo,Customer - Direct,Banking Client,ACC-1021,Private,(249) 870-1110,https://www.pepsico.com,250 Innovation Ave,Detroit,MI,48226,USA,951000000,10051,Hot
+001000000000023AAA,Precision Manufacturing Inc.,Customer - Direct,Banking Client,ACC-1022,Public,(765) 631-1193,https://www.precisionmanufacturinginc.com,500 Commerce Blvd,Chicago,IL,60601,USA,415000000,15715,Hot
+001000000000024AAA,Intel Corp.,Customer - Direct,Banking Client,ACC-1023,Public,(367) 582-6887,https://www.intelcorp.com,1200 Main St,Houston,TX,77002,USA,698000000,18198,Cold
+001000000000025AAA,AmerisourceBergen,Customer - Direct,Banking Client,ACC-1024,Public,(710) 300-1219,https://www.amerisourcebergen.com,75 River Rd,Phoenix,AZ,85004,USA,998000000,10348,Cold
+001000000000026AAA,Verizon Communications,Customer - Direct,Banking Client,ACC-1025,Private,(566) 811-5517,https://www.verizoncommunications.com,840 Industrial Pkwy,Atlanta,GA,30303,USA,776000000,16826,Cold
+001000000000027AAA,Main Street Cafe Supplies,Customer - Direct,Banking Client,ACC-1026,Public,(826) 602-9774,https://www.mainstreetcafesupplies.com,300 Enterprise Dr,Dallas,TX,75201,USA,728000000,1678,Hot
+001000000000028AAA,Kroger,Customer - Direct,Banking Client,ACC-1027,Public,(830) 787-8349,https://www.kroger.com,1900 Harbor Way,Boston,MA,02110,USA,649000000,10899,Cold
+001000000000029AAA,Global Logistics Partners,Customer - Direct,Banking Client,ACC-1028,Public,(752) 074-0986,https://www.globallogisticspartners.com,4100 Summit Ave,Minneapolis,MN,55402,USA,994000000,17894,Hot
+001000000000030AAA,Chevron,Customer - Direct,Banking Client,ACC-1029,Subsidiary,(635) 839-4270,https://www.chevron.com,980 Capital Plaza,New York,NY,10005,USA,177000000,8727,Cold
+001000000000031AAA,American Tower Corp.,Customer - Direct,Banking Client,ACC-1030,Public,(752) 002-9487,https://www.americantowercorp.com,100 Market St,Miami,FL,33131,USA,715000000,1615,Cold
+001000000000032AAA,The Walt Disney Company,Customer - Direct,Banking Client,ACC-1031,Private,(308) 909-9785,https://www.thewaltdisneycompany.com,250 Innovation Ave,Denver,CO,80202,USA,496000000,296,Hot
+001000000000033AAA,Oracle Corp.,Customer - Direct,Banking Client,ACC-1032,Public,(434) 623-3838,https://www.oraclecorp.com,500 Commerce Blvd,San Francisco,CA,94105,USA,625000000,15725,Hot
+001000000000034AAA,Johnson & Johnson,Customer - Direct,Banking Client,ACC-1033,Public,(324) 235-5319,https://www.johnson&johnson.com,1200 Main St,Los Angeles,CA,90017,USA,200000000,1950,Hot
+001000000000035AAA,UnitedHealth Group,Customer - Direct,Banking Client,ACC-1034,Public,(206) 280-3149,https://www.unitedhealthgroup.com,75 River Rd,Portland,OR,97204,USA,824000000,13574,Hot
+001000000000036AAA,PayDay Services Inc.,Customer - Direct,Banking Client,ACC-1035,Public,(893) 293-4043,https://www.paydayservicesinc.com,840 Industrial Pkwy,Charlotte,NC,28202,USA,773000000,18523,Hot
+001000000000037AAA,The Home Depot,Customer - Direct,Banking Client,ACC-1036,Subsidiary,(416) 461-8805,https://www.thehomedepot.com,300 Enterprise Dr,Nashville,TN,37219,USA,692000000,15542,Cold
+001000000000038AAA,Creative Marketing Group,Customer - Direct,Banking Client,ACC-1037,Public,(565) 948-7770,https://www.creativemarketinggroup.com,1900 Harbor Way,St. Louis,MO,63101,USA,924000000,11124,Hot
+001000000000039AAA,Innovative Tech Solutions,Customer - Direct,Banking Client,ACC-1038,Private,(387) 088-4132,https://www.innovativetechsolutions.com,4100 Summit Ave,Columbus,OH,43215,USA,141000000,4391,Warm
+001000000000040AAA,Apple Inc.,Customer - Direct,Banking Client,ACC-1039,Public,(533) 669-9673,https://www.appleinc.com,980 Capital Plaza,Raleigh,NC,27601,USA,483000000,11233,Cold
+001000000000041AAA,Cardinal Health,Customer - Direct,Banking Client,ACC-1040,Public,(880) 755-0347,https://www.cardinalhealth.com,100 Market St,Seattle,WA,98101,USA,743000000,17993,Cold
+001000000000042AAA,McKesson,Customer - Direct,Banking Client,ACC-1041,Subsidiary,(359) 771-8437,https://www.mckesson.com,250 Innovation Ave,Detroit,MI,48226,USA,837000000,4587,Warm
+001000000000043AAA,Walmart Inc.,Customer - Direct,Banking Client,ACC-1042,Private,(741) 658-8015,https://www.walmartinc.com,500 Commerce Blvd,Chicago,IL,60601,USA,946000000,19296,Cold
+001000000000044AAA,AT&T,Customer - Direct,Banking Client,ACC-1043,Subsidiary,(529) 456-9556,https://www.at&t.com,1200 Main St,Houston,TX,77002,USA,962000000,18162,Warm
+001000000000045AAA,Gordon Food Service,Customer - Direct,Banking Client,ACC-1044,Public,(293) 033-1930,https://www.gordonfoodservice.com,75 River Rd,Phoenix,AZ,85004,USA,459000000,9109,Cold

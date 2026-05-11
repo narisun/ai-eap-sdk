@@ -1,0 +1,98 @@
+domain_name,table_name,table_description,column_name,data_type,data_size,nullable,description,is_primary_key,is_foreign_key,foreign_key_table,foreign_key_column,semantic_tags,example_value
+payments,bridge_party_account,Bridge table linking parties to bank accounts and related bank attributes.,PartyAccountKey,integer,4,N,Surrogate key for the party-account bridge row.,Y,N,,,identifier|primary_key,1
+payments,bridge_party_account,Bridge table linking parties to bank accounts and related bank attributes.,PartyName,varchar,28,N,Legal or display name of the party.,N,N,,,descriptive,Microsoft Corp.
+payments,bridge_party_account,Bridge table linking parties to bank accounts and related bank attributes.,AccountNumber,integer,10,N,Customer account number.,N,N,,,,3552256505
+payments,bridge_party_account,Bridge table linking parties to bank accounts and related bank attributes.,BankName,varchar,20,N,Bank legal or trading name.,N,N,,,descriptive,BMO Harris Bank (US)
+payments,bridge_party_account,Bridge table linking parties to bank accounts and related bank attributes.,RoutingNumber,integer,9,N,Domestic routing or transit number.,N,N,,,,71000288
+payments,bridge_party_account,Bridge table linking parties to bank accounts and related bank attributes.,PartyID,varchar,13,N,Durable business identifier for the party.,N,Y,dim_party,PartyID,identifier|foreign_key,PTY3912292247
+payments,bridge_party_account,Bridge table linking parties to bank accounts and related bank attributes.,BankID,varchar,13,N,Durable business identifier for the bank.,N,Y,dim_bank,BankID,identifier|foreign_key,BNK8987547752
+payments,bridge_party_account,Bridge table linking parties to bank accounts and related bank attributes.,AccountType,varchar,10,N,Type of deposit or payment account.,N,N,,,dimension_attribute,Savings
+payments,bridge_party_account,Bridge table linking parties to bank accounts and related bank attributes.,AccountStatus,varchar,10,N,Operational status of the account.,N,N,,,dimension_attribute,Open
+payments,bridge_party_account,Bridge table linking parties to bank accounts and related bank attributes.,CurrencyCode,varchar,3,N,ISO currency code for the account.,N,N,,,,USD
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,BankKey,integer,1,N,Surrogate key for the bank dimension.,Y,N,,,identifier|primary_key,1
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,BankID,varchar,13,N,Durable business identifier for the bank.,N,N,,,identifier,BNK8987547752
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,BankName,varchar,20,N,Bank legal or trading name.,N,N,,,descriptive,BMO Harris Bank (US)
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,BankRoleType,varchar,19,N,"Role the bank plays in payments, such as originating or receiving bank.",N,N,,,dimension_attribute,PayorBank|PayeeBank
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,RoutingNumber,integer,9,N,Domestic routing or transit number.,N,N,,,,71000288
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,SWIFTBIC,varchar,11,N,SWIFT/BIC identifier for international payments.,N,N,,,,BOFAUS3NXXX
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,BankType,varchar,15,N,Institution classification such as national bank or credit union.,N,N,,,dimension_attribute,National Bank
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,OwnershipType,varchar,7,N,Ownership model of the bank.,N,N,,,dimension_attribute,Public
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,CountryCode,varchar,2,N,ISO-style country code.,N,N,,,,US
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,HeadquartersState,varchar,2,N,State of bank headquarters.,N,N,,,,FL
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,HeadquartersCity,varchar,8,N,City of bank headquarters.,N,N,,,,Miami
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,Regulator,varchar,15,N,Primary supervisory regulator.,N,N,,,,NCUA
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,ClearingNetworksSupported,varchar,17,N,Payment and clearing networks supported by the bank.,N,N,,,,ACH|Fedwire|SWIFT
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,CorrespondentBankFlag,varchar,1,N,Flag indicating whether the institution acts as a correspondent bank.,N,N,,,,Y
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,SettlementCurrency,varchar,3,N,Default settlement currency.,N,N,,,,USD
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,LiquidityTier,varchar,6,N,Liquidity or size tier used for treasury analytics.,N,N,,,,Tier 2
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,BSAAMLProgramRating,varchar,12,N,Compliance rating for the BSA/AML program.,N,N,,,dimension_attribute,Needs Review
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,SanctionsComplianceStatus,varchar,9,N,Overall sanctions compliance status.,N,N,,,dimension_attribute,Compliant
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,BankStatus,varchar,6,N,Operational or relationship status of the bank.,N,N,,,dimension_attribute,Active
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,EstablishedDate,date,10,N,Date the bank was established.,N,N,,,date,1957-09-25
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,SourceSystem,varchar,13,N,Source system that supplied the record.,N,N,,,,Payments Seed
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,SourceNaturalKey,varchar,20,N,Natural business key from the source system.,Y,N,,,identifier|primary_key,BMO Harris Bank (US)
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,CreatedDate,date,10,N,Date the record was created in the source or seed dataset.,N,N,,,date,2026-03-16
+payments,dim_bank,Conformed payments bank dimension representing originating and receiving banks.,UpdatedDate,date,10,N,Date the record was last updated in the source or seed dataset.,N,N,,,date,2026-03-16
+payments,dim_party,Conformed payments party dimension representing payors and payees.,PartyKey,integer,2,N,Surrogate key for the party dimension.,Y,N,,,identifier|primary_key,1
+payments,dim_party,Conformed payments party dimension representing payors and payees.,PartyID,varchar,13,N,Durable business identifier for the party.,N,N,,,identifier,PTY7409806428
+payments,dim_party,Conformed payments party dimension representing payors and payees.,PartyName,varchar,28,N,Legal or display name of the party.,N,N,,,descriptive,AT&T
+payments,dim_party,Conformed payments party dimension representing payors and payees.,PartyRoleType,varchar,11,N,"Role the party plays in payments, such as payor or payee.",N,N,,,dimension_attribute,Payor|Payee
+payments,dim_party,Conformed payments party dimension representing payors and payees.,PartyType,varchar,10,N,Party classification such as individual or organization.,N,N,,,dimension_attribute,Individual
+payments,dim_party,Conformed payments party dimension representing payors and payees.,CustomerSegment,varchar,13,N,Business customer segment used for analytics and service models.,N,N,,,dimension_attribute,Retail
+payments,dim_party,Conformed payments party dimension representing payors and payees.,KYCStatus,varchar,22,N,Know Your Customer review status.,N,N,,,dimension_attribute,Pending Review
+payments,dim_party,Conformed payments party dimension representing payors and payees.,RiskRating,varchar,8,N,Overall party risk rating used by compliance or fraud teams.,N,N,,,dimension_attribute,Elevated
+payments,dim_party,Conformed payments party dimension representing payors and payees.,AMLRiskCategory,varchar,6,N,Anti-money laundering risk category.,N,N,,,dimension_attribute,Medium
+payments,dim_party,Conformed payments party dimension representing payors and payees.,SanctionsScreeningStatus,varchar,15,N,Latest sanctions screening outcome.,N,N,,,dimension_attribute,Clear
+payments,dim_party,Conformed payments party dimension representing payors and payees.,PEPFlag,varchar,1,N,Flag showing whether the party is a politically exposed person.,N,N,,,,N
+payments,dim_party,Conformed payments party dimension representing payors and payees.,IndustrySector,varchar,21,N,Industry sector used for segmentation and risk analysis.,N,N,,,,Consumer
+payments,dim_party,Conformed payments party dimension representing payors and payees.,TaxIDType,varchar,3,N,Type of tax identifier collected for the party.,N,N,,,dimension_attribute,SSN
+payments,dim_party,Conformed payments party dimension representing payors and payees.,CountryCode,varchar,2,N,ISO-style country code.,N,N,,,,US
+payments,dim_party,Conformed payments party dimension representing payors and payees.,StateProvinceCode,varchar,2,N,State or province code.,N,N,,,,WA
+payments,dim_party,Conformed payments party dimension representing payors and payees.,City,varchar,13,N,City name.,N,N,,,,Seattle
+payments,dim_party,Conformed payments party dimension representing payors and payees.,PostalCode,integer,5,N,Postal or ZIP code.,N,N,,,,17315
+payments,dim_party,Conformed payments party dimension representing payors and payees.,PreferredChannel,varchar,15,N,Preferred service or transaction channel.,N,N,,,,Treasury Portal
+payments,dim_party,Conformed payments party dimension representing payors and payees.,FraudMonitoringSegment,varchar,21,N,Fraud monitoring tier or segment.,N,N,,,dimension_attribute,Enhanced Monitoring
+payments,dim_party,Conformed payments party dimension representing payors and payees.,CustomerStatus,varchar,10,N,Lifecycle status of the party relationship.,N,N,,,dimension_attribute,Active
+payments,dim_party,Conformed payments party dimension representing payors and payees.,OnboardingDate,date,10,N,Date onboarding was initiated or completed.,N,N,,,date,2020-12-07
+payments,dim_party,Conformed payments party dimension representing payors and payees.,RelationshipStartDate,date,10,N,Date the customer relationship began.,N,N,,,date,2021-06-05
+payments,dim_party,Conformed payments party dimension representing payors and payees.,SourceSystem,varchar,13,N,Source system that supplied the record.,N,N,,,,Payments Seed
+payments,dim_party,Conformed payments party dimension representing payors and payees.,SourceNaturalKey,varchar,28,N,Natural business key from the source system.,Y,N,,,identifier|primary_key,AT&T
+payments,dim_party,Conformed payments party dimension representing payors and payees.,CreatedDate,date,10,N,Date the record was created in the source or seed dataset.,N,N,,,date,2026-03-16
+payments,dim_party,Conformed payments party dimension representing payors and payees.,UpdatedDate,date,10,N,Date the record was last updated in the source or seed dataset.,N,N,,,date,2026-03-16
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,ProductKey,integer,1,N,Surrogate key for the product dimension.,Y,N,,,identifier|primary_key,1
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,ProductID,varchar,13,N,Durable business identifier for the transaction product.,N,N,,,identifier,PRD8287003308
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,ProductName,varchar,23,N,Name of the transaction type or product.,N,N,,,descriptive,ACH Credit
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,ProductCategory,varchar,15,N,Broad payment product category.,N,N,,,dimension_attribute,Credit Transfer
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,ProductFamily,varchar,18,N,Higher-level product family grouping.,N,N,,,dimension_attribute,Account-to-Account
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,PaymentRail,varchar,23,N,Underlying payment rail used to process the transaction.,N,N,,,,ACH Credit
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,Directionality,varchar,12,N,"Whether the product supports credit, debit, or both directions.",N,N,,,,Credit|Debit
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,SettlementMethod,varchar,5,N,Method by which settlement is executed.,N,N,,,,Batch
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,SettlementSpeed,varchar,10,N,Expected settlement timing or SLA.,N,N,,,,T+0/T+1
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,TypicalUseCase,varchar,36,N,Common business use case for the product.,N,N,,,,"Payroll, vendor payments, refunds"
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,RiskLevel,varchar,6,N,Operational or fraud risk level.,N,N,,,,Low
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,ChargebackReturnExposure,varchar,6,N,"Expected exposure to returns, disputes, or chargebacks.",N,N,,,,Medium
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,Reversibility,varchar,20,N,How and whether transactions can be reversed or returned.,N,N,,,,Return Window
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,CrossBorderCapability,varchar,1,N,Flag indicating support for cross-border transactions.,N,N,,,,N
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,DefaultCurrency,varchar,3,N,Typical default currency.,N,N,,,,USD
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,GeographyScope,varchar,8,N,"Domestic, regional, or global usage scope.",N,N,,,,Domestic
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,ComplianceConsiderations,varchar,50,N,Key compliance or network rule considerations.,N,N,,,,"NACHA rules, OFAC screening"
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,GLMappingCategory,varchar,23,N,General ledger mapping category for finance reporting.,N,N,,,dimension_attribute,Electronic Disbursement
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,ProductStatus,varchar,6,N,Lifecycle status of the product.,N,N,,,dimension_attribute,Active
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,SourceSystem,varchar,13,N,Source system that supplied the record.,N,N,,,,Payments Seed
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,SourceNaturalKey,varchar,23,N,Natural business key from the source system.,Y,N,,,identifier|primary_key,ACH Credit
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,CreatedDate,date,10,N,Date the record was created in the source or seed dataset.,N,N,,,date,2026-03-16
+payments,dim_product,Payments product dimension representing transaction types and payment rails.,UpdatedDate,date,10,N,Date the record was last updated in the source or seed dataset.,N,N,,,date,2026-03-16
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,TransactionID,varchar,13,N,Unique identifier for each payment transaction.,Y,N,,,identifier|primary_key,TXN1234567890
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,TransactionDate,date,10,N,Date the payment transaction was executed.,N,N,,,date,2025-11-15
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,PayorName,varchar,28,N,Name of the paying party. Joins to dim_party.PartyName and salesforce.Account.Name.,N,N,dim_party,PartyName,descriptive|join_key,Microsoft Corp.
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,PayorAccountNumber,text,,N,Account number of the paying party.,N,N,,,,3552256505
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,PayorBank,varchar,20,N,Name of the paying party's bank. Joins to dim_bank.BankName.,N,N,dim_bank,BankName,descriptive|join_key,BMO Harris Bank (US)
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,PayorRoutingNumber,text,,N,Routing number of the paying party's bank.,N,N,,,,71000288
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,PayeeName,varchar,28,N,Name of the receiving party. Joins to dim_party.PartyName and salesforce.Account.Name.,N,N,dim_party,PartyName,descriptive|join_key,AT&T
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,PayeeAccountNumber,text,,N,Account number of the receiving party.,N,N,,,,9876543210
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,PayeeBank,varchar,20,N,Name of the receiving party's bank. Joins to dim_bank.BankName.,N,N,dim_bank,BankName,descriptive|join_key,JPMorgan Chase (US)
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,PayeeRoutingNumber,text,,N,Routing number of the receiving party's bank.,N,N,,,,21000021
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,TransactionType,varchar,25,N,Type of payment transaction such as ACH Credit or Wire Transfer.,N,N,,,dimension_attribute,ACH Credit
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,Amount,numeric,15,N,Transaction amount in the specified currency.,N,N,,,measure|financial,25000.00
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,Currency,varchar,3,N,ISO currency code for the transaction.,N,N,,,,USD
+payments,fact_payments,Central fact table recording all payment transactions between parties through banks.,Status,varchar,10,N,Current status of the payment transaction.,N,N,,,dimension_attribute,Completed

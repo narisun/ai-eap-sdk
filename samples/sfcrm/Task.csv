@@ -1,0 +1,121 @@
+Id,Subject,ActivityDate,Status,Priority,WhoId,WhatId,Type,Description
+00T000000000001AAA,Intro call,2026-08-15,Not Started,Normal,003000000000001AAA,006000000000001AAA,Call,Intro call for opportunity Microsoft Corp. - Fraud + ERP.
+00T000000000002AAA,Follow-up email,2026-01-02,Completed,High,003000000000001AAA,006000000000002AAA,Email,Follow-up email for opportunity Microsoft Corp. - ERP.
+00T000000000003AAA,Proposal review,2026-07-21,Completed,Low,003000000000002AAA,006000000000003AAA,Follow Up,Proposal review for opportunity Ford Motor Company - Liquidity + Fraud Bundle.
+00T000000000004AAA,Pricing discussion,2025-07-27,Completed,Normal,003000000000002AAA,006000000000004AAA,Meeting,Pricing discussion for opportunity Ford Motor Company - Fraud + Treasury.
+00T000000000005AAA,Security questionnaire,2026-08-14,In Progress,High,003000000000002AAA,006000000000005AAA,Call,Security questionnaire for opportunity Ford Motor Company - Treasury + ACH Bundle.
+00T000000000006AAA,Renewal check-in,2025-07-25,Completed,Low,003000000000003AAA,006000000000006AAA,Email,Renewal check-in for opportunity Sysco Corporation - Fraud.
+00T000000000007AAA,Intro call,2026-07-31,Not Started,Normal,003000000000004AAA,006000000000007AAA,Follow Up,Intro call for opportunity Marathon Petroleum - ERP + ACH.
+00T000000000008AAA,Follow-up email,2026-08-12,In Progress,High,003000000000004AAA,006000000000008AAA,Meeting,Follow-up email for opportunity Marathon Petroleum - Virtual + Fraud Bundle.
+00T000000000009AAA,Proposal review,2026-04-30,Completed,Low,003000000000005AAA,006000000000009AAA,Call,Proposal review for opportunity Walgreens Boots Alliance - Virtual + Fraud.
+00T000000000010AAA,Pricing discussion,2026-05-12,Not Started,Normal,003000000000005AAA,006000000000010AAA,Email,Pricing discussion for opportunity Walgreens Boots Alliance - Virtual + Treasury Bundle.
+00T000000000011AAA,Security questionnaire,2026-06-06,In Progress,High,003000000000006AAA,006000000000011AAA,Follow Up,Security questionnaire for opportunity Delta Air Lines - ERP + ACH.
+00T000000000012AAA,Renewal check-in,2025-08-25,Completed,Low,003000000000006AAA,006000000000012AAA,Meeting,Renewal check-in for opportunity Delta Air Lines - ERP.
+00T000000000013AAA,Intro call,2026-07-10,Not Started,Normal,003000000000007AAA,006000000000013AAA,Call,Intro call for opportunity General Motors - ACH + Fraud.
+00T000000000014AAA,Follow-up email,2026-02-03,Completed,High,003000000000007AAA,006000000000014AAA,Email,Follow-up email for opportunity General Motors - ERP.
+00T000000000015AAA,Proposal review,2026-08-29,Completed,Low,003000000000008AAA,006000000000015AAA,Follow Up,Proposal review for opportunity CVS Health - Virtual.
+00T000000000016AAA,Pricing discussion,2026-05-01,Not Started,Normal,003000000000009AAA,006000000000016AAA,Meeting,Pricing discussion for opportunity Exxon Mobil - Liquidity + ERP.
+00T000000000017AAA,Security questionnaire,2026-05-13,In Progress,High,003000000000009AAA,006000000000017AAA,Call,Security questionnaire for opportunity Exxon Mobil - Liquidity + ERP Bundle.
+00T000000000018AAA,Renewal check-in,2026-03-31,Completed,Low,003000000000010AAA,006000000000018AAA,Email,Renewal check-in for opportunity United Parcel Service (UPS) - ERP + Treasury Bundle.
+00T000000000019AAA,Intro call,2025-07-17,Completed,Normal,003000000000010AAA,006000000000019AAA,Follow Up,Intro call for opportunity United Parcel Service (UPS) - Virtual + Treasury Bundle.
+00T000000000020AAA,Follow-up email,2026-04-24,In Progress,High,003000000000010AAA,006000000000020AAA,Meeting,Follow-up email for opportunity United Parcel Service (UPS) - Liquidity + Virtual.
+00T000000000021AAA,Proposal review,2026-04-11,Completed,Low,003000000000011AAA,006000000000021AAA,Call,Proposal review for opportunity Office Depot - ACH + Virtual.
+00T000000000022AAA,Pricing discussion,2025-08-29,Completed,Normal,003000000000011AAA,006000000000022AAA,Email,Pricing discussion for opportunity Office Depot - ERP.
+00T000000000023AAA,Security questionnaire,2025-10-28,Completed,High,003000000000012AAA,006000000000023AAA,Follow Up,Security questionnaire for opportunity Digital Realty Trust - Treasury + Fraud.
+00T000000000024AAA,Renewal check-in,2026-07-20,Completed,Low,003000000000012AAA,006000000000024AAA,Meeting,Renewal check-in for opportunity Digital Realty Trust - ERP.
+00T000000000025AAA,Intro call,2026-06-19,Not Started,Normal,003000000000013AAA,006000000000025AAA,Call,Intro call for opportunity Starbucks Corp. - ACH + Treasury Bundle.
+00T000000000026AAA,Follow-up email,2025-08-12,Completed,High,003000000000013AAA,006000000000026AAA,Email,Follow-up email for opportunity Starbucks Corp. - ACH + Fraud.
+00T000000000027AAA,Proposal review,2026-07-13,Completed,Low,003000000000013AAA,006000000000027AAA,Follow Up,Proposal review for opportunity Starbucks Corp. - Liquidity + ACH Bundle.
+00T000000000028AAA,Pricing discussion,2026-07-12,Not Started,Normal,003000000000014AAA,006000000000028AAA,Meeting,"Pricing discussion for opportunity Amazon.com, Inc. - ACH + ERP."
+00T000000000029AAA,Security questionnaire,2026-08-07,In Progress,High,003000000000014AAA,006000000000029AAA,Call,"Security questionnaire for opportunity Amazon.com, Inc. - ACH + Fraud Bundle."
+00T000000000030AAA,Renewal check-in,2025-10-27,Completed,Low,003000000000015AAA,006000000000030AAA,Email,Renewal check-in for opportunity Boeing - Fraud + ACH.
+00T000000000031AAA,Intro call,2026-07-15,Not Started,Normal,003000000000015AAA,006000000000031AAA,Follow Up,Intro call for opportunity Boeing - ERP.
+00T000000000032AAA,Follow-up email,2025-07-25,Completed,High,003000000000016AAA,006000000000032AAA,Meeting,Follow-up email for opportunity Target Corp. - ACH + Liquidity.
+00T000000000033AAA,Proposal review,2026-03-27,Completed,Low,003000000000016AAA,006000000000033AAA,Call,Proposal review for opportunity Target Corp. - ERP.
+00T000000000034AAA,Pricing discussion,2026-05-16,Not Started,Normal,003000000000017AAA,006000000000034AAA,Email,Pricing discussion for opportunity IBM - ERP + Liquidity Bundle.
+00T000000000035AAA,Security questionnaire,2025-10-15,Completed,High,003000000000017AAA,006000000000035AAA,Follow Up,Security questionnaire for opportunity IBM - Liquidity + ERP Bundle.
+00T000000000036AAA,Renewal check-in,2026-06-09,Completed,Low,003000000000017AAA,006000000000036AAA,Meeting,Renewal check-in for opportunity IBM - ACH + ERP.
+00T000000000037AAA,Intro call,2026-08-07,Not Started,Normal,003000000000018AAA,006000000000037AAA,Call,Intro call for opportunity Costco Wholesale - Liquidity + ERP.
+00T000000000038AAA,Follow-up email,2026-01-14,Completed,High,003000000000018AAA,006000000000038AAA,Email,Follow-up email for opportunity Costco Wholesale - ERP.
+00T000000000039AAA,Proposal review,2026-04-20,Completed,Low,003000000000019AAA,006000000000039AAA,Follow Up,Proposal review for opportunity Procter & Gamble - Virtual + Liquidity Bundle.
+00T000000000040AAA,Pricing discussion,2025-10-31,Completed,Normal,003000000000019AAA,006000000000040AAA,Meeting,Pricing discussion for opportunity Procter & Gamble - Fraud + ERP.
+00T000000000041AAA,Security questionnaire,2026-05-14,In Progress,High,003000000000019AAA,006000000000041AAA,Call,Security questionnaire for opportunity Procter & Gamble - ERP + Treasury Bundle.
+00T000000000042AAA,Renewal check-in,2026-06-01,Completed,Low,003000000000020AAA,006000000000042AAA,Email,Renewal check-in for opportunity Cisco Systems - ACH + Virtual Bundle.
+00T000000000043AAA,Intro call,2026-01-05,Completed,Normal,003000000000020AAA,006000000000043AAA,Follow Up,Intro call for opportunity Cisco Systems - Virtual + ACH Bundle.
+00T000000000044AAA,Follow-up email,2026-07-09,In Progress,High,003000000000020AAA,006000000000044AAA,Meeting,Follow-up email for opportunity Cisco Systems - Treasury + ACH.
+00T000000000045AAA,Proposal review,2025-12-01,Completed,Low,003000000000021AAA,006000000000045AAA,Call,Proposal review for opportunity Alphabet Inc. - Virtual + Liquidity.
+00T000000000046AAA,Pricing discussion,2026-04-09,Not Started,Normal,003000000000021AAA,006000000000046AAA,Email,Pricing discussion for opportunity Alphabet Inc. - ERP.
+00T000000000047AAA,Security questionnaire,2026-06-14,In Progress,High,003000000000022AAA,006000000000047AAA,Follow Up,Security questionnaire for opportunity PepsiCo - Liquidity.
+00T000000000048AAA,Renewal check-in,2025-10-25,Completed,Low,003000000000023AAA,006000000000048AAA,Meeting,Renewal check-in for opportunity Precision Manufacturing Inc. - Virtual.
+00T000000000049AAA,Intro call,2025-08-02,Completed,Normal,003000000000024AAA,006000000000049AAA,Call,Intro call for opportunity Intel Corp. - Liquidity + Fraud Bundle.
+00T000000000050AAA,Follow-up email,2026-09-09,In Progress,High,003000000000024AAA,006000000000050AAA,Email,Follow-up email for opportunity Intel Corp. - Liquidity + ERP.
+00T000000000051AAA,Proposal review,2026-03-25,Completed,Low,003000000000024AAA,006000000000051AAA,Follow Up,Proposal review for opportunity Intel Corp. - ACH.
+00T000000000052AAA,Pricing discussion,2026-07-26,Not Started,Normal,003000000000025AAA,006000000000052AAA,Meeting,Pricing discussion for opportunity AmerisourceBergen - Virtual + ACH Bundle.
+00T000000000053AAA,Security questionnaire,2026-01-24,Completed,High,003000000000025AAA,006000000000053AAA,Call,Security questionnaire for opportunity AmerisourceBergen - Liquidity + ACH.
+00T000000000054AAA,Renewal check-in,2026-08-19,Completed,Low,003000000000025AAA,006000000000054AAA,Email,Renewal check-in for opportunity AmerisourceBergen - Virtual + ACH Bundle.
+00T000000000055AAA,Intro call,2026-05-12,Not Started,Normal,003000000000026AAA,006000000000055AAA,Follow Up,Intro call for opportunity Verizon Communications - Treasury + Liquidity Bundle.
+00T000000000056AAA,Follow-up email,2025-12-04,Completed,High,003000000000026AAA,006000000000056AAA,Meeting,Follow-up email for opportunity Verizon Communications - ACH + Fraud.
+00T000000000057AAA,Proposal review,2026-06-19,Completed,Low,003000000000026AAA,006000000000057AAA,Call,Proposal review for opportunity Verizon Communications - ACH + Fraud Bundle.
+00T000000000058AAA,Pricing discussion,2026-06-14,Not Started,Normal,003000000000027AAA,006000000000058AAA,Email,Pricing discussion for opportunity Main Street Cafe Supplies - Treasury.
+00T000000000059AAA,Security questionnaire,2026-09-22,In Progress,High,003000000000028AAA,006000000000059AAA,Follow Up,Security questionnaire for opportunity Kroger - Liquidity + Fraud Bundle.
+00T000000000060AAA,Renewal check-in,2026-04-07,Completed,Low,003000000000028AAA,006000000000060AAA,Meeting,Renewal check-in for opportunity Kroger - Treasury + ACH Bundle.
+00T000000000061AAA,Intro call,2025-10-20,Completed,Normal,003000000000028AAA,006000000000061AAA,Call,Intro call for opportunity Kroger - ERP + Liquidity Bundle.
+00T000000000062AAA,Follow-up email,2026-07-16,In Progress,High,003000000000029AAA,006000000000062AAA,Email,Follow-up email for opportunity Global Logistics Partners - Fraud.
+00T000000000063AAA,Proposal review,2026-04-09,Completed,Low,003000000000030AAA,006000000000063AAA,Follow Up,Proposal review for opportunity Chevron - ACH + Virtual Bundle.
+00T000000000064AAA,Pricing discussion,2025-07-22,Completed,Normal,003000000000030AAA,006000000000064AAA,Meeting,Pricing discussion for opportunity Chevron - ERP + Virtual Bundle.
+00T000000000065AAA,Security questionnaire,2026-05-03,In Progress,High,003000000000030AAA,006000000000065AAA,Call,Security questionnaire for opportunity Chevron - Treasury + ACH.
+00T000000000066AAA,Renewal check-in,2026-04-24,Completed,Low,003000000000031AAA,006000000000066AAA,Email,Renewal check-in for opportunity American Tower Corp. - Treasury + Liquidity Bundle.
+00T000000000067AAA,Intro call,2026-05-06,Not Started,Normal,003000000000031AAA,006000000000067AAA,Follow Up,Intro call for opportunity American Tower Corp. - Fraud + Liquidity Bundle.
+00T000000000068AAA,Follow-up email,2025-10-17,Completed,High,003000000000031AAA,006000000000068AAA,Meeting,Follow-up email for opportunity American Tower Corp. - Treasury + Liquidity Bundle.
+00T000000000069AAA,Proposal review,2026-01-05,Completed,Low,003000000000032AAA,006000000000069AAA,Call,Proposal review for opportunity The Walt Disney Company - ERP.
+00T000000000070AAA,Pricing discussion,2026-08-28,Not Started,Normal,003000000000033AAA,006000000000070AAA,Email,Pricing discussion for opportunity Oracle Corp. - Treasury.
+00T000000000071AAA,Security questionnaire,2026-02-02,Completed,High,003000000000034AAA,006000000000071AAA,Follow Up,Security questionnaire for opportunity Johnson & Johnson - ERP.
+00T000000000072AAA,Renewal check-in,2025-12-19,Completed,Low,003000000000035AAA,006000000000072AAA,Meeting,Renewal check-in for opportunity UnitedHealth Group - ERP.
+00T000000000073AAA,Intro call,2026-01-28,Completed,Normal,003000000000036AAA,006000000000073AAA,Call,Intro call for opportunity PayDay Services Inc. - Treasury.
+00T000000000074AAA,Follow-up email,2025-10-20,Completed,High,003000000000037AAA,006000000000074AAA,Email,Follow-up email for opportunity The Home Depot - Liquidity + Virtual Bundle.
+00T000000000075AAA,Proposal review,2026-08-07,Completed,Low,003000000000037AAA,006000000000075AAA,Follow Up,Proposal review for opportunity The Home Depot - Treasury + Virtual.
+00T000000000076AAA,Pricing discussion,2026-08-19,Not Started,Normal,003000000000037AAA,006000000000076AAA,Meeting,Pricing discussion for opportunity The Home Depot - ACH.
+00T000000000077AAA,Security questionnaire,2026-01-23,Completed,High,003000000000038AAA,006000000000077AAA,Call,Security questionnaire for opportunity Creative Marketing Group - ERP.
+00T000000000078AAA,Renewal check-in,2025-12-16,Completed,Low,003000000000039AAA,006000000000078AAA,Email,Renewal check-in for opportunity Innovative Tech Solutions - Virtual + Treasury.
+00T000000000079AAA,Intro call,2026-08-02,Not Started,Normal,003000000000039AAA,006000000000079AAA,Follow Up,Intro call for opportunity Innovative Tech Solutions - ERP.
+00T000000000080AAA,Follow-up email,2026-08-10,In Progress,High,003000000000040AAA,006000000000080AAA,Meeting,Follow-up email for opportunity Apple Inc. - Liquidity + Fraud Bundle.
+00T000000000081AAA,Proposal review,2026-08-22,Completed,Low,003000000000040AAA,006000000000081AAA,Call,Proposal review for opportunity Apple Inc. - ERP + Fraud Bundle.
+00T000000000082AAA,Pricing discussion,2025-11-18,Completed,Normal,003000000000040AAA,006000000000082AAA,Email,Pricing discussion for opportunity Apple Inc. - Virtual + Fraud Bundle.
+00T000000000083AAA,Security questionnaire,2026-09-06,In Progress,High,003000000000041AAA,006000000000083AAA,Follow Up,Security questionnaire for opportunity Cardinal Health - Fraud + Treasury Bundle.
+00T000000000084AAA,Renewal check-in,2025-09-18,Completed,Low,003000000000041AAA,006000000000084AAA,Meeting,Renewal check-in for opportunity Cardinal Health - ERP + Liquidity Bundle.
+00T000000000085AAA,Intro call,2026-04-17,Not Started,Normal,003000000000041AAA,006000000000085AAA,Call,Intro call for opportunity Cardinal Health - ACH + Liquidity.
+00T000000000086AAA,Follow-up email,2025-12-06,Completed,High,003000000000042AAA,006000000000086AAA,Email,Follow-up email for opportunity McKesson - ERP + Treasury.
+00T000000000087AAA,Proposal review,2026-05-16,Completed,Low,003000000000042AAA,006000000000087AAA,Follow Up,Proposal review for opportunity McKesson - ERP.
+00T000000000088AAA,Pricing discussion,2026-09-18,Not Started,Normal,003000000000043AAA,006000000000088AAA,Meeting,Pricing discussion for opportunity Walmart Inc. - Liquidity + Fraud Bundle.
+00T000000000089AAA,Security questionnaire,2025-10-14,Completed,High,003000000000043AAA,006000000000089AAA,Call,Security questionnaire for opportunity Walmart Inc. - ACH + Fraud.
+00T000000000090AAA,Renewal check-in,2026-04-15,Completed,Low,003000000000043AAA,006000000000090AAA,Email,Renewal check-in for opportunity Walmart Inc. - Virtual + Liquidity Bundle.
+00T000000000091AAA,Intro call,2026-07-13,Not Started,Normal,003000000000044AAA,006000000000091AAA,Follow Up,Intro call for opportunity AT&T - Fraud + Virtual.
+00T000000000092AAA,Follow-up email,2026-07-25,In Progress,High,003000000000044AAA,006000000000092AAA,Meeting,Follow-up email for opportunity AT&T - Virtual + Liquidity Bundle.
+00T000000000093AAA,Proposal review,2026-09-16,Completed,Low,003000000000045AAA,006000000000093AAA,Call,Proposal review for opportunity Gordon Food Service - ACH + ERP Bundle.
+00T000000000094AAA,Pricing discussion,2026-04-01,Not Started,Normal,003000000000045AAA,006000000000094AAA,Email,Pricing discussion for opportunity Gordon Food Service - Fraud + Liquidity Bundle.
+00T000000000095AAA,Security questionnaire,2025-09-04,Completed,High,003000000000045AAA,006000000000095AAA,Follow Up,Security questionnaire for opportunity Gordon Food Service - Fraud + ACH Bundle.
+00T000000000096AAA,Case follow-up,2025-06-04,In Progress,Normal,003000000000001AAA,500000000000001AAA,Call,Customer support follow-up for case 900001.
+00T000000000097AAA,Case follow-up,2025-09-20,In Progress,Normal,003000000000002AAA,500000000000002AAA,Call,Customer support follow-up for case 900002.
+00T000000000098AAA,Case follow-up,2025-12-10,In Progress,Normal,003000000000003AAA,500000000000003AAA,Call,Customer support follow-up for case 900003.
+00T000000000099AAA,Case follow-up,2025-07-31,In Progress,Normal,003000000000005AAA,500000000000004AAA,Call,Customer support follow-up for case 900004.
+00T000000000100AAA,Case follow-up,2025-07-10,In Progress,Normal,003000000000006AAA,500000000000005AAA,Call,Customer support follow-up for case 900005.
+00T000000000101AAA,Case follow-up,2025-10-31,In Progress,Normal,003000000000009AAA,500000000000006AAA,Call,Customer support follow-up for case 900006.
+00T000000000102AAA,Case follow-up,2025-10-14,In Progress,Normal,003000000000009AAA,500000000000007AAA,Call,Customer support follow-up for case 900007.
+00T000000000103AAA,Case follow-up,2025-07-28,Completed,High,003000000000010AAA,500000000000008AAA,Call,Customer support follow-up for case 900008.
+00T000000000104AAA,Case follow-up,2025-07-30,In Progress,Normal,003000000000011AAA,500000000000009AAA,Call,Customer support follow-up for case 900009.
+00T000000000105AAA,Case follow-up,2025-07-13,In Progress,High,003000000000011AAA,500000000000010AAA,Call,Customer support follow-up for case 900010.
+00T000000000106AAA,Case follow-up,2025-06-09,In Progress,Normal,003000000000014AAA,500000000000011AAA,Call,Customer support follow-up for case 900011.
+00T000000000107AAA,Case follow-up,2025-05-23,In Progress,Normal,003000000000014AAA,500000000000012AAA,Call,Customer support follow-up for case 900012.
+00T000000000108AAA,Case follow-up,2026-03-03,In Progress,Normal,003000000000016AAA,500000000000013AAA,Call,Customer support follow-up for case 900013.
+00T000000000109AAA,Case follow-up,2026-02-14,In Progress,High,003000000000016AAA,500000000000014AAA,Call,Customer support follow-up for case 900014.
+00T000000000110AAA,Case follow-up,2025-11-13,Completed,High,003000000000017AAA,500000000000015AAA,Call,Customer support follow-up for case 900015.
+00T000000000111AAA,Case follow-up,2026-03-06,In Progress,High,003000000000018AAA,500000000000016AAA,Call,Customer support follow-up for case 900016.
+00T000000000112AAA,Case follow-up,2026-02-17,Completed,High,003000000000018AAA,500000000000017AAA,Call,Customer support follow-up for case 900017.
+00T000000000113AAA,Case follow-up,2025-06-12,In Progress,Normal,003000000000019AAA,500000000000018AAA,Call,Customer support follow-up for case 900018.
+00T000000000114AAA,Case follow-up,2025-05-26,In Progress,High,003000000000019AAA,500000000000019AAA,Call,Customer support follow-up for case 900019.
+00T000000000115AAA,Case follow-up,2025-05-13,Completed,High,003000000000020AAA,500000000000020AAA,Call,Customer support follow-up for case 900020.
+00T000000000116AAA,Case follow-up,2026-02-20,In Progress,Normal,003000000000020AAA,500000000000021AAA,Call,Customer support follow-up for case 900021.
+00T000000000117AAA,Case follow-up,2026-02-22,In Progress,High,003000000000022AAA,500000000000022AAA,Call,Customer support follow-up for case 900022.
+00T000000000118AAA,Case follow-up,2026-02-05,Completed,High,003000000000022AAA,500000000000023AAA,Call,Customer support follow-up for case 900023.
+00T000000000119AAA,Case follow-up,2025-05-17,Completed,High,003000000000023AAA,500000000000024AAA,Call,Customer support follow-up for case 900024.
+00T000000000120AAA,Case follow-up,2025-11-27,In Progress,Normal,003000000000024AAA,500000000000025AAA,Call,Customer support follow-up for case 900025.

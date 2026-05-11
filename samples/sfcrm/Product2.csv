@@ -1,0 +1,7 @@
+Id,Name,ProductCode,Family,IsActive,Description
+01t000000000001AAA,Treasury Management Suite,TMS-100,Treasury,TRUE,"Core treasury workstation with cash positioning, approvals, and reporting."
+01t000000000002AAA,ACH & Payments Hub,PAY-210,Payments,TRUE,"Centralized ACH, wire, and check processing workflows."
+01t000000000003AAA,Virtual Card Program,VC-330,Commercial Cards,TRUE,Supplier enablement and rebate optimization through virtual cards.
+01t000000000004AAA,Liquidity Analytics,LIQ-420,Analytics,TRUE,"Cash forecasting, balance trend analysis, and dashboarding."
+01t000000000005AAA,Fraud Monitoring Service,FRD-510,Risk,TRUE,Real-time payment anomaly detection and case management.
+01t000000000006AAA,ERP Connectivity Package,ERP-610,Implementation,TRUE,Prebuilt connectors for ERP and TMS integrations.

@@ -1,0 +1,7 @@
+Id,Name,Type,Status,StartDate,EndDate,BudgetedCost,ActualCost,ExpectedRevenue,IsActive,Description
+701000000000001AAA,Treasury Innovation Summit 2025,Conference,Completed,2025-09-10,2025-09-12,85000,81250,1200000,FALSE,Flagship treasury and payments conference for enterprise customers and prospects.
+701000000000002AAA,Q4 Payments Modernization Webinar,Webinar,Completed,2025-11-14,2025-11-14,12000,10450,450000,FALSE,Thought-leadership webinar on ERP connectivity and payment controls.
+701000000000003AAA,2026 Client Expansion Outreach,Email,In Progress,2026-01-08,2026-05-31,30000,9800,1750000,TRUE,Cross-sell campaign for existing treasury clients.
+701000000000004AAA,Fraud Prevention Roadshow,Seminar,Planned,2026-04-15,2026-05-20,60000,0,900000,TRUE,Regional event series focused on payment fraud mitigation.
+701000000000005AAA,Spring ABM Digital Ads,Advertisement,In Progress,2026-02-01,2026-04-30,45000,21000,1100000,TRUE,Account-based marketing targeting strategic enterprise accounts.
+701000000000006AAA,Partner Referral Program 2026,Partners,In Progress,2026-01-01,2026-12-31,25000,6200,800000,TRUE,Referral sourced co-selling motion with implementation partners.
