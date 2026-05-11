@@ -15,7 +15,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from eap_core.config import RuntimeConfig
-from eap_core.identity.nhi import NonHumanIdentity
+from eap_core.identity.nhi import IdentityToken
 from eap_core.mcp.registry import McpToolRegistry
 from eap_core.mcp.types import MCPError
 from eap_core.middleware.base import Middleware
@@ -49,7 +49,7 @@ class EnterpriseLLM:
         self,
         runtime_config: RuntimeConfig,
         middlewares: list[Middleware] | None = None,
-        identity: NonHumanIdentity | None = None,
+        identity: IdentityToken | None = None,
         registry: AdapterRegistry | None = None,
         tool_registry: McpToolRegistry | None = None,
         token_exchange: Any | None = None,
@@ -77,6 +77,11 @@ class EnterpriseLLM:
     @property
     def sync(self) -> SyncProxy:
         return SyncProxy(self)
+
+    @property
+    def identity(self) -> IdentityToken | None:
+        """The configured identity (if any) — exposes ``_identity`` for tests/observability."""
+        return self._identity
 
     async def generate_text(
         self,

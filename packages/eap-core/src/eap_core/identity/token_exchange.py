@@ -42,8 +42,24 @@ class OIDCTokenExchange:
             raise IdentityError(
                 payload.get("error", f"token exchange failed: HTTP {resp.status_code}")
             )
-        data: dict[str, str] = resp.json()
-        return data["access_token"]
+        # H14: validate response shape — malformed responses surface as
+        # ``IdentityError`` instead of propagating as ``KeyError`` /
+        # ``TypeError`` from raw dict access. Callers catching ``IdentityError``
+        # for token-exchange failures no longer need a parallel
+        # ``except (KeyError, TypeError)`` block for the malformed-response
+        # case (which is functionally the same failure mode: "the IdP
+        # didn't give us a usable token").
+        data = resp.json()
+        if not isinstance(data, dict):
+            raise IdentityError(
+                f"token exchange response is not a JSON object: {type(data).__name__}"
+            )
+        if "access_token" not in data:
+            raise IdentityError("token exchange response: access_token missing")
+        access_token = data["access_token"]
+        if not isinstance(access_token, str) or not access_token:
+            raise IdentityError("token exchange response: access_token must be a non-empty string")
+        return access_token
 
     async def aclose(self) -> None:
         if self._owns_http:

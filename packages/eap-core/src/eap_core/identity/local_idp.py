@@ -71,11 +71,11 @@ class LocalIdPStub:
 
         Args:
             token: the JWT string to verify.
-            expected_audience: required — the audience this verifier accepts.
-                Pass the audience your protected resource expects. There is
-                no opt-out from audience validation; if you intentionally
-                don't care about the audience, pass an explicit '*' and let
-                your downstream policy layer decide.
+            expected_audience: the audience this verifier accepts. Compared
+                literally against the JWT's ``aud`` claim — PyJWT does NOT
+                interpret ``'*'`` as a wildcard. There is no opt-out from
+                audience validation: callers verifying inbound tokens must
+                pass the audience their protected resource expects.
         """
         return jwt.decode(
             token,
