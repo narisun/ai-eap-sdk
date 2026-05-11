@@ -16,6 +16,46 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.5.2] — 2026-05-11 — Patch release
+
+Single-fix patch closing the `__version__` drift surfaced in the v0.5.1
+pre-prod review. No public API or wire-format changes; existing v0.5.1
+installs are compatible.
+
+### Fixed
+
+- **L1 (v0.5.1 review)** — `eap_core.__version__` and `eap_cli.__version__`
+  were hardcoded in `_version.py` and never updated after the v0.2.0
+  release. Every subsequent release (v0.3.0, v0.3.1, v0.4.0, v0.5.0,
+  v0.5.1) bumped `pyproject.toml` but left `_version.py` reporting
+  `"0.2.0"`. Observability spans, audit logs, and customer bug reports
+  reading `__version__` programmatically returned the wrong value for
+  six releases.
+
+  Both `_version.py` files now resolve `__version__` in this order:
+  (a) read `pyproject.toml::project.version` directly when running from
+  a source tree (always fresh — survives `pyproject.toml` bumps without
+  reinstalling); (b) fall back to `importlib.metadata.version(<pkg>)`
+  for installed wheels (end-user case); (c) fall back to `"unknown"` if
+  neither resolves. The source-tree-first ordering closes a subtle gap
+  the v0.5.1 review surfaced: `importlib.metadata` reads from the
+  installed wheel's METADATA, which goes stale in editable installs
+  when `pyproject.toml` is bumped without a `uv sync`. Reading
+  `pyproject.toml` directly eliminates that drift.
+
+  Regression test in `packages/eap-core/tests/test_version.py` pins
+  `__version__ == pyproject.toml::project.version` for both packages
+  so this drift class cannot recur silently. The test fails hard
+  (`pytest.fail`, not `pytest.skip`) if the expected workspace layout
+  isn't found — workspace-only by design.
+
+### Stats
+
+- 439 tests passing (up from 437 in v0.5.1 baseline; +2 regression tests).
+- Lint, format, strict mypy all green.
+
+---
+
 ## [0.5.1] — 2026-05-11 — Patch release
 
 Closes the actionable findings from the v0.5.0 independent pre-prod
