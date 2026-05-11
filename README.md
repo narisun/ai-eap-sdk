@@ -566,7 +566,9 @@ ai-eap-sdk/
 ├── examples/
 │   ├── research-agent/                      # retrieval-style reference project
 │   ├── transactional-agent/                 # action-style with auth-required tools
-│   └── mcp-server-example/                  # standalone MCP-stdio server
+│   ├── mcp-server-example/                  # standalone MCP-stdio server
+│   ├── agentcore-bank-agent/                # full AWS Bedrock AgentCore reference
+│   └── vertex-bank-agent/                   # full GCP Vertex Agent Engine reference
 ├── docs/
 │   ├── developer-guide.md                   # for engineers extending the SDK
 │   ├── integrations/

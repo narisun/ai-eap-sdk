@@ -28,6 +28,15 @@ want positioning and the service-by-service map, read
 > swaps to its Vertex implementation by constructor change alone —
 > your business logic stays the same.
 
+> **Working reference project:** every snippet below is wired up
+> end-to-end at
+> [`examples/vertex-bank-agent/`](../examples/vertex-bank-agent/).
+> It runs locally with no GCP credentials (stubs swap in via
+> env-flag gating); set `EAP_ENABLE_REAL_RUNTIMES=1` and configure
+> ADC to graduate. The AWS counterpart at
+> [`examples/agentcore-bank-agent/`](../examples/agentcore-bank-agent/)
+> has the same `agent.py` — only `cloud_wiring.py` differs.
+
 ---
 
 ## Part 1 — Tutorial: zero to deployed Vertex agent

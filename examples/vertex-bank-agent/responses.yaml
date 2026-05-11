@@ -1,0 +1,7 @@
+responses:
+  - match: "balance"
+    text: "Looking up your balance now."
+  - match: "transfer"
+    text: "I can transfer funds between accounts you own."
+  - match: "Hello"
+    text: "Hi — I'm the bank-agent. I can check balances and run transfers."

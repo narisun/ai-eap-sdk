@@ -1,0 +1,14 @@
+[
+  {
+    "id": "balance-001",
+    "input": "What is my account balance?",
+    "expected_contexts": ["acct-1"],
+    "expected_answer_substrings": ["balance"]
+  },
+  {
+    "id": "transfer-001",
+    "input": "Transfer 1000 cents from acct-1 to acct-2.",
+    "expected_contexts": ["acct-1", "acct-2"],
+    "expected_answer_substrings": ["transfer"]
+  }
+]

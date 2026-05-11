@@ -1,0 +1,7 @@
+{
+  "name": "bank-agent",
+  "description": "Bank account assistant — balance lookups and transfers.",
+  "version": "0.1.0",
+  "url": "https://bank-agent.example.com",
+  "skills": []
+}

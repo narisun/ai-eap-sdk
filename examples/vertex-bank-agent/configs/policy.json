@@ -1,0 +1,24 @@
+{
+  "version": "1",
+  "rules": [
+    {
+      "id": "permit-bank-actions",
+      "effect": "permit",
+      "principal": "*",
+      "action": [
+        "generate_text",
+        "tool:lookup_account",
+        "tool:transfer_funds",
+        "tool:execute_python",
+        "tool:execute_javascript",
+        "tool:execute_typescript",
+        "tool:browser_navigate",
+        "tool:browser_click",
+        "tool:browser_fill",
+        "tool:browser_extract_text",
+        "tool:browser_screenshot"
+      ],
+      "resource": "*"
+    }
+  ]
+}

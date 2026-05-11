@@ -21,6 +21,13 @@ want positioning and the service-by-service map, read
 - **Part 3 — Production checklist.** What to verify before turning
   on live traffic.
 
+> **Working reference project:** every snippet below is wired up
+> end-to-end at
+> [`examples/agentcore-bank-agent/`](../examples/agentcore-bank-agent/).
+> It runs locally with no AWS credentials (stubs swap in via
+> env-flag gating); set `EAP_ENABLE_REAL_RUNTIMES=1` to graduate.
+> Read the guide and the example side by side.
+
 ---
 
 ## Part 1 — Tutorial: zero to deployed AgentCore agent
@@ -133,26 +140,43 @@ AgentCore Identity issues OAuth tokens for workload identities via
 
 ```python
 # add to agent.py
-from eap_core.integrations.agentcore import OIDCTokenExchange
 from eap_core.identity import NonHumanIdentity, LocalIdPStub
+from eap_core.integrations.agentcore import OIDCTokenExchange
 
+# 1. NonHumanIdentity owns the workload's signing key. Its IdP
+#    issues short-lived assertions on each `get_token` call.
+nhi = NonHumanIdentity(
+    client_id="my-bank-agent",
+    idp=LocalIdPStub(),                # swap to real IdP signer in production
+    default_audience="https://api.bank.example",
+)
+
+# 2. OIDCTokenExchange swaps the assertion for a tool-callable
+#    Bearer token via AgentCore Identity (RFC 8693). Hold the
+#    exchange separately and round-trip when you need a downstream
+#    token:
 exchange = OIDCTokenExchange.from_agentcore(
     region="us-east-1",
     workload_identity_id="my-bank-agent",  # or set AGENTCORE_WORKLOAD_IDENTITY_ID env var
 )
-
-nhi = NonHumanIdentity(
-    client_id="my-bank-agent",
-    idp=LocalIdPStub(),                # swap to real IdP signer in production
-    exchange=exchange,
-    default_audience="https://api.bank.example",
-)
 ```
 
 `OIDCTokenExchange.from_agentcore()` just fills in the AgentCore
-Identity token endpoint URL for the region. Everything else (RFC 8693
-grant, 5-second TTL buffer on the cache, per-tool token acquisition)
-works unchanged.
+Identity token endpoint URL for the region. The 5-second TTL buffer
+on `NonHumanIdentity._cache` is unchanged. For tool dispatchers and
+gateway clients that take an `identity=` argument, pass the NHI
+directly — they call `identity.get_token(...)` for the assertion
+and (when configured) use `OIDCTokenExchange.exchange(...)` to swap
+it. For your own code that needs a tool-callable Bearer:
+
+```python
+assertion = nhi.get_token(audience="https://api.bank.example", scope="read")
+bearer = await exchange.exchange(
+    subject_token=assertion,
+    audience="https://api.bank.example",
+    scope="read",
+)
+```
 
 For dev, `LocalIdPStub` signs assertions locally. For production,
 replace it with a real signer — see [§2.1](#21-authentication-and-credentials)
@@ -480,9 +504,12 @@ from eap_core.integrations.agentcore import OIDCTokenExchange
 nhi = NonHumanIdentity(
     client_id="my-agent",
     idp=LocalIdPStub(),
-    exchange=OIDCTokenExchange.from_agentcore(region="us-east-1"),
     default_audience="https://api.bank.example",
 )
+exchange = OIDCTokenExchange.from_agentcore(region="us-east-1")
+# Use `nhi` wherever an `identity=` is accepted; round-trip through
+# `exchange.exchange(subject_token=nhi.get_token(...), ...)` when
+# you need a downstream tool-callable Bearer.
 ```
 
 **Production** — implement the `IdentityProvider` Protocol against
