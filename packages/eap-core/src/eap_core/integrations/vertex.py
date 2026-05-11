@@ -14,6 +14,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from eap_core.exceptions import RealRuntimeDisabledError
+
 # Re-export inbound JWT helpers under the Vertex submodule so handler.py
 # code generated for the Vertex runtime imports from the matching module
 # name. The implementation lives in :mod:`eap_core.integrations.agentcore`
@@ -137,7 +139,7 @@ class VertexAgentIdentityToken:
         tokens are scoped at credential-creation time via ``scopes``.
         """
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         try:  # pragma: no cover
             import google.auth
             import google.auth.transport.requests
@@ -169,8 +171,8 @@ class VertexMemoryBankStore:
     Memory Bank REST surface.
 
     Live calls are gated behind ``EAP_ENABLE_REAL_RUNTIMES=1``. Without
-    the flag, every method raises ``NotImplementedError`` with a clear
-    "wire credentials" message.
+    the flag, every method raises ``RealRuntimeDisabledError`` with a
+    clear "wire credentials" message.
     """
 
     name: str = "vertex_memory_bank"
@@ -203,7 +205,7 @@ class VertexMemoryBankStore:
 
     async def remember(self, session_id: str, key: str, value: str) -> None:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         client.upsert_memory(  # pragma: no cover
             parent=self._parent(),
@@ -214,7 +216,7 @@ class VertexMemoryBankStore:
 
     async def recall(self, session_id: str, key: str) -> str | None:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         # Narrow the swallowed exception to Google's NotFound so credential
         # errors, throttling, and transient API failures propagate to the
         # caller instead of being silently reported as a cache miss (H16).
@@ -231,7 +233,7 @@ class VertexMemoryBankStore:
 
     async def list_keys(self, session_id: str) -> list[str]:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         resp = client.list_memories(  # pragma: no cover
             parent=self._parent(), session_id=session_id
@@ -240,7 +242,7 @@ class VertexMemoryBankStore:
 
     async def forget(self, session_id: str, key: str) -> None:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         client.delete_memory(  # pragma: no cover
             parent=self._parent(), session_id=session_id, key=key
@@ -248,7 +250,7 @@ class VertexMemoryBankStore:
 
     async def clear(self, session_id: str) -> None:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         client.delete_session(parent=self._parent(), session_id=session_id)
 
@@ -294,7 +296,7 @@ class VertexCodeSandbox:
         from eap_core.sandbox import SandboxResult
 
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         parent = (  # pragma: no cover
             f"projects/{self._project_id}/locations/{self._location}"
@@ -395,7 +397,7 @@ class VertexBrowserSandbox:
 
     async def _action(self, action: str, **params: Any) -> dict[str, Any]:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         resp = client.invoke_browser_action(  # pragma: no cover
             parent=self._parent(),
@@ -564,13 +566,13 @@ class VertexGatewayClient:
 
     async def list_tools(self) -> list[dict[str, Any]]:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         result = await self._rpc("tools/list", {})  # pragma: no cover
         return list(result.get("tools", []))  # pragma: no cover
 
     async def invoke(self, name: str, args: dict[str, Any]) -> Any:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         result = await self._rpc(  # pragma: no cover
             "tools/call", {"name": name, "arguments": args}
         )
@@ -640,7 +642,7 @@ class VertexAgentRegistry:
         if "name" not in record:
             raise ValueError("record must have a 'name' field")
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         resp = client.create_registry_record(  # pragma: no cover
             parent=self._parent(),
@@ -653,7 +655,7 @@ class VertexAgentRegistry:
 
     async def get(self, name: str) -> dict[str, Any] | None:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         try:  # pragma: no cover
             resp = client.get_registry_record(parent=self._parent(), name=name)
@@ -663,7 +665,7 @@ class VertexAgentRegistry:
 
     async def search(self, query: str, *, max_results: int = 10) -> list[dict[str, Any]]:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         resp = client.search_registry_records(  # pragma: no cover
             parent=self._parent(), query=query, max_results=max_results
@@ -677,7 +679,7 @@ class VertexAgentRegistry:
         max_results: int = 100,
     ) -> list[dict[str, Any]]:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         kwargs: dict[str, Any] = {  # pragma: no cover
             "parent": self._parent(),
@@ -755,7 +757,7 @@ class AP2PaymentClient:
 
     async def start_session(self) -> str:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         resp = client.create_payment_session(  # pragma: no cover
             parent=self._parent(),
@@ -774,7 +776,7 @@ class AP2PaymentClient:
         carrying amount, currency, merchant, and original URL.
         """
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         if self._session_id is None:  # pragma: no cover
             raise RuntimeError("call start_session() before authorize()")
         if not self.can_afford(req.amount_cents):  # pragma: no cover
@@ -862,7 +864,7 @@ class VertexEvalScorer:
         from eap_core.eval.faithfulness import FaithfulnessResult
 
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_VERTEX_GUIDE)
+            raise RealRuntimeDisabledError(_VERTEX_GUIDE)
         client = self._client()  # pragma: no cover
         row = to_vertex_eval_dataset([traj])[0]  # pragma: no cover
         parent = (  # pragma: no cover

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.integrations.vertex import (
     VertexBrowserSandbox,
     VertexCodeSandbox,
@@ -41,35 +42,35 @@ def test_memory_bank_satisfies_memory_store_protocol():
 @pytest.mark.asyncio
 async def test_memory_bank_remember_gated_by_env_flag():
     s = VertexMemoryBankStore(project_id="p", memory_bank_id="mb1")
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await s.remember("session1", "k", "v")
 
 
 @pytest.mark.asyncio
 async def test_memory_bank_recall_gated_by_env_flag():
     s = VertexMemoryBankStore(project_id="p", memory_bank_id="mb1")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await s.recall("session1", "k")
 
 
 @pytest.mark.asyncio
 async def test_memory_bank_list_keys_gated():
     s = VertexMemoryBankStore(project_id="p", memory_bank_id="mb1")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await s.list_keys("s")
 
 
 @pytest.mark.asyncio
 async def test_memory_bank_forget_gated():
     s = VertexMemoryBankStore(project_id="p", memory_bank_id="mb1")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await s.forget("s", "k")
 
 
 @pytest.mark.asyncio
 async def test_memory_bank_clear_gated():
     s = VertexMemoryBankStore(project_id="p", memory_bank_id="mb1")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await s.clear("s")
 
 
@@ -159,7 +160,7 @@ def test_code_sandbox_satisfies_code_sandbox_protocol():
 @pytest.mark.asyncio
 async def test_code_sandbox_execute_gated():
     s = VertexCodeSandbox(project_id="p")
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await s.execute("python", "print(1)")
 
 
@@ -175,13 +176,13 @@ def test_register_code_sandbox_tools_adds_three_tools():
 
 @pytest.mark.asyncio
 async def test_registered_code_tool_raises_without_env_flag():
-    """The registered tool should raise NotImplementedError when invoked."""
+    """The registered tool should raise RealRuntimeDisabledError when invoked."""
     from eap_core.mcp.registry import McpToolRegistry
 
     reg = McpToolRegistry()
     register_code_sandbox_tools(reg, project_id="p")
     spec = next(t for t in reg.list_tools() if t.name == "execute_python")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await spec.fn(code="print(1)")
 
 
@@ -197,35 +198,35 @@ def test_browser_sandbox_satisfies_browser_sandbox_protocol():
 @pytest.mark.asyncio
 async def test_browser_navigate_gated():
     b = VertexBrowserSandbox(project_id="p")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await b.navigate("https://example.com")
 
 
 @pytest.mark.asyncio
 async def test_browser_click_gated():
     b = VertexBrowserSandbox(project_id="p")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await b.click("#button")
 
 
 @pytest.mark.asyncio
 async def test_browser_fill_gated():
     b = VertexBrowserSandbox(project_id="p")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await b.fill("#input", "value")
 
 
 @pytest.mark.asyncio
 async def test_browser_extract_text_gated():
     b = VertexBrowserSandbox(project_id="p")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await b.extract_text()
 
 
 @pytest.mark.asyncio
 async def test_browser_screenshot_gated():
     b = VertexBrowserSandbox(project_id="p")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await b.screenshot()
 
 

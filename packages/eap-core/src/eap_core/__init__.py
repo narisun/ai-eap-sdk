@@ -40,8 +40,10 @@ from eap_core.exceptions import (
     EapError,
     IdentityError,
     OutputValidationError,
+    PolicyConfigurationError,
     PolicyDeniedError,
     PromptInjectionError,
+    RealRuntimeDisabledError,
     RuntimeAdapterError,
 )
 
@@ -95,8 +97,10 @@ __all__ = [  # noqa: RUF022 — grouped semantically, not alphabetically
     "EapError",
     "IdentityError",
     "OutputValidationError",
+    "PolicyConfigurationError",
     "PolicyDeniedError",
     "PromptInjectionError",
+    "RealRuntimeDisabledError",
     "RuntimeAdapterError",
     # MCP
     "McpToolRegistry",

@@ -6,6 +6,7 @@ import os
 from collections.abc import AsyncIterator
 
 from eap_core.config import RuntimeConfig
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.runtimes.base import BaseRuntimeAdapter, ModelInfo, RawChunk, RawResponse
 from eap_core.types import Request
 
@@ -27,7 +28,7 @@ class VertexRuntimeAdapter(BaseRuntimeAdapter):
 
     async def generate(self, req: Request) -> RawResponse:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_GUIDE)
+            raise RealRuntimeDisabledError(_GUIDE)
         try:
             import vertexai  # type: ignore[import-untyped,unused-ignore]
             from vertexai.generative_models import (
@@ -55,7 +56,7 @@ class VertexRuntimeAdapter(BaseRuntimeAdapter):
 
     async def stream(self, req: Request) -> AsyncIterator[RawChunk]:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_GUIDE)
+            raise RealRuntimeDisabledError(_GUIDE)
         raise NotImplementedError("Vertex streaming not implemented in walking skeleton.")
 
     async def list_models(self) -> list[ModelInfo]:

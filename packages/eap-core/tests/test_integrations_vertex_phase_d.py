@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from eap_core.discovery import AgentRegistry
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.integrations.vertex import (
     AP2PaymentClient,
     VertexAgentRegistry,
@@ -55,28 +56,28 @@ async def test_registry_publish_requires_name():
 @pytest.mark.asyncio
 async def test_registry_publish_gated_by_env_flag():
     r = VertexAgentRegistry(project_id="p")
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await r.publish({"name": "agent-a"})
 
 
 @pytest.mark.asyncio
 async def test_registry_get_gated():
     r = VertexAgentRegistry(project_id="p")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await r.get("agent-a")
 
 
 @pytest.mark.asyncio
 async def test_registry_search_gated():
     r = VertexAgentRegistry(project_id="p")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await r.search("query")
 
 
 @pytest.mark.asyncio
 async def test_registry_list_records_gated():
     r = VertexAgentRegistry(project_id="p")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await r.list_records()
 
 
@@ -118,7 +119,7 @@ def test_ap2_session_id_starts_none():
 @pytest.mark.asyncio
 async def test_ap2_start_session_gated():
     c = AP2PaymentClient(wallet_provider_id="w1", project_id="p")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await c.start_session()
 
 
@@ -131,7 +132,7 @@ async def test_ap2_authorize_gated():
         merchant="m",
         original_url="https://api.example.com/x",
     )
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await c.authorize(req)
 
 
@@ -196,5 +197,5 @@ async def test_eval_scorer_score_gated():
         steps=[],
         extra={"input_text": "q"},
     )
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await s.score(t)

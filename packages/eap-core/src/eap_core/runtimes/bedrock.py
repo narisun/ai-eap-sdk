@@ -11,6 +11,7 @@ import os
 from collections.abc import AsyncIterator
 
 from eap_core.config import RuntimeConfig
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.runtimes.base import BaseRuntimeAdapter, ModelInfo, RawChunk, RawResponse
 from eap_core.types import Request
 
@@ -32,7 +33,7 @@ class BedrockRuntimeAdapter(BaseRuntimeAdapter):
 
     async def generate(self, req: Request) -> RawResponse:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_GUIDE)
+            raise RealRuntimeDisabledError(_GUIDE)
         try:
             import boto3
         except ImportError as e:
@@ -64,7 +65,7 @@ class BedrockRuntimeAdapter(BaseRuntimeAdapter):
 
     async def stream(self, req: Request) -> AsyncIterator[RawChunk]:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_GUIDE)
+            raise RealRuntimeDisabledError(_GUIDE)
         raise NotImplementedError("Bedrock streaming not implemented in walking skeleton.")
 
     async def list_models(self) -> list[ModelInfo]:

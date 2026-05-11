@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.integrations.vertex import (
     VertexAgentIdentityToken,
     configure_for_vertex_observability,
@@ -40,7 +41,7 @@ def test_custom_scopes_are_kept():
 
 def test_get_token_gated_by_env_flag():
     t = VertexAgentIdentityToken()
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         t.get_token()
 
 
@@ -48,7 +49,7 @@ def test_get_token_accepts_audience_and_scope_for_compat():
     """The signature mirrors NonHumanIdentity.get_token even though Vertex
     doesn't use those args; compat lets users swap implementations."""
     t = VertexAgentIdentityToken()
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         t.get_token(audience="ignored-by-vertex", scope="ignored-too")
 
 

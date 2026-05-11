@@ -1,6 +1,6 @@
 import pytest
 
-from eap_core.exceptions import PolicyDeniedError
+from eap_core.exceptions import PolicyConfigurationError, PolicyDeniedError
 from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
 from eap_core.types import Context, Message, Request
 
@@ -28,10 +28,11 @@ PERMIT_READS = {
 async def test_permits_when_action_matches_permit_rule():
     mw = PolicyMiddleware(JsonPolicyEvaluator(PERMIT_READS))
     ctx = Context()
+    ctx.metadata["policy.action"] = "read"
+    ctx.metadata["policy.resource"] = "doc:1"
     req = Request(
         model="m",
         messages=[Message(role="user", content="hi")],
-        metadata={"action": "read", "resource": "doc:1"},
     )
     out = await mw.on_request(req, ctx)
     assert out is req
@@ -40,10 +41,11 @@ async def test_permits_when_action_matches_permit_rule():
 async def test_forbids_when_forbid_rule_matches():
     mw = PolicyMiddleware(JsonPolicyEvaluator(PERMIT_READS))
     ctx = Context()
+    ctx.metadata["policy.action"] = "transfer"
+    ctx.metadata["policy.resource"] = "acct:1"
     req = Request(
         model="m",
         messages=[Message(role="user", content="hi")],
-        metadata={"action": "transfer", "resource": "acct:1"},
     )
     with pytest.raises(PolicyDeniedError) as ei:
         await mw.on_request(req, ctx)
@@ -53,10 +55,11 @@ async def test_forbids_when_forbid_rule_matches():
 async def test_default_deny_when_no_rule_matches():
     mw = PolicyMiddleware(JsonPolicyEvaluator({"version": "1", "rules": []}))
     ctx = Context()
+    ctx.metadata["policy.action"] = "x"
+    ctx.metadata["policy.resource"] = "y"
     req = Request(
         model="m",
         messages=[Message(role="user", content="hi")],
-        metadata={"action": "x", "resource": "y"},
     )
     with pytest.raises(PolicyDeniedError):
         await mw.on_request(req, ctx)
@@ -86,16 +89,19 @@ async def test_unless_clause_with_principal_role():
     mw = PolicyMiddleware(JsonPolicyEvaluator(rules))
     ctx_op = Context()
     ctx_op.identity = type("I", (), {"roles": ["operator"]})()
+    ctx_op.metadata["policy.action"] = "write"
+    ctx_op.metadata["policy.resource"] = "x"
     req = Request(
         model="m",
         messages=[Message(role="user", content="hi")],
-        metadata={"action": "write", "resource": "x"},
     )
     out = await mw.on_request(req, ctx_op)
     assert out is req
 
     ctx_user = Context()
     ctx_user.identity = type("I", (), {"roles": ["viewer"]})()
+    ctx_user.metadata["policy.action"] = "write"
+    ctx_user.metadata["policy.resource"] = "x"
     with pytest.raises(PolicyDeniedError):
         await mw.on_request(req, ctx_user)
 
@@ -257,4 +263,34 @@ async def test_policy_action_membership_not_truthiness():
         metadata={"action": "read", "resource": "doc:1"},
     )
     with pytest.raises(PolicyDeniedError):
+        await mw.on_request(req, ctx)
+
+
+@pytest.mark.asyncio
+async def test_policy_middleware_refuses_without_trusted_action():
+    """PolicyMiddleware must NOT fall back to caller-mutable req.metadata.
+    A request reaching the middleware without ctx.metadata['policy.action']
+    set is a programming error — fail loudly."""
+    from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
+    from eap_core.types import Context, Request
+
+    mw = PolicyMiddleware(JsonPolicyEvaluator({"rules": []}))
+    req = Request(model="m", messages=[], metadata={"action": "tool:transfer"})  # spoof attempt
+    ctx = Context()  # no policy.* metadata set
+    with pytest.raises(PolicyConfigurationError, match=r"policy\.action"):
+        await mw.on_request(req, ctx)
+
+
+@pytest.mark.asyncio
+async def test_policy_middleware_refuses_without_trusted_resource():
+    """Even when policy.action is set, missing policy.resource must
+    still refuse rather than fall back to caller-mutable req.metadata."""
+    from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
+    from eap_core.types import Context, Request
+
+    mw = PolicyMiddleware(JsonPolicyEvaluator({"rules": []}))
+    req = Request(model="m", messages=[], metadata={"resource": "acct:1"})
+    ctx = Context()
+    ctx.metadata["policy.action"] = "read"
+    with pytest.raises(PolicyConfigurationError, match=r"policy\.resource"):
         await mw.on_request(req, ctx)

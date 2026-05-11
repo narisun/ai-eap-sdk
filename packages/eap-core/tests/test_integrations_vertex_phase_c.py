@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.integrations.vertex import VertexGatewayClient
 
 
@@ -39,14 +40,14 @@ def test_explicit_audience_overrides_url():
 @pytest.mark.asyncio
 async def test_list_tools_gated_by_env_flag():
     c = VertexGatewayClient(gateway_url="https://gw.example.com/mcp")
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await c.list_tools()
 
 
 @pytest.mark.asyncio
 async def test_invoke_gated_by_env_flag():
     c = VertexGatewayClient(gateway_url="https://gw.example.com/mcp")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await c.invoke("foo", {"x": 1})
 
 

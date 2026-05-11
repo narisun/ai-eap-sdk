@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from eap_core.exceptions import PolicyDeniedError
+from eap_core.exceptions import PolicyConfigurationError, PolicyDeniedError
 from eap_core.middleware.base import PassthroughMiddleware
 from eap_core.types import Context, Request
 
@@ -86,26 +86,34 @@ class PolicyMiddleware(PassthroughMiddleware):
 
     async def on_request(self, req: Request, ctx: Context) -> Request:
         # ``action``/``resource`` are authorization inputs and MUST come from
-        # a trusted source. When the SDK plumbed canonical values through
-        # ``ctx.metadata`` (set inside ``EnterpriseLLM.invoke_tool`` /
-        # ``generate_text``), prefer those over anything in ``req.metadata`` —
-        # ``Request.metadata`` is caller-mutable and a bad caller could
-        # otherwise spoof ``action='tool:lookup_account'`` while actually
-        # invoking ``transfer_funds`` (H9).
+        # a trusted source. ``EnterpriseLLM.generate_text``/``stream_text``/
+        # ``invoke_tool`` populate ``ctx.metadata['policy.action']`` and
+        # ``['policy.resource']`` from values the SDK derives itself (the
+        # tool name, the model name) — values the caller cannot influence
+        # via ``Request.metadata``. ``Request.metadata`` is caller-mutable
+        # and a bad caller could otherwise spoof ``action='tool:lookup_account'``
+        # while actually invoking ``transfer_funds`` (H9 / L-N6).
         #
-        # Probe membership rather than truthiness: a caller (or a middleware)
-        # that managed to set ``ctx.metadata['policy.action'] = ''`` must not
-        # cause the trusted slot to silently yield to ``req.metadata`` via
-        # ``or``'s falsy fall-through. The trust invariant lives here, not in
-        # the SDK call sites that populate ``ctx.metadata``.
-        if "policy.action" in ctx.metadata:
-            action = ctx.metadata["policy.action"]
-        else:
-            action = req.metadata.get("action", "generate_text")
-        if "policy.resource" in ctx.metadata:
-            resource = ctx.metadata["policy.resource"]
-        else:
-            resource = req.metadata.get("resource", req.model)
+        # No fallback to ``req.metadata`` here: if a non-``EnterpriseLLM``
+        # caller wires ``PolicyMiddleware`` into a custom ``MiddlewarePipeline``
+        # without setting the trusted slot, refuse the request loudly rather
+        # than silently authorizing against caller-controlled input.
+        if "policy.action" not in ctx.metadata:
+            raise PolicyConfigurationError(
+                "PolicyMiddleware called without ctx.metadata['policy.action'] set — "
+                "EnterpriseLLM.generate_text/stream_text/invoke_tool always set this; "
+                "if you've wired PolicyMiddleware into a custom pipeline, populate it "
+                "from a trusted source before passing the request."
+            )
+        if "policy.resource" not in ctx.metadata:
+            raise PolicyConfigurationError(
+                "PolicyMiddleware called without ctx.metadata['policy.resource'] set — "
+                "EnterpriseLLM.generate_text/stream_text/invoke_tool always set this; "
+                "if you've wired PolicyMiddleware into a custom pipeline, populate it "
+                "from a trusted source before passing the request."
+            )
+        action = ctx.metadata["policy.action"]
+        resource = ctx.metadata["policy.resource"]
         decision = self._eval.evaluate(ctx.identity, action, resource)
         if not decision.allow:
             raise PolicyDeniedError(rule_id=decision.rule_id, reason=decision.reason)

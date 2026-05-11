@@ -7,6 +7,7 @@ import pytest
 from eap_core.a2a import AgentCard, Skill
 from eap_core.eval import Trajectory
 from eap_core.eval.trajectory import Step
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.integrations.agentcore import (
     AgentCoreEvalScorer,
     PaymentClient,
@@ -40,13 +41,13 @@ async def test_registry_publish_agent_card_gated_by_env_flag():
         description="banking ops",
         skills=[Skill(name="get_balance", description="...", input_schema={})],
     )
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await rc.publish_agent_card(card)
 
 
 async def test_registry_publish_mcp_server_gated():
     rc = RegistryClient(registry_name="org-registry")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await rc.publish_mcp_server(
             "my-mcp", description="...", mcp_endpoint="https://mcp.example/mcp"
         )
@@ -54,21 +55,21 @@ async def test_registry_publish_mcp_server_gated():
 
 async def test_registry_get_record_gated():
     rc = RegistryClient(registry_name="org-registry")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await rc.get_record("some-name")
 
 
 async def test_registry_search_gated():
     rc = RegistryClient(registry_name="org-registry")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await rc.search("find banking agents")
 
 
 async def test_registry_list_records_gated():
     rc = RegistryClient(registry_name="org-registry")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await rc.list_records()
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await rc.list_records(record_type="AGENT", max_results=50)
 
 
@@ -124,14 +125,14 @@ def test_payment_client_initial_state():
 
 async def test_payment_client_start_session_gated():
     pc = PaymentClient(wallet_provider_id="cdp-wallet-1", max_spend_cents=100)
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await pc.start_session()
 
 
 async def test_payment_client_authorize_gated():
     pc = PaymentClient(wallet_provider_id="cdp-wallet-1", max_spend_cents=100)
     pr = PaymentRequired(amount_cents=50, currency="USD", merchant="x", original_url="https://x")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await pc.authorize_and_retry(pr)
 
 
@@ -228,7 +229,7 @@ async def test_agentcore_eval_scorer_gated_by_env_flag():
         evaluator_arn="arn:aws:bedrock-agentcore:::evaluator/Builtin.Helpfulness"
     )
     traj = _sample_trajectory()
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await s.score(traj)
 
 

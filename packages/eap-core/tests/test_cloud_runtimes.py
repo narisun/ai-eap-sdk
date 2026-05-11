@@ -1,6 +1,7 @@
 import pytest
 
 from eap_core.config import RuntimeConfig
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.runtimes.bedrock import BedrockRuntimeAdapter
 from eap_core.runtimes.vertex import VertexRuntimeAdapter
 from eap_core.types import Message, Request
@@ -17,7 +18,7 @@ async def test_bedrock_raises_helpful_error_when_not_enabled():
             provider="bedrock", model="anthropic.claude-3-5-sonnet", options={"region": "us-east-1"}
         )
     )
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await a.generate(
             Request(
                 model="anthropic.claude-3-5-sonnet", messages=[Message(role="user", content="hi")]
@@ -33,7 +34,7 @@ async def test_vertex_raises_helpful_error_when_not_enabled():
             options={"project": "p", "location": "us-central1"},
         )
     )
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await a.generate(
             Request(model="gemini-1.5-pro", messages=[Message(role="user", content="hi")])
         )

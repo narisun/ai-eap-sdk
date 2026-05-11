@@ -17,6 +17,7 @@ import os
 from typing import Any
 from urllib.parse import urlparse
 
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.identity.token_exchange import OIDCTokenExchange as _BaseOIDCTokenExchange
 
 _LOG = logging.getLogger(__name__)
@@ -173,9 +174,9 @@ class AgentCoreMemoryStore:
     lazy-import boto3 and call the AgentCore Memory API.
 
     Live calls are gated behind ``EAP_ENABLE_REAL_RUNTIMES=1``. Without
-    the flag, every method raises ``NotImplementedError`` with a clear
-    "wire credentials" message — same pattern as the Bedrock / Vertex
-    runtime adapters.
+    the flag, every method raises ``RealRuntimeDisabledError`` with a
+    clear "wire credentials" message — same pattern as the Bedrock /
+    Vertex runtime adapters.
     """
 
     name: str = "agentcore"
@@ -200,7 +201,7 @@ class AgentCoreMemoryStore:
 
     async def remember(self, session_id: str, key: str, value: str) -> None:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover  — exercised in cloud workflow
         client.put_memory_record(  # pragma: no cover
             memoryId=self._memory_id,
@@ -211,7 +212,7 @@ class AgentCoreMemoryStore:
 
     async def recall(self, session_id: str, key: str) -> str | None:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         try:  # pragma: no cover
             resp = client.get_memory_record(
@@ -226,7 +227,7 @@ class AgentCoreMemoryStore:
 
     async def list_keys(self, session_id: str) -> list[str]:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         resp = client.list_memory_records(  # pragma: no cover
             memoryId=self._memory_id, sessionId=session_id
@@ -235,7 +236,7 @@ class AgentCoreMemoryStore:
 
     async def forget(self, session_id: str, key: str) -> None:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         client.delete_memory_record(  # pragma: no cover
             memoryId=self._memory_id, sessionId=session_id, recordKey=key
@@ -243,7 +244,7 @@ class AgentCoreMemoryStore:
 
     async def clear(self, session_id: str) -> None:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         client.delete_memory_session(  # pragma: no cover
             memoryId=self._memory_id, sessionId=session_id
@@ -270,7 +271,7 @@ def register_code_interpreter_tools(
     The dict returns ``{"stdout": str, "stderr": str, "exit_code": int}``.
     Tools call ``bedrock-agentcore`` via boto3 when
     ``EAP_ENABLE_REAL_RUNTIMES=1``; otherwise they raise
-    ``NotImplementedError``.
+    ``RealRuntimeDisabledError``.
 
     Tools run through the user's middleware chain when invoked via
     ``client.invoke_tool(...)`` — sanitize / PII / policy / observability
@@ -282,7 +283,7 @@ def register_code_interpreter_tools(
 
     def _execute(language: str, code: str) -> dict[str, Any]:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         try:  # pragma: no cover
             import boto3
         except ImportError as e:  # pragma: no cover
@@ -345,7 +346,7 @@ def register_browser_tools(
 
     def _browser_call(action: str, **kwargs: Any) -> dict[str, Any]:
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         try:  # pragma: no cover
             import boto3
         except ImportError as e:  # pragma: no cover
@@ -957,14 +958,14 @@ class GatewayClient:
     async def list_tools(self) -> list[dict[str, Any]]:
         """Return the tools the gateway advertises via ``tools/list``."""
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         result = await self._rpc("tools/list", {})  # pragma: no cover
         return list(result.get("tools", []))  # pragma: no cover
 
     async def invoke(self, name: str, args: dict[str, Any]) -> Any:
         """Call a tool via ``tools/call`` and return its result."""
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         result = await self._rpc(  # pragma: no cover
             "tools/call", {"name": name, "arguments": args}
         )
@@ -1153,7 +1154,7 @@ class RegistryClient:
         ``eap_core.a2a``; we serialize via ``model_dump()`` for the API.
         """
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         body = card.model_dump()  # pragma: no cover
         resp = client.create_registry_record(  # pragma: no cover
@@ -1168,7 +1169,7 @@ class RegistryClient:
     async def publish_mcp_server(self, name: str, *, description: str, mcp_endpoint: str) -> str:
         """Publish an MCP server record (e.g. one generated by `eap create-mcp-server`)."""
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         resp = client.create_registry_record(  # pragma: no cover
             registryName=self._registry_name,
@@ -1182,7 +1183,7 @@ class RegistryClient:
     async def get_record(self, name: str) -> dict[str, Any] | None:
         """Fetch a record by name; returns ``None`` if absent."""
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         try:  # pragma: no cover
             resp = client.get_registry_record(registryName=self._registry_name, name=name)
@@ -1198,7 +1199,7 @@ class RegistryClient:
         the publisher attached.
         """
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         resp = client.search_registry_records(  # pragma: no cover
             registryName=self._registry_name, query=query, maxResults=max_results
@@ -1210,7 +1211,7 @@ class RegistryClient:
     ) -> list[dict[str, Any]]:
         """List all records in the registry; optionally filter by type."""
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         kwargs: dict[str, Any] = {  # pragma: no cover
             "registryName": self._registry_name,
@@ -1319,7 +1320,7 @@ class PaymentClient:
         subsequent ``authorize_and_retry`` calls.
         """
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         resp = client.create_payment_session(  # pragma: no cover
             walletProviderId=self._wallet_provider_id,
@@ -1349,7 +1350,7 @@ class PaymentClient:
             PaymentRequired (re-raise) if AgentCore Payments declines.
         """
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         if self._session_id is None:  # pragma: no cover
             raise RuntimeError("call start_session() before authorize_and_retry()")
         if not self.can_afford(req.amount_cents):  # pragma: no cover
@@ -1445,7 +1446,7 @@ class AgentCoreEvalScorer:
         from eap_core.eval.faithfulness import FaithfulnessResult
 
         if not _real_runtimes_enabled():
-            raise NotImplementedError(_AGENTCORE_GUIDE)
+            raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
         client = self._client()  # pragma: no cover
         row = to_agentcore_eval_dataset([traj])[0]  # pragma: no cover
         resp = client.evaluate_trace(  # pragma: no cover

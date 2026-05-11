@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 import pytest
 
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.integrations.agentcore import (
     GatewayClient,
     add_gateway_to_registry,
@@ -39,13 +40,13 @@ def _make_client(handler) -> GatewayClient:
 
 async def test_gateway_list_tools_raises_without_env_flag():
     gw = GatewayClient(gateway_url="https://gw.example")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await gw.list_tools()
 
 
 async def test_gateway_invoke_raises_without_env_flag():
     gw = GatewayClient(gateway_url="https://gw.example")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await gw.invoke("foo", {})
 
 

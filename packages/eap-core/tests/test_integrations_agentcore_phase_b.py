@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.integrations.agentcore import (
     AgentCoreMemoryStore,
     InboundJwtVerifier,
@@ -42,27 +43,27 @@ def _clear_real_flag(monkeypatch):
 
 async def test_memory_remember_raises_without_env_flag():
     store = AgentCoreMemoryStore(memory_id="mem-1")
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await store.remember("session-1", "k", "v")
 
 
 async def test_memory_recall_raises_without_env_flag():
     store = AgentCoreMemoryStore(memory_id="mem-1")
-    with pytest.raises(NotImplementedError, match="EAP_ENABLE_REAL_RUNTIMES"):
+    with pytest.raises(RealRuntimeDisabledError, match="EAP_ENABLE_REAL_RUNTIMES"):
         await store.recall("session-1", "k")
 
 
 async def test_memory_list_keys_raises_without_env_flag():
     store = AgentCoreMemoryStore(memory_id="mem-1")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await store.list_keys("session-1")
 
 
 async def test_memory_forget_and_clear_raise_without_env_flag():
     store = AgentCoreMemoryStore(memory_id="mem-1")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await store.forget("session-1", "k")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await store.clear("session-1")
 
 
@@ -168,7 +169,7 @@ async def test_code_interpreter_tools_raise_without_env_flag():
     register_code_interpreter_tools(reg)
     py = reg.get("execute_python")
     assert py is not None
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await py.fn(code="print('hi')")
 
 
@@ -203,7 +204,7 @@ async def test_browser_navigate_raises_without_env_flag():
     register_browser_tools(reg)
     nav = reg.get("browser_navigate")
     assert nav is not None
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealRuntimeDisabledError):
         await nav.fn(url="https://example.com")
 
 

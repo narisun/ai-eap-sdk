@@ -34,6 +34,18 @@ class PolicyDeniedError(EapError):
         self.reason = reason
 
 
+class PolicyConfigurationError(EapError):
+    """PolicyMiddleware invoked without the required trusted-metadata
+    slots (``ctx.metadata['policy.action']`` / ``['policy.resource']``).
+
+    Indicates a programming error in pipeline wiring — not a policy
+    decision against a caller. Distinct from ``PolicyDeniedError``
+    (which signals a policy outcome) and from generic Python
+    ``RuntimeError`` (so operators using ``except EapError:`` as the
+    SDK boundary catch this consistently).
+    """
+
+
 class OutputValidationError(EapError):
     def __init__(self, errors: list[dict[str, object]]) -> None:
         super().__init__(f"Output failed schema validation: {errors}")
@@ -46,3 +58,15 @@ class RuntimeAdapterError(EapError):
 
 class IdentityError(EapError):
     """Token exchange or identity verification failed."""
+
+
+class RealRuntimeDisabledError(EapError):
+    """Raised by cloud-runtime adapters and integrations when called
+    without ``EAP_ENABLE_REAL_RUNTIMES=1``.
+
+    Distinguishes "configuration not enabled" from
+    ``NotImplementedError`` (which Python uses for "subclass forgot to
+    implement"). Tools, debuggers, and policy decisions can ``except
+    RealRuntimeDisabledError`` selectively without intercepting genuine
+    implementation gaps.
+    """
