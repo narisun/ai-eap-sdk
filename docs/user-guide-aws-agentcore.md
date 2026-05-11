@@ -433,16 +433,30 @@ Run it in CI with `eap eval --dataset tests/golden_set.json
 
 ### 1.17 Package and deploy
 
+`eap deploy --runtime agentcore` refuses to scaffold an unauthenticated
+handler. Pass the OIDC details so the generated `handler.py` wires
+`InboundJwtVerifier` + `jwt_dependency` into `POST /invocations`:
+
 ```bash
-uv run eap deploy --runtime agentcore --service my-bank-agent --region us-east-1
+uv run eap deploy --runtime agentcore \
+    --service my-bank-agent \
+    --region us-east-1 \
+    --auth-discovery-url https://agentcore-identity.us-east-1.amazonaws.com/.well-known/openid-configuration \
+    --auth-issuer        https://agentcore-identity.us-east-1.amazonaws.com \
+    --auth-audience      my-bank-agent
 ```
+
+For local smoke testing only, you may pass `--allow-unauthenticated` to
+skip auth wiring; the CLI then emits a loud warning and the generated
+`handler.py` carries a `WARNING` comment at the top — never use this
+mode in production.
 
 This produces `dist/agentcore/`:
 
 ```
 dist/agentcore/
 ├── Dockerfile     # ARM64 base, installs FastAPI + uvicorn + your project
-├── handler.py     # POST /invocations + GET /ping per AgentCore HTTP contract
+├── handler.py     # POST /invocations (with jwt_dependency) + GET /ping
 ├── README.md      # ECR push + AgentCore Runtime register steps
 └── <your project files>
 ```
@@ -457,7 +471,10 @@ for the ECR push + AgentCore Runtime registration:
 
 ```bash
 export EAP_ENABLE_REAL_DEPLOY=1
-uv run eap deploy --runtime agentcore --service my-bank-agent
+uv run eap deploy --runtime agentcore --service my-bank-agent \
+    --auth-discovery-url https://agentcore-identity.us-east-1.amazonaws.com/.well-known/openid-configuration \
+    --auth-issuer        https://agentcore-identity.us-east-1.amazonaws.com \
+    --auth-audience      my-bank-agent
 # → Built image: <image>:<tag>
 # → Push to ECR and register with AgentCore Runtime — see dist/agentcore/README.md
 ```

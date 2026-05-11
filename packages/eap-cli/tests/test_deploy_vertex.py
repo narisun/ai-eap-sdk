@@ -22,7 +22,9 @@ def test_deploy_vertex_writes_dockerfile_handler_and_readme(tmp_path: Path, monk
     project = _project(tmp_path)
     monkeypatch.chdir(project)
     runner = CliRunner()
-    result = runner.invoke(cli, ["deploy", "--runtime", "vertex-agent-engine"])
+    result = runner.invoke(
+        cli, ["deploy", "--runtime", "vertex-agent-engine", "--allow-unauthenticated"]
+    )
     assert result.exit_code == 0, result.output
 
     target = project / "dist" / "vertex-agent-engine"
@@ -37,7 +39,7 @@ def test_deploy_vertex_dockerfile_targets_amd64_and_cloud_run_port(tmp_path, mon
     project = _project(tmp_path)
     monkeypatch.chdir(project)
     runner = CliRunner()
-    runner.invoke(cli, ["deploy", "--runtime", "vertex-agent-engine"])
+    runner.invoke(cli, ["deploy", "--runtime", "vertex-agent-engine", "--allow-unauthenticated"])
     df = (project / "dist" / "vertex-agent-engine" / "Dockerfile").read_text()
     assert "linux/amd64" in df
     assert "PORT=8080" in df
@@ -48,7 +50,7 @@ def test_deploy_vertex_handler_exposes_invocations_and_health(tmp_path, monkeypa
     project = _project(tmp_path)
     monkeypatch.chdir(project)
     runner = CliRunner()
-    runner.invoke(cli, ["deploy", "--runtime", "vertex-agent-engine"])
+    runner.invoke(cli, ["deploy", "--runtime", "vertex-agent-engine", "--allow-unauthenticated"])
     h = (project / "dist" / "vertex-agent-engine" / "handler.py").read_text()
     assert "/invocations" in h
     assert "/health" in h
@@ -65,7 +67,14 @@ def test_deploy_vertex_custom_entry_propagates(tmp_path, monkeypatch):
     runner = CliRunner()
     result = runner.invoke(
         cli,
-        ["deploy", "--runtime", "vertex-agent-engine", "--entry", "main.py:go"],
+        [
+            "deploy",
+            "--runtime",
+            "vertex-agent-engine",
+            "--entry",
+            "main.py:go",
+            "--allow-unauthenticated",
+        ],
     )
     assert result.exit_code == 0
     h = (project / "dist" / "vertex-agent-engine" / "handler.py").read_text()
@@ -88,12 +97,117 @@ def test_deploy_vertex_live_blocked_without_env_flag(tmp_path, monkeypatch):
     runner = CliRunner()
     result = runner.invoke(
         cli,
-        ["deploy", "--runtime", "vertex-agent-engine", "--service", "my-agent"],
+        [
+            "deploy",
+            "--runtime",
+            "vertex-agent-engine",
+            "--service",
+            "my-agent",
+            "--allow-unauthenticated",
+        ],
     )
     assert result.exit_code == 0
     assert "EAP_ENABLE_REAL_DEPLOY" in result.output
     # Package was created but no docker build attempted.
     assert (project / "dist" / "vertex-agent-engine" / "Dockerfile").is_file()
+
+
+def test_deploy_vertex_refuses_without_auth(tmp_path: Path, monkeypatch):
+    """No auth flags + no --allow-unauthenticated must refuse to scaffold."""
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["deploy", "--runtime", "vertex-agent-engine"])
+    assert result.exit_code != 0
+    assert "auth-discovery-url" in result.output or "allow-unauthenticated" in result.output
+
+
+def test_deploy_vertex_writes_jwt_dependency(tmp_path: Path, monkeypatch):
+    """When auth flags are provided the generated handler wires InboundJwtVerifier."""
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "deploy",
+            "--runtime",
+            "vertex-agent-engine",
+            "--auth-discovery-url",
+            "https://accounts.google.com/.well-known/openid-configuration",
+            "--auth-issuer",
+            "https://accounts.google.com",
+            "--auth-audience",
+            "my-agent",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    handler = (project / "dist" / "vertex-agent-engine" / "handler.py").read_text()
+    assert "InboundJwtVerifier" in handler
+    assert "jwt_dependency" in handler
+    assert "https://accounts.google.com/.well-known/openid-configuration" in handler
+    assert "https://accounts.google.com" in handler
+    assert "my-agent" in handler
+
+
+def test_deploy_vertex_partial_auth_flags_gives_specific_error(tmp_path: Path, monkeypatch):
+    """Partial --auth-* flags must name the missing flag in the error."""
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "deploy",
+            "--runtime",
+            "vertex-agent-engine",
+            "--auth-issuer",
+            "https://accounts.google.com",
+            "--auth-audience",
+            "x",
+            # missing --auth-discovery-url
+        ],
+    )
+    assert result.exit_code != 0
+    assert "--auth-discovery-url" in result.output
+    assert "Missing" in result.output or "Incomplete" in result.output
+
+
+def test_deploy_vertex_allow_unauth_plus_auth_flags_rejected(tmp_path: Path, monkeypatch):
+    """--allow-unauthenticated combined with --auth-* flags must be rejected."""
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "deploy",
+            "--runtime",
+            "vertex-agent-engine",
+            "--allow-unauthenticated",
+            "--auth-discovery-url",
+            "https://accounts.google.com/.well-known/openid-configuration",
+            "--auth-issuer",
+            "https://accounts.google.com",
+            "--auth-audience",
+            "my-agent",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "--allow-unauthenticated" in result.output
+
+
+def test_deploy_vertex_allow_unauthenticated_warns_loudly(tmp_path: Path, monkeypatch):
+    """--allow-unauthenticated succeeds but emits a loud warning."""
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["deploy", "--runtime", "vertex-agent-engine", "--allow-unauthenticated"]
+    )
+    assert result.exit_code == 0, result.output
+    combined = result.output.lower()
+    assert "warning" in combined or "unauthenticated" in combined
 
 
 def test_handler_runs_via_asgi_when_fastapi_installed(tmp_path: Path, monkeypatch):
@@ -110,7 +224,7 @@ def test_handler_runs_via_asgi_when_fastapi_installed(tmp_path: Path, monkeypatc
     project = _project(tmp_path)
     monkeypatch.chdir(project)
     runner = CliRunner()
-    runner.invoke(cli, ["deploy", "--runtime", "vertex-agent-engine"])
+    runner.invoke(cli, ["deploy", "--runtime", "vertex-agent-engine", "--allow-unauthenticated"])
 
     target = project / "dist" / "vertex-agent-engine"
     spec = importlib.util.spec_from_file_location("vertex_handler", target / "handler.py")

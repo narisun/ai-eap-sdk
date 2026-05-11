@@ -22,7 +22,7 @@ def test_deploy_agentcore_writes_dockerfile_handler_and_readme(tmp_path: Path, m
     project = _project(tmp_path)
     monkeypatch.chdir(project)
     runner = CliRunner()
-    result = runner.invoke(cli, ["deploy", "--runtime", "agentcore"])
+    result = runner.invoke(cli, ["deploy", "--runtime", "agentcore", "--allow-unauthenticated"])
     assert result.exit_code == 0, result.output
 
     target = project / "dist" / "agentcore"
@@ -38,7 +38,7 @@ def test_deploy_agentcore_dockerfile_is_arm64(tmp_path: Path, monkeypatch):
     project = _project(tmp_path)
     monkeypatch.chdir(project)
     runner = CliRunner()
-    runner.invoke(cli, ["deploy", "--runtime", "agentcore"])
+    runner.invoke(cli, ["deploy", "--runtime", "agentcore", "--allow-unauthenticated"])
     df = (project / "dist" / "agentcore" / "Dockerfile").read_text()
     assert "linux/arm64" in df
     assert "EXPOSE 8080" in df
@@ -50,7 +50,7 @@ def test_deploy_agentcore_handler_implements_protocol_contract(tmp_path: Path, m
     project = _project(tmp_path)
     monkeypatch.chdir(project)
     runner = CliRunner()
-    runner.invoke(cli, ["deploy", "--runtime", "agentcore"])
+    runner.invoke(cli, ["deploy", "--runtime", "agentcore", "--allow-unauthenticated"])
     h = (project / "dist" / "agentcore" / "handler.py").read_text()
     # Routes the AgentCore HTTP protocol contract requires.
     assert "/invocations" in h
@@ -67,7 +67,17 @@ def test_deploy_agentcore_custom_entry_propagates(tmp_path: Path, monkeypatch):
     (project / "main.py").write_text("def go(prompt): return prompt.upper()\n")
     monkeypatch.chdir(project)
     runner = CliRunner()
-    result = runner.invoke(cli, ["deploy", "--runtime", "agentcore", "--entry", "main.py:go"])
+    result = runner.invoke(
+        cli,
+        [
+            "deploy",
+            "--runtime",
+            "agentcore",
+            "--entry",
+            "main.py:go",
+            "--allow-unauthenticated",
+        ],
+    )
     assert result.exit_code == 0, result.output
     h = (project / "dist" / "agentcore" / "handler.py").read_text()
     assert "main.py:go" in h
@@ -87,11 +97,117 @@ def test_deploy_agentcore_live_blocked_without_env_flag(tmp_path: Path, monkeypa
     monkeypatch.chdir(project)
     monkeypatch.delenv("EAP_ENABLE_REAL_DEPLOY", raising=False)
     runner = CliRunner()
-    result = runner.invoke(cli, ["deploy", "--runtime", "agentcore", "--service", "my-agent"])
+    result = runner.invoke(
+        cli,
+        [
+            "deploy",
+            "--runtime",
+            "agentcore",
+            "--service",
+            "my-agent",
+            "--allow-unauthenticated",
+        ],
+    )
     assert result.exit_code == 0
     assert "EAP_ENABLE_REAL_DEPLOY" in result.output
     # Package was created but no docker build attempted.
     assert (project / "dist" / "agentcore" / "Dockerfile").is_file()
+
+
+def test_deploy_agentcore_refuses_without_auth(tmp_path: Path, monkeypatch):
+    """No auth flags + no --allow-unauthenticated must refuse to scaffold."""
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["deploy", "--runtime", "agentcore"])
+    assert result.exit_code != 0
+    assert "auth-discovery-url" in result.output or "allow-unauthenticated" in result.output
+
+
+def test_deploy_agentcore_writes_jwt_dependency(tmp_path: Path, monkeypatch):
+    """When auth flags are provided the generated handler wires InboundJwtVerifier."""
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "deploy",
+            "--runtime",
+            "agentcore",
+            "--auth-discovery-url",
+            "https://idp.example/.well-known/openid-configuration",
+            "--auth-issuer",
+            "https://idp.example",
+            "--auth-audience",
+            "my-agent",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    handler = (project / "dist" / "agentcore" / "handler.py").read_text()
+    assert "InboundJwtVerifier" in handler
+    assert "jwt_dependency" in handler
+    assert "https://idp.example/.well-known/openid-configuration" in handler
+    assert "https://idp.example" in handler
+    assert "my-agent" in handler
+
+
+def test_deploy_agentcore_partial_auth_flags_gives_specific_error(tmp_path: Path, monkeypatch):
+    """Partial --auth-* flags must name the missing flag in the error."""
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "deploy",
+            "--runtime",
+            "agentcore",
+            "--auth-issuer",
+            "https://idp.example",
+            "--auth-audience",
+            "x",
+            # missing --auth-discovery-url
+        ],
+    )
+    assert result.exit_code != 0
+    assert "--auth-discovery-url" in result.output
+    assert "Missing" in result.output or "Incomplete" in result.output
+
+
+def test_deploy_agentcore_allow_unauth_plus_auth_flags_rejected(tmp_path: Path, monkeypatch):
+    """--allow-unauthenticated combined with --auth-* flags must be rejected."""
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "deploy",
+            "--runtime",
+            "agentcore",
+            "--allow-unauthenticated",
+            "--auth-discovery-url",
+            "https://idp.example/.well-known/openid-configuration",
+            "--auth-issuer",
+            "https://idp.example",
+            "--auth-audience",
+            "my-agent",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "--allow-unauthenticated" in result.output
+
+
+def test_deploy_agentcore_allow_unauthenticated_warns_loudly(tmp_path: Path, monkeypatch):
+    """--allow-unauthenticated succeeds but emits a loud warning."""
+    project = _project(tmp_path)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["deploy", "--runtime", "agentcore", "--allow-unauthenticated"])
+    assert result.exit_code == 0, result.output
+    combined = result.output.lower()
+    assert "warning" in combined or "unauthenticated" in combined
 
 
 def test_handler_runs_via_asgi_when_fastapi_installed(tmp_path: Path, monkeypatch):
@@ -108,7 +224,7 @@ def test_handler_runs_via_asgi_when_fastapi_installed(tmp_path: Path, monkeypatc
     project = _project(tmp_path)
     monkeypatch.chdir(project)
     runner = CliRunner()
-    runner.invoke(cli, ["deploy", "--runtime", "agentcore"])
+    runner.invoke(cli, ["deploy", "--runtime", "agentcore", "--allow-unauthenticated"])
 
     target = project / "dist" / "agentcore"
     # Load the generated handler.py as a module.

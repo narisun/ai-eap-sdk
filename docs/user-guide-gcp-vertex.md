@@ -516,16 +516,31 @@ Run the runner in CI with `eap eval --dataset tests/golden_set.json
 
 ### 1.17 Package and deploy
 
+`eap deploy --runtime vertex-agent-engine` refuses to scaffold an
+unauthenticated handler. Pass the OIDC details so the generated
+`handler.py` wires `InboundJwtVerifier` + `jwt_dependency` into
+`POST /invocations`:
+
 ```bash
-uv run eap deploy --runtime vertex-agent-engine --service my-bank-agent --region us-central1
+uv run eap deploy --runtime vertex-agent-engine \
+    --service my-bank-agent \
+    --region us-central1 \
+    --auth-discovery-url https://accounts.google.com/.well-known/openid-configuration \
+    --auth-issuer        https://accounts.google.com \
+    --auth-audience      my-bank-agent
 ```
+
+For local smoke testing only, you may pass `--allow-unauthenticated` to
+skip auth wiring; the CLI then emits a loud warning and the generated
+`handler.py` carries a `WARNING` comment at the top — never use this
+mode in production.
 
 This produces `dist/vertex-agent-engine/`:
 
 ```
 dist/vertex-agent-engine/
 ├── Dockerfile     # linux/amd64 base, PORT env, EXPOSE 8080
-├── handler.py     # FastAPI: POST /invocations + GET /health
+├── handler.py     # FastAPI: POST /invocations (with jwt_dependency) + GET /health
 ├── README.md      # Artifact Registry push + Vertex registration steps
 └── <your project files>
 ```
@@ -542,7 +557,10 @@ Vertex Agent Engine registration:
 ```bash
 export EAP_ENABLE_REAL_DEPLOY=1
 export GOOGLE_CLOUD_PROJECT=my-gcp-project
-uv run eap deploy --runtime vertex-agent-engine --service my-bank-agent --region us-central1
+uv run eap deploy --runtime vertex-agent-engine --service my-bank-agent --region us-central1 \
+    --auth-discovery-url https://accounts.google.com/.well-known/openid-configuration \
+    --auth-issuer        https://accounts.google.com \
+    --auth-audience      my-bank-agent
 # → Built image: <image>:<tag>
 # → Push to Artifact Registry and register with Vertex Agent Engine — see dist/vertex-agent-engine/README.md
 ```

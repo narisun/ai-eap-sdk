@@ -102,8 +102,14 @@ traffic.
 
 ```bash
 EAP_ENABLE_REAL_DEPLOY=1 GOOGLE_CLOUD_PROJECT=my-gcp-project \
-  uv run eap deploy --runtime vertex-agent-engine --service bank-agent --region us-central1
+  uv run eap deploy --runtime vertex-agent-engine --service bank-agent --region us-central1 \
+  --allow-unauthenticated
 ```
+
+We pass `--allow-unauthenticated` here because the example targets
+local smoke testing. For real deployment, pass
+`--auth-discovery-url + --auth-issuer + --auth-audience` instead —
+see user-guide §1.17.
 
 Produces `dist/vertex-agent-engine/` with the linux/amd64 Dockerfile,
 FastAPI handler, and a README walking through the Artifact Registry

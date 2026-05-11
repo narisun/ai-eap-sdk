@@ -91,8 +91,14 @@ traffic.
 ## Deploy to AgentCore Runtime
 
 ```bash
-EAP_ENABLE_REAL_DEPLOY=1 uv run eap deploy --runtime agentcore --service bank-agent
+EAP_ENABLE_REAL_DEPLOY=1 uv run eap deploy --runtime agentcore --service bank-agent \
+  --allow-unauthenticated
 ```
+
+We pass `--allow-unauthenticated` here because the example targets
+local smoke testing. For real deployment, pass
+`--auth-discovery-url + --auth-issuer + --auth-audience` instead —
+see user-guide §1.17.
 
 Produces `dist/agentcore/` with the ARM64 Dockerfile, FastAPI
 handler, and a README walking through the ECR push +

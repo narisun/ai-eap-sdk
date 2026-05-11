@@ -168,6 +168,27 @@ def eval_cmd(
     show_default=True,
     help="AWS region (used by --runtime agentcore).",
 )
+@click.option(
+    "--auth-discovery-url",
+    default=None,
+    help="OIDC discovery URL for InboundJwtVerifier.",
+)
+@click.option(
+    "--auth-issuer",
+    default=None,
+    help="Expected issuer (`iss`) claim.",
+)
+@click.option(
+    "--auth-audience",
+    "auth_audiences",
+    multiple=True,
+    help="Allowed audience(s). Repeat for multiple.",
+)
+@click.option(
+    "--allow-unauthenticated",
+    is_flag=True,
+    help="Skip auth wiring — only for non-production.",
+)
 @click.option("--dry-run", is_flag=True, help="Show plan, write nothing.")
 def deploy_cmd(
     runtime: str,
@@ -175,6 +196,10 @@ def deploy_cmd(
     service: str,
     entry: str,
     region: str,
+    auth_discovery_url: str | None,
+    auth_issuer: str | None,
+    auth_audiences: tuple[str, ...],
+    allow_unauthenticated: bool,
     dry_run: bool,
 ) -> None:
     """Package the project for AWS, GCP, or AgentCore Runtime deployment."""
@@ -208,7 +233,10 @@ def deploy_cmd(
                 f"Otherwise: gcloud run deploy {service} --source {target}"
             )
     elif runtime == "agentcore":
-        target = package_agentcore(project, entry=entry)
+        auth = _resolve_handler_auth(
+            auth_discovery_url, auth_issuer, auth_audiences, allow_unauthenticated
+        )
+        target = package_agentcore(project, entry=entry, auth=auth)
         click.echo(f"Packaged: {target}")
         if _real_deploy_enabled():
             image = deploy_agentcore(target, name=service, region=region)
@@ -220,7 +248,10 @@ def deploy_cmd(
                 f"Otherwise see {target}/README.md for build/push/register steps."
             )
     else:  # vertex-agent-engine
-        target = package_vertex_agent_engine(project, entry=entry)
+        auth = _resolve_handler_auth(
+            auth_discovery_url, auth_issuer, auth_audiences, allow_unauthenticated
+        )
+        target = package_vertex_agent_engine(project, entry=entry, auth=auth)
         click.echo(f"Packaged: {target}")
         if _real_deploy_enabled():
             image = deploy_vertex_agent_engine(
@@ -239,6 +270,61 @@ def deploy_cmd(
                 f"Set EAP_ENABLE_REAL_DEPLOY=1 to build the image locally. "
                 f"Otherwise see {target}/README.md for build/push/register steps."
             )
+
+
+def _resolve_handler_auth(
+    discovery_url: str | None,
+    issuer: str | None,
+    audiences: tuple[str, ...],
+    allow_unauthenticated: bool,
+) -> dict[str, object] | None:
+    """Validate the --auth-* flags and return the auth dict (or None).
+
+    Raises ``click.ClickException`` when:
+      * neither a complete auth triple nor ``--allow-unauthenticated`` was passed,
+      * a partial auth triple was passed (names the missing flags), or
+      * a complete auth triple was combined with ``--allow-unauthenticated``
+        (contradictory intent).
+
+    Emits a loud warning to stderr when ``--allow-unauthenticated`` is used.
+    """
+    auth_configured = bool(discovery_url and issuer and audiences)
+    missing: list[str] = []
+    if not discovery_url:
+        missing.append("--auth-discovery-url")
+    if not issuer:
+        missing.append("--auth-issuer")
+    if not audiences:
+        missing.append("--auth-audience")
+    any_auth_set = len(missing) < 3
+
+    if auth_configured and allow_unauthenticated:
+        raise click.ClickException(
+            "--allow-unauthenticated cannot be combined with --auth-* flags; pick one."
+        )
+    if not auth_configured and not allow_unauthenticated:
+        if any_auth_set:
+            raise click.ClickException(
+                f"Incomplete auth configuration. Missing: {', '.join(missing)}. "
+                f"Pass all three of --auth-discovery-url + --auth-issuer + "
+                f"--auth-audience, or --allow-unauthenticated."
+            )
+        raise click.ClickException(
+            "Deploy refuses to scaffold an unauthenticated handler. Pass "
+            "--auth-discovery-url + --auth-issuer + --auth-audience (one or more), "
+            "or --allow-unauthenticated to opt in explicitly (NOT for production)."
+        )
+    if not auth_configured:
+        click.echo(
+            "WARNING: scaffolding an unauthenticated handler. Do NOT use in production.",
+            err=True,
+        )
+        return None
+    return {
+        "discovery_url": discovery_url,
+        "issuer": issuer,
+        "audiences": list(audiences),
+    }
 
 
 @cli.command("publish-to-gateway")
