@@ -13,6 +13,8 @@ here are useful for tests and local development.
 
 from __future__ import annotations
 
+import asyncio
+import sys
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -75,39 +77,67 @@ class BrowserSandbox(Protocol):
 class InProcessCodeSandbox:
     """Python-subprocess code execution for tests / local development.
 
-    NOT actually sandboxed — runs in a subprocess. Only ``language="python"``
-    is supported. Useful for unit tests of agents that call
-    ``client.invoke_tool("execute_code", ...)``; do NOT use in production.
-
-    Production code paths should use ``AgentCoreCodeSandbox`` or
-    ``VertexCodeSandbox`` (both raise ``NotImplementedError`` without
-    ``EAP_ENABLE_REAL_RUNTIMES=1``, which keeps misconfigurations loud).
+    NOT actually sandboxed — runs in a Python subprocess that inherits
+    the parent's environment, filesystem, and network. Both
+    ``timeout_seconds`` and ``max_code_bytes`` are required to make the
+    failure mode explicit; production paths must use
+    ``AgentCoreCodeSandbox`` or ``VertexCodeSandbox``.
     """
 
     name: str = "in_process_code_sandbox"
 
+    def __init__(self, *, timeout_seconds: float, max_code_bytes: int) -> None:
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be > 0")
+        if max_code_bytes <= 0:
+            raise ValueError("max_code_bytes must be > 0")
+        self._timeout = timeout_seconds
+        self._max_bytes = max_code_bytes
+
     async def execute(self, language: str, code: str) -> SandboxResult:
+        if len(code.encode("utf-8")) > self._max_bytes:
+            return SandboxResult(
+                stderr=f"input exceeds max_code_bytes={self._max_bytes}",
+                exit_code=2,
+            )
         if language != "python":
             return SandboxResult(
                 stderr=f"InProcessCodeSandbox only supports python, got {language!r}",
                 exit_code=2,
             )
-        import asyncio
-        import sys
-
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-c",
-            code,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        out, err = await proc.communicate()
-        return SandboxResult(
-            stdout=out.decode("utf-8", errors="replace"),
-            stderr=err.decode("utf-8", errors="replace"),
-            exit_code=proc.returncode or 0,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-c",
+                code,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError as e:
+            return SandboxResult(
+                stderr=f"subprocess spawn failed: {e}",
+                exit_code=2,
+            )
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
+            return SandboxResult(
+                stdout=out.decode("utf-8", errors="replace"),
+                stderr=err.decode("utf-8", errors="replace"),
+                exit_code=proc.returncode or 0,
+            )
+        except TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass  # process exited between timeout fire and kill — benign race
+            try:
+                await proc.communicate()
+            except Exception:  # noqa: S110 - best-effort drain of killed process
+                pass
+            return SandboxResult(
+                stderr=f"execution killed: timeout after {self._timeout}s",
+                exit_code=124,
+            )
 
 
 class NoopBrowserSandbox:

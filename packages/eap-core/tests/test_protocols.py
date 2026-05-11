@@ -29,12 +29,12 @@ from eap_core import (
 
 
 def test_in_process_code_sandbox_satisfies_protocol():
-    sb = InProcessCodeSandbox()
+    sb = InProcessCodeSandbox(timeout_seconds=5, max_code_bytes=64_000)
     assert isinstance(sb, CodeSandbox)
 
 
 async def test_in_process_code_sandbox_runs_python():
-    sb = InProcessCodeSandbox()
+    sb = InProcessCodeSandbox(timeout_seconds=5, max_code_bytes=64_000)
     result = await sb.execute("python", "print('hello')")
     assert isinstance(result, SandboxResult)
     assert result.exit_code == 0
@@ -42,20 +42,20 @@ async def test_in_process_code_sandbox_runs_python():
 
 
 async def test_in_process_code_sandbox_captures_stderr():
-    sb = InProcessCodeSandbox()
+    sb = InProcessCodeSandbox(timeout_seconds=5, max_code_bytes=64_000)
     result = await sb.execute("python", "import sys; sys.stderr.write('oops')")
     assert "oops" in result.stderr
     assert result.exit_code == 0  # writing to stderr isn't an error
 
 
 async def test_in_process_code_sandbox_returns_nonzero_on_failure():
-    sb = InProcessCodeSandbox()
+    sb = InProcessCodeSandbox(timeout_seconds=5, max_code_bytes=64_000)
     result = await sb.execute("python", "raise SystemExit(42)")
     assert result.exit_code == 42
 
 
 async def test_in_process_code_sandbox_rejects_non_python():
-    sb = InProcessCodeSandbox()
+    sb = InProcessCodeSandbox(timeout_seconds=5, max_code_bytes=64_000)
     result = await sb.execute("javascript", "console.log('hi')")
     assert result.exit_code != 0
     assert "only supports python" in result.stderr
