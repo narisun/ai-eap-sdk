@@ -14,6 +14,18 @@ from __future__ import annotations
 import os
 from typing import Any
 
+# Re-export inbound JWT helpers under the Vertex submodule so handler.py
+# code generated for the Vertex runtime imports from the matching module
+# name. The implementation lives in :mod:`eap_core.integrations.agentcore`
+# (OIDC verifiers are cloud-agnostic) — the re-export here is purely
+# cosmetic for Vertex-deployed images (N-N2).
+from eap_core.integrations.agentcore import (
+    InboundJwtVerifier as InboundJwtVerifier,
+)
+from eap_core.integrations.agentcore import (
+    jwt_dependency as jwt_dependency,
+)
+
 _VERTEX_GUIDE = (
     "Vertex adapter requires the [gcp] extra and Google Cloud credentials. "
     "Set EAP_ENABLE_REAL_RUNTIMES=1 once configured."
@@ -885,6 +897,9 @@ __all__ = [  # noqa: RUF022 — grouped by phase, not alphabetically
     # Phase B — Browser Sandbox
     "VertexBrowserSandbox",
     "register_browser_sandbox_tools",
+    # Phase B — Inbound JWT (re-exported from agentcore)
+    "InboundJwtVerifier",
+    "jwt_dependency",
     # Phase C — Gateway
     "VertexGatewayClient",
     # Phase D — Registry

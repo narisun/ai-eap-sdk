@@ -403,6 +403,24 @@ class InboundJwtVerifier:
 
     Standard usage with our generated AgentCore handler.py is via the
     FastAPI dependency factory (``jwt_dependency``).
+
+    Note:
+        ``averify`` enforces ``require=["exp", "iat", "aud", "iss"]``
+        on every token. RFC 7519 §4.1.6 declares ``iat`` OPTIONAL, but
+        every major OIDC IdP (Okta, Auth0, AWS Cognito, Google,
+        Microsoft Entra) emits it on every token, so requiring it
+        catches malformed-or-attacker-minted tokens with negligible
+        false-positive risk. If you integrate with a non-standard IdP
+        that omits ``iat``, subclass and override the ``require`` set
+        in the ``jwt.decode`` call or open a feature request for a
+        constructor-level toggle.
+
+    The verifier lazily owns an ``httpx.AsyncClient`` for JWKS fetches.
+    Repeated ``averify`` calls reuse the same pool — call ``aclose()``
+    (or use ``async with``) when you're done with the verifier so the
+    pool is closed cleanly. A caller-supplied ``http`` argument to
+    ``averify`` is never closed by the verifier (ownership stays with
+    the caller).
     """
 
     def __init__(
@@ -416,17 +434,44 @@ class InboundJwtVerifier:
         jwks_cache_ttl_seconds: int = 600,
         clock_skew_seconds: int = 30,
     ) -> None:
-        # Audience validation is MANDATORY. The previous default of
-        # ``allowed_audiences=None`` silently disabled ``aud`` checking,
-        # which means a default-constructed verifier would accept a token
-        # minted for ANY agent — a critical authorization gap (C4).
+        """Construct an inbound JWT verifier.
+
+        Args:
+            discovery_url: OIDC discovery endpoint URL. MUST be https —
+                a plaintext discovery doc lets a MITM swap ``jwks_uri``
+                and forge tokens.
+            issuer: Expected ``iss`` claim value. Pinned during
+                ``jwt.decode`` and cross-checked against the discovery
+                doc's advertised issuer.
+            allowed_audiences: One or more ``aud`` values the verifier
+                accepts. Empty list is rejected — audience validation
+                is mandatory.
+            allowed_scopes: Optional set of scope strings. If provided,
+                the token's ``scope`` claim must contain at least one.
+            allowed_clients: Optional set of ``client_id``/``azp`` values
+                permitted to mint a token for this audience.
+            jwks_cache_ttl_seconds: Per-process JWKS cache lifetime.
+            clock_skew_seconds: Leeway applied to ``exp``/``iat``
+                comparisons. Defaults to 30s to absorb typical NTP drift.
+
+        Note:
+            ``averify`` enforces ``require=["exp", "iat", "aud", "iss"]``.
+            RFC 7519 §4.1.6 declares ``iat`` OPTIONAL — strictness here
+            is acceptable because every major OIDC IdP emits ``iat`` on
+            every token; the rare non-conforming IdP can be handled by
+            subclassing. See class docstring for details.
+        """
+        # Audience validation is MANDATORY. A default of
+        # ``allowed_audiences=None`` would silently disable ``aud``
+        # checking, so a default-constructed verifier would accept a
+        # token minted for ANY agent — a critical authorization gap.
         #
-        # ``discovery_url`` MUST be https — plaintext OIDC discovery is a
-        # MITM hole. An attacker who can rewrite the discovery doc can
-        # point ``jwks_uri`` at their own JWKS and forge tokens (C1).
+        # ``discovery_url`` MUST be https — plaintext OIDC discovery is
+        # a MITM hole. An attacker who can rewrite the discovery doc
+        # can point ``jwks_uri`` at their own JWKS and forge tokens.
         # ``issuer`` is required so we can pin the ``iss`` claim during
-        # ``jwt.decode`` (C2) and cross-check the discovery doc's
-        # advertised issuer.
+        # ``jwt.decode`` and cross-check the discovery doc's advertised
+        # issuer.
         parsed = urlparse(discovery_url)
         if parsed.scheme != "https":
             raise ValueError(
@@ -464,6 +509,11 @@ class InboundJwtVerifier:
         # only one performs the network round-trip; the rest re-check
         # the cache under the lock and skip the fetch.
         self._refresh_lock: asyncio.Lock = asyncio.Lock()
+        # Lazily-allocated verifier-owned AsyncClient. Populated on the
+        # first ``averify`` call that doesn't get a caller-supplied
+        # ``http`` argument; closed in ``aclose``. Repeated ``averify``
+        # calls reuse this pool — no per-call construction (L2).
+        self._owned_http: Any | None = None
 
     def _validate_discovery_meta(self, meta: dict[str, Any]) -> str:
         """Validate a parsed OIDC discovery doc and return its ``jwks_uri``.
@@ -472,17 +522,24 @@ class InboundJwtVerifier:
         keeps https / same-origin / advertised-issuer checks in one place
         so a future tightening can't land in one path and miss the other.
 
-        Enforces (C1):
+        Enforces:
 
-        - The advertised ``jwks_uri`` is https.
-        - The advertised ``jwks_uri`` is on the SAME origin as
-          ``discovery_url`` (RFC 3986 §3.2.2 case-insensitive host, plus
-          implicit-default-port normalization) — we refuse to fetch keys
-          from a third-party origin even if the discovery doc tells us to.
-        - The discovery doc's ``issuer`` field is REQUIRED (OIDC
-          Discovery 1.0 §3) and must match the configured ``issuer``
-          (C2 cross-check). A missing field is a §6.6 silent-degrade
-          attack vector — reject explicitly.
+        - ``jwks_uri`` MUST be present in the discovery doc (OIDC
+          Discovery 1.0 §3 makes it REQUIRED).
+        - ``jwks_uri`` scheme MUST be https — plaintext JWKS retrieval
+          lets a MITM swap signing keys and forge tokens.
+        - ``jwks_uri`` origin (scheme + host + port, RFC 3986 §3.2.2
+          case-insensitive host with implicit-default-port normalization)
+          MUST match the discovery URL's origin. We refuse to fetch keys
+          from a third-party origin even if the discovery doc tells us
+          to — a tampered discovery doc would otherwise redirect us to
+          an attacker-controlled JWKS.
+        - The discovery doc MUST advertise an ``issuer`` field (OIDC
+          Discovery 1.0 §3 REQUIRED) and it MUST match the configured
+          ``self._issuer``. This is defense-in-depth: the JWT ``iss``
+          claim is already pinned during ``jwt.decode``, but
+          cross-checking the discovery doc catches a tampered discovery
+          payload before we trust any of its other fields.
         """
         jwks_uri = meta.get("jwks_uri")
         if not jwks_uri:
@@ -615,8 +672,8 @@ class InboundJwtVerifier:
         ``http`` is an ``httpx.AsyncClient`` (or a compatible stub exposing
         an awaitable ``get(url)`` returning an object with ``.json()``).
         Validation is delegated to :meth:`_validate_discovery_meta` so
-        both refresh paths share one source of truth for the C1/C2
-        trust-pinning invariants.
+        both refresh paths share one source of truth for the https /
+        same-origin / advertised-issuer trust-pinning invariants.
         """
         meta_resp = await http.get(self._discovery_url)
         meta = meta_resp.json()
@@ -653,28 +710,58 @@ class InboundJwtVerifier:
                 return
             await self._arefresh_jwks(http)
 
+    async def _get_owned_http(self) -> Any:
+        """Return the verifier-owned ``httpx.AsyncClient``, allocating on first use.
+
+        Lazy so ``InboundJwtVerifier()`` stays cheap (no httpx import at
+        construction time) and so a verifier that's only ever called with
+        a caller-supplied ``http`` never allocates its own pool.
+        """
+        if self._owned_http is None:
+            import httpx
+
+            self._owned_http = httpx.AsyncClient(timeout=10.0)
+        return self._owned_http
+
+    async def aclose(self) -> None:
+        """Close the verifier-owned ``AsyncClient`` if one was allocated.
+
+        Idempotent. Caller-supplied ``http`` clients are never closed by
+        the verifier — ownership stays with the caller.
+        """
+        if self._owned_http is not None:
+            await self._owned_http.aclose()
+            self._owned_http = None
+
+    async def __aenter__(self) -> InboundJwtVerifier:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.aclose()
+
     async def averify(self, token: str, *, http: Any | None = None) -> dict[str, Any]:
         """Async sibling of :meth:`verify`.
 
         Use this from async FastAPI dependencies (or any code running in an
         event loop) so the JWKS fetch does not block the loop. Pass an
         ``httpx.AsyncClient`` via ``http`` to share a connection pool, or
-        accept the default (a temporary ``AsyncClient`` per call, closed
-        on return).
+        accept the default (a verifier-owned ``AsyncClient`` that lives for
+        the lifetime of the verifier — call ``aclose()`` or use
+        ``async with`` to close it cleanly).
+
+        Caller-supplied ``http`` is never closed by the verifier;
+        ownership stays with the caller.
         """
         import jwt
         from jwt.algorithms import RSAAlgorithm
 
-        owns_http = http is None
         if http is None:
-            import httpx
-
-            http = httpx.AsyncClient()
-        try:
-            await self._amaybe_refresh_jwks(http)
-        finally:
-            if owns_http:
-                await http.aclose()
+            http = await self._get_owned_http()
+        # ``http`` (either caller-supplied or verifier-owned) is NOT
+        # closed here — the verifier-owned pool is reused across calls
+        # and closed in ``aclose``; caller-supplied pools belong to the
+        # caller.
+        await self._amaybe_refresh_jwks(http)
 
         unverified = jwt.get_unverified_header(token)
         kid = unverified.get("kid")

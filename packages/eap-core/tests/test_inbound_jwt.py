@@ -592,3 +592,166 @@ async def test_jwt_dependency_does_not_leak_internal_error_detail() -> None:
     # that prints __cause__ can't leak the verifier's exception.
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__suppress_context__ is True  # blocks __context__ from default traceback
+
+
+# ---- L2: verifier-owned AsyncClient lifecycle -----------------------------
+
+
+class _CountingAsyncHttp:
+    """Test double that records how many times ``aclose`` is called."""
+
+    def __init__(self) -> None:
+        self.close_count = 0
+        self.fetches: list[str] = []
+
+    async def get(self, url: str) -> Any:
+        self.fetches.append(url)
+
+        class _R:
+            def json(self_inner) -> dict[str, Any]:  # noqa: N805
+                if "well-known" in url:
+                    return {
+                        "issuer": "https://idp.example",
+                        "jwks_uri": "https://idp.example/jwks",
+                    }
+                return {"keys": []}
+
+        return _R()
+
+    async def aclose(self) -> None:
+        self.close_count += 1
+
+
+@pytest.mark.asyncio
+async def test_inbound_jwt_verifier_reuses_verifier_owned_async_client() -> None:
+    """Repeated ``averify`` calls on the same verifier reuse one pool.
+
+    Pre-L2 behavior constructed a fresh ``httpx.AsyncClient`` per call;
+    after L2 the verifier lazily owns a single client and ``aclose``
+    closes it exactly once.
+    """
+    import httpx
+
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        issuer="https://idp.example",
+        allowed_audiences=["agent"],
+    )
+    # No pool allocated at construction (lazy).
+    assert verifier._owned_http is None
+
+    # Stub the lazy allocator so we don't make real network calls.
+    fake = _CountingAsyncHttp()
+
+    async def _fake_get_owned_http() -> Any:
+        if verifier._owned_http is None:
+            verifier._owned_http = fake
+        return verifier._owned_http
+
+    verifier._get_owned_http = _fake_get_owned_http  # type: ignore[method-assign]
+
+    # Two cold-cache calls.
+    for _ in range(2):
+        try:
+            await verifier.averify("not-a-real-token")
+        except Exception:
+            # Token verification will fail (no matching JWKS key) — that's
+            # fine; we're measuring lifecycle, not crypto.
+            pass
+
+    # Verifier holds onto the same pool — no per-call construction.
+    assert verifier._owned_http is fake
+    assert fake.close_count == 0
+    # JWKS refresh happens once across both calls (cache hit on the
+    # second), so we only see one discovery + one jwks fetch.
+    assert fake.fetches.count("https://idp.example/.well-known/openid-configuration") == 1
+    assert fake.fetches.count("https://idp.example/jwks") == 1
+
+    # aclose closes the verifier-owned client exactly once.
+    await verifier.aclose()
+    assert fake.close_count == 1
+    assert verifier._owned_http is None
+
+    # Idempotent — second aclose is a no-op.
+    await verifier.aclose()
+    assert fake.close_count == 1
+
+    # Sanity check: httpx is importable (we'd allocate a real client if
+    # not stubbed); confirms the lazy path doesn't need httpx at construction.
+    assert httpx.AsyncClient is not None
+
+
+@pytest.mark.asyncio
+async def test_inbound_jwt_verifier_does_not_close_caller_supplied_http() -> None:
+    """Caller-supplied ``http`` is never closed by the verifier — ownership
+    stays with the caller."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        issuer="https://idp.example",
+        allowed_audiences=["agent"],
+    )
+    caller_http = _CountingAsyncHttp()
+
+    try:
+        await verifier.averify("not-a-real-token", http=caller_http)
+    except Exception:
+        pass
+
+    # Caller's pool is untouched.
+    assert caller_http.close_count == 0
+    # Verifier never allocated its own pool because caller supplied one.
+    assert verifier._owned_http is None
+
+    # aclose is still safe (no verifier-owned pool to close).
+    await verifier.aclose()
+    assert caller_http.close_count == 0
+
+
+@pytest.mark.asyncio
+async def test_inbound_jwt_verifier_async_context_manager() -> None:
+    """``async with`` symmetrically allocates lazily and closes on exit."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    fake = _CountingAsyncHttp()
+
+    async with InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        issuer="https://idp.example",
+        allowed_audiences=["agent"],
+    ) as verifier:
+        # Inject the fake before the first averify call.
+        async def _fake_get_owned_http() -> Any:
+            if verifier._owned_http is None:
+                verifier._owned_http = fake
+            return verifier._owned_http
+
+        verifier._get_owned_http = _fake_get_owned_http  # type: ignore[method-assign]
+
+        try:
+            await verifier.averify("not-a-real-token")
+        except Exception:
+            pass
+        assert verifier._owned_http is fake
+
+    # __aexit__ ran aclose.
+    assert fake.close_count == 1
+
+
+# ---- N-N2: Vertex re-export ------------------------------------------------
+
+
+def test_vertex_reexports_inbound_jwt_verifier_and_dependency() -> None:
+    """``eap_core.integrations.vertex`` re-exports ``InboundJwtVerifier`` +
+    ``jwt_dependency`` from the agentcore module so Vertex-deployed
+    handler.py reads cleanly when importing from the matching submodule."""
+    from eap_core.integrations import agentcore as ac
+    from eap_core.integrations import vertex as vx
+
+    assert vx.InboundJwtVerifier is ac.InboundJwtVerifier
+    assert vx.jwt_dependency is ac.jwt_dependency
+    assert "InboundJwtVerifier" in vx.__all__
+    assert "jwt_dependency" in vx.__all__

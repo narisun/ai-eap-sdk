@@ -694,7 +694,7 @@ if __name__ == "__main__":
 
 _VERTEX_HANDLER_AUTH_IMPORTS = (
     "from fastapi import Depends\n"
-    "from eap_core.integrations.agentcore import InboundJwtVerifier, jwt_dependency\n"
+    "from eap_core.integrations.vertex import InboundJwtVerifier, jwt_dependency\n"
 )
 
 _VERTEX_HANDLER_AUTH_WIRING = """\
@@ -843,8 +843,8 @@ def package_vertex_agent_engine(
 
     When ``auth`` is provided (``{"discovery_url": str, "issuer": str,
     "audiences": list[str]}``), the generated handler wires
-    :class:`~eap_core.integrations.agentcore.InboundJwtVerifier` +
-    :func:`~eap_core.integrations.agentcore.jwt_dependency` into
+    :class:`~eap_core.integrations.vertex.InboundJwtVerifier` +
+    :func:`~eap_core.integrations.vertex.jwt_dependency` into
     ``POST /invocations``. When ``auth`` is ``None`` the handler is
     emitted without auth and prefixed with a loud warning comment;
     this mode is only safe for local smoke testing.
