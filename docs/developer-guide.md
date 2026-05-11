@@ -375,7 +375,10 @@ class Context:
   coordination. **Always namespace your keys** (`gen_ai.*`,
   `policy.*`, `tenant.*`).
 - `span` — the active OTel span if observability is wired.
-- `identity` — the `NonHumanIdentity` for this request.
+- `identity` — the identity for this request. Typed as `Any` for
+  backward compatibility, but in practice this is any object
+  satisfying the `IdentityToken` Protocol (`name: str`) introduced in
+  v0.6.0 — typically `NonHumanIdentity | VertexAgentIdentityToken | None`.
 - `request_id` — UUID, set by the client.
 
 The `Context` is created at request start and discarded at request
@@ -402,6 +405,22 @@ Errors that propagate out of middlewares should carry rich metadata.
 - `OutputValidationError` carries the Pydantic error trace.
 - `MCPError` carries the tool name.
 - `IdentityError` carries the underlying IdP failure reason.
+- `RealRuntimeDisabledError` (subclass of `EapError`) is raised by every
+  cloud-runtime adapter and integration method when
+  `EAP_ENABLE_REAL_RUNTIMES=1` is not set. Use `except
+  RealRuntimeDisabledError` to selectively catch stub-mode failures
+  without intercepting genuine `NotImplementedError` (which only fires
+  on truly-unimplemented paths). New in v0.6.0 — replaces the bare
+  `NotImplementedError` previously raised by stub-mode adapters.
+- `PolicyConfigurationError` (subclass of `EapError`) is raised by
+  `PolicyMiddleware` when `ctx.metadata["policy.action"]` or
+  `ctx.metadata["policy.resource"]` is not populated.
+  `EnterpriseLLM.generate_text` / `stream_text` / `invoke_tool` always
+  set these slots from trusted SDK-internal sources; custom-pipeline
+  users wiring `PolicyMiddleware` directly must populate them before
+  passing the request. New in v0.6.0 — defense-in-depth closure of H9
+  (`req.metadata` is caller-mutable and is no longer trusted by the
+  policy middleware).
 
 A custom middleware that rejects a request should raise a custom
 exception that subclasses `EapError` and includes whatever the audit
@@ -767,6 +786,15 @@ user will want.
 
 ### 4.7 Add a custom identity provider
 
+`EnterpriseLLM(identity=...)` accepts anything satisfying the
+`IdentityToken` Protocol (`name: str`, introduced in v0.6.0). The
+bundled `NonHumanIdentity` is the standard async impl; the Vertex side
+ships `VertexAgentIdentityToken` (sync) which also satisfies the
+Protocol. The SDK routes calls polymorphically via
+`eap_core.identity.resolve_token`, which dispatches on the protocol
+shape rather than the concrete class — so the same agent code runs
+against either implementation.
+
 **When.** You're integrating with a real OIDC IdP (Okta, Auth0,
 Cognito, Keycloak, custom) or with a non-OIDC system.
 
@@ -955,9 +983,11 @@ template:
 3. **Lazy-import the cloud SDK** inside each class's `_client()`
    helper or method. Construction must not touch the network or
    import the SDK.
-4. **Gate live calls** behind `EAP_ENABLE_REAL_RUNTIMES=1` so CI runs
-   without credentials. Methods raise `RealRuntimeDisabledError` with a
-   setup hint when the flag is unset.
+4. **Gate live calls behind `EAP_ENABLE_REAL_RUNTIMES=1`** so CI runs
+   without credentials. Methods raise `RealRuntimeDisabledError`
+   (`EapError` subclass) with a setup hint when the flag is unset —
+   the canonical message format mirrors `_AGENTCORE_GUIDE` and
+   `_VERTEX_GUIDE` in the existing integrations.
 5. **Add a new extra** under `[project.optional-dependencies]` that
    pulls the cloud's SDK. Forward it at the workspace root.
 6. **Add a deploy target.** Extend
@@ -1140,6 +1170,7 @@ the warning and forwards to the new name.
 | `AgentRegistry` Protocol | Stable. Adding a method is breaking. |
 | `PaymentBackend` Protocol + `PaymentRequired` | Stable. |
 | `ThreatDetector` Protocol + `ThreatAssessment` | Stable. |
+| `IdentityToken` Protocol | Stable. Structural — `name: str` required. Adding methods is breaking. |
 | `Request` / `Response` / `Chunk` / `Message` | Stable on the wire. |
 | `AgentCard` / `Skill` | Stable on the wire (A2A spec). |
 | `Trajectory` | Stable on the wire (eval/audit consumers). |

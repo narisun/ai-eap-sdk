@@ -42,7 +42,7 @@ classes are drop-in implementations.
 | `AgentRegistry` | `RegistryClient` (AWS Agent Registry) | `VertexAgentRegistry` |
 | `PaymentBackend` | `PaymentClient` (x402) | `AP2PaymentClient` (AP2) |
 | `Scorer` (eval) | `AgentCoreEvalScorer` | `VertexEvalScorer` |
-| `NonHumanIdentity`-shaped | `OIDCTokenExchange` | `VertexAgentIdentityToken` |
+| `IdentityToken` Protocol | `OIDCTokenExchange` (via `NonHumanIdentity`) | `VertexAgentIdentityToken` |
 | Outbound MCP-HTTP client | `agentcore.GatewayClient` | `VertexGatewayClient` |
 
 If your agent depends on the Protocol (not the concrete class), it

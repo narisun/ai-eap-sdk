@@ -93,7 +93,13 @@ production. The same agent code works on either cloud:
 | `AgentRegistry` | `InMemoryAgentRegistry` | `RegistryClient` | `VertexAgentRegistry` |
 | `PaymentBackend` | `InMemoryPaymentBackend` | `PaymentClient` (x402) | `AP2PaymentClient` (AP2) |
 | `ThreatDetector` | `RegexThreatDetector` | — | — |
-| `NonHumanIdentity`-shaped | `LocalIdPStub` | `OIDCTokenExchange` | `VertexAgentIdentityToken` |
+| `IdentityToken` Protocol (new in v0.6.0) | `LocalIdPStub` (via `NonHumanIdentity`) | `OIDCTokenExchange` (via `NonHumanIdentity`) | `VertexAgentIdentityToken` |
+
+The `IdentityToken` Protocol (introduced in v0.6.0) is the structural
+type both `NonHumanIdentity` (async, AWS-flavored) and
+`VertexAgentIdentityToken` (sync, GCP-flavored) satisfy — `name: str` is
+the only required attribute, so `EnterpriseLLM(identity=...)` accepts
+either implementation interchangeably.
 
 **End-to-end user guides for each cloud** (zero to deployed agent,
 with every command and every snippet):
@@ -544,6 +550,70 @@ exporter. No SDK code changes.
       follow `dist/vertex-agent-engine/README.md` for Artifact Registry
       push + Vertex registration. See
       [`docs/integrations/gcp-vertex-agent-engine.md`](docs/integrations/gcp-vertex-agent-engine.md).
+
+---
+
+## Migrating from earlier versions
+
+See [`CHANGELOG.md`](CHANGELOG.md) for the full per-release history. The
+v0.6.0 release introduced three small breaking changes — recipes below
+cover each one.
+
+```python
+# === Task 1: IdentityToken Protocol ===
+# v0.6.0 introduced the structural `IdentityToken` Protocol so
+# `EnterpriseLLM(identity=...)` accepts both `NonHumanIdentity` (async
+# AWS-flavored) and `VertexAgentIdentityToken` (sync GCP-flavored)
+# interchangeably. If you have a helper typed against `NonHumanIdentity`
+# and want polymorphism, broaden the type annotation:
+#
+# Before:
+def my_helper(nhi: NonHumanIdentity): ...
+# After:
+from eap_core.identity import IdentityToken
+def my_helper(identity: IdentityToken): ...
+
+# === Task 4: PolicyMiddleware no fallback ===
+# `PolicyMiddleware` no longer falls back to `req.metadata` for
+# `policy.action` / `policy.resource` — `EnterpriseLLM` sets these
+# from trusted SDK-internal sources. Custom-pipeline users wiring
+# `PolicyMiddleware` directly must populate `ctx.metadata` explicitly.
+#
+# Before (custom pipeline, NOT via EnterpriseLLM):
+req = Request(model="m", messages=[], metadata={"action": "tool:transfer"})
+ctx = Context()
+await pipeline.run(req, ctx, terminal)  # used to fall back to req.metadata
+# After:
+ctx.metadata["policy.action"] = "tool:transfer"
+ctx.metadata["policy.resource"] = "transfer"
+await pipeline.run(req, ctx, terminal)
+
+# === Task 4: RealRuntimeDisabledError ===
+# Cloud-runtime stubs now raise `RealRuntimeDisabledError` (an
+# `EapError` subclass) instead of `NotImplementedError` when
+# `EAP_ENABLE_REAL_RUNTIMES=1` is unset.
+#
+# Before:
+try:
+    await store.recall(...)
+except NotImplementedError as e:
+    # handle stub mode
+# After:
+from eap_core import RealRuntimeDisabledError  # or EapError
+try:
+    await store.recall(...)
+except RealRuntimeDisabledError as e:
+    # handle stub mode
+
+# === Task 9: PaymentClient required budget ===
+# `PaymentClient` and `AP2PaymentClient` now require an explicit
+# `max_spend_cents` ceiling at construction time — no more silent $1.
+#
+# Before:
+pay = PaymentClient(wallet_provider_id="my-wallet")  # silently $1
+# After:
+pay = PaymentClient(wallet_provider_id="my-wallet", max_spend_cents=500)
+```
 
 ---
 

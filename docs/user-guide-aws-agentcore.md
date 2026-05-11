@@ -472,6 +472,27 @@ it lists every file staged for deployment. The packager already excludes
 `.eapignore` (one glob per line, `#` comments allowed) to exclude
 additional files such as internal docs or scratch state.
 
+**`.eapignore` syntax:** lines are deny patterns by default (shell-style
+globs against the file's relative path). Lines starting with `#` are
+comments. Lines starting with `!` are *allow* patterns that re-include
+paths the default deny-list or skip-dirs would have excluded.
+
+Example:
+
+```text
+# Exclude a build artifact directory
+build/cache/
+
+# Re-include dist/ even though it's in _DEFAULT_SKIP_DIRS — useful if
+# your project legitimately ships a static-bundle dist/ folder.
+!dist/
+```
+
+`_DEFAULT_SKIP_DIRS` covers common build-cache patterns out of the box:
+`dist`, `.venv`, `venv`, `__pycache__`, `.pytest_cache`, `.mypy_cache`,
+`.ruff_cache`, `node_modules`, `.terraform`, `.next`, `.nuxt`, `.cache`,
+`build`, `target`, `.tox`, `.coverage`, `htmlcov`, `.eap`.
+
 By default `eap deploy` only packages — to actually `docker build`,
 set `EAP_ENABLE_REAL_DEPLOY=1`. Then follow `dist/agentcore/README.md`
 for the ECR push + AgentCore Runtime registration:
@@ -872,7 +893,21 @@ and AWS credentials. Set EAP_ENABLE_REAL_RUNTIMES=1 once configured.`**
 
 You forgot the env flag. The flag is intentional — it prevents tests
 from accidentally hitting AWS. Set `EAP_ENABLE_REAL_RUNTIMES=1` in
-your runtime env (not in pytest).
+your runtime env (not in pytest). `RealRuntimeDisabledError` is an
+`EapError` subclass (new in v0.6.0; replaces the bare
+`NotImplementedError` previously raised by stub-mode adapters), so
+`except EapError` catches it consistently with the rest of the SDK's
+safety errors.
+
+**`PolicyConfigurationError: PolicyMiddleware called without ctx.metadata['policy.action'] set ...`**
+
+You constructed a custom `MiddlewarePipeline` and routed a request
+through `PolicyMiddleware` without going through `EnterpriseLLM`.
+Set `ctx.metadata["policy.action"]` and `["policy.resource"]`
+explicitly from a trusted source (the tool name for `invoke_tool`,
+`"generate_text"` for `generate_text`). This is the defense-in-depth
+closure of H9 — `req.metadata` is caller-mutable and is no longer
+trusted by the policy middleware.
 
 **`ImportError: ... requires the [aws] extra: pip install eap-core[aws]`**
 
@@ -911,6 +946,70 @@ Check the AgentCard — `build_card(skills_from=registry)` reads the
 live registry, so if a tool registered after the card was built it
 won't be advertised. Rebuild and re-publish the card after adding
 tools.
+
+---
+
+## Migrating from earlier versions
+
+See [`../CHANGELOG.md`](../CHANGELOG.md) for the full per-release
+history. The v0.6.0 release introduced three small breaking changes —
+recipes below cover each one.
+
+```python
+# === Task 1: IdentityToken Protocol ===
+# v0.6.0 introduced the structural `IdentityToken` Protocol so
+# `EnterpriseLLM(identity=...)` accepts both `NonHumanIdentity` (async
+# AWS-flavored) and `VertexAgentIdentityToken` (sync GCP-flavored)
+# interchangeably. If you have a helper typed against `NonHumanIdentity`
+# and want polymorphism, broaden the type annotation:
+#
+# Before:
+def my_helper(nhi: NonHumanIdentity): ...
+# After:
+from eap_core.identity import IdentityToken
+def my_helper(identity: IdentityToken): ...
+
+# === Task 4: PolicyMiddleware no fallback ===
+# `PolicyMiddleware` no longer falls back to `req.metadata` for
+# `policy.action` / `policy.resource` — `EnterpriseLLM` sets these
+# from trusted SDK-internal sources. Custom-pipeline users wiring
+# `PolicyMiddleware` directly must populate `ctx.metadata` explicitly.
+#
+# Before (custom pipeline, NOT via EnterpriseLLM):
+req = Request(model="m", messages=[], metadata={"action": "tool:transfer"})
+ctx = Context()
+await pipeline.run(req, ctx, terminal)  # used to fall back to req.metadata
+# After:
+ctx.metadata["policy.action"] = "tool:transfer"
+ctx.metadata["policy.resource"] = "transfer"
+await pipeline.run(req, ctx, terminal)
+
+# === Task 4: RealRuntimeDisabledError ===
+# Cloud-runtime stubs (including the AgentCore adapter) now raise
+# `RealRuntimeDisabledError` (an `EapError` subclass) instead of
+# `NotImplementedError` when `EAP_ENABLE_REAL_RUNTIMES=1` is unset.
+#
+# Before:
+try:
+    await store.recall(...)
+except NotImplementedError as e:
+    # handle stub mode
+# After:
+from eap_core import RealRuntimeDisabledError  # or EapError
+try:
+    await store.recall(...)
+except RealRuntimeDisabledError as e:
+    # handle stub mode
+
+# === Task 9: PaymentClient required budget ===
+# `PaymentClient` now requires an explicit `max_spend_cents` ceiling
+# at construction time — no more silent $1 default.
+#
+# Before:
+pay = PaymentClient(wallet_provider_id="my-wallet")  # silently $1
+# After:
+pay = PaymentClient(wallet_provider_id="my-wallet", max_spend_cents=500)
+```
 
 ---
 
