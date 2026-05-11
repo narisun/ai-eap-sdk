@@ -16,6 +16,139 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.6.0] — 2026-05-11 — Cleanup release
+
+Closes every actionable deferred item from the v0.4.0, v0.5.0, and v0.5.1
+pre-prod reviews — ~22 findings across Highs/Mediums/Lows/Nits. The
+review-debt going into v0.7.0 is zero, so the next release cycle can be
+feature-focused without dragging in old findings.
+
+**Three breaking changes** in this release — see migration recipe below.
+All marked with `!` in their commit subjects.
+
+### Added
+
+- `eap_core.identity.IdentityToken` Protocol — structural type covering
+  both `NonHumanIdentity` (async) and `VertexAgentIdentityToken` (sync).
+  `EnterpriseLLM.identity` is now typed as `IdentityToken | None`.
+- `eap_core.exceptions.RealRuntimeDisabledError(EapError)` — replaces
+  `NotImplementedError` for "real runtime disabled by env flag" paths.
+- `eap_core.exceptions.PolicyConfigurationError(EapError)` — raised by
+  `PolicyMiddleware` when `ctx.metadata["policy.action"]` /
+  `["policy.resource"]` aren't set (programming-error guard).
+- `InboundJwtVerifier.averify` async sibling now uses a verifier-owned
+  lazy `httpx.AsyncClient` pool. `aclose()` + `__aenter__/__aexit__`
+  added for resource lifecycle.
+- Vertex re-export: `InboundJwtVerifier` and `jwt_dependency` now
+  importable from `eap_core.integrations.vertex` (the scaffolded
+  Vertex handler reads natively).
+- `.eapignore` `!pattern` negation — re-includes paths the deny-list
+  or skip-dirs would have excluded.
+
+### Changed (breaking — see migration)
+
+- **Task 1 (identity cluster)** — `EnterpriseLLM.identity` accepts the
+  broader `IdentityToken` Protocol. Mypy-strict callers with overly
+  narrow type imports may need to relax them.
+- **Task 4 (policy + error type)** — `PolicyMiddleware` no longer
+  falls back to `req.metadata` for action/resource. Direct
+  PolicyMiddleware users must set `ctx.metadata["policy.action"]` +
+  `["policy.resource"]` from a trusted source. Cloud-runtime
+  stub-mode paths raise `RealRuntimeDisabledError`, not
+  `NotImplementedError`.
+- **Task 9 (payment budget)** — `PaymentClient` and `AP2PaymentClient`
+  require `max_spend_cents=...` explicitly. Bare construction
+  `PaymentClient(wallet_provider_id="x")` now raises `TypeError`.
+  InMemoryPaymentBackend (test stub) retains a default.
+
+### Changed (non-breaking)
+
+- **M-N1**: `EnterpriseLLM.aclose` is exception-safe — runs every
+  owned component's aclose, collects failures into `ExceptionGroup`.
+- **M-N2**: NHI per-(audience, scope) locking — distinct keys no
+  longer serialize behind a single instance-wide lock.
+- **M-N3**: `default_registry` dropped from `eap_core.mcp.__all__`.
+  Still importable from `eap_core.mcp.registry` for backward compat.
+- **M-N4**: `LocalIdPStub.verify` docstring fixed — no longer claims
+  `'*'` is a wildcard.
+- **M-N6**: PII unmask cache bounded to one entry per Context (was
+  unbounded growth on vault size).
+- **H6**: `ObservabilityMiddleware.on_error` ends spans even if
+  downstream middleware raised before `on_response` could run.
+- **H14**: `OIDCTokenExchange.exchange` validates response shape
+  (raises `IdentityError` on malformed responses instead of
+  `KeyError`/`TypeError`).
+- **L-N1**: `.eapignore` `!pattern` negation; expanded
+  `_DEFAULT_SKIP_DIRS` (`.terraform`, `.next`, `.nuxt`, `.cache`,
+  `build`, `target`, `.tox`, `.coverage`, `htmlcov`).
+- **L-N2**: nested `.env/config.py` correctly excluded (segment-
+  anywhere matching, not just top-level prefix).
+- **L-N3**: generated handler templates produce ruff-F401-clean
+  Python — no unused imports.
+- **L3**: `eap_core` logger has a `NullHandler` attached (Python
+  `logging` Cookbook).
+- **N-N1**: `NonHumanIdentity.cache_buffer_seconds` default 5s → 30s
+  (matches `InboundJwtVerifier.clock_skew_seconds`).
+- **N-N2**: Vertex re-export of `InboundJwtVerifier` / `jwt_dependency`.
+- **N-N3**: `InboundJwtVerifier` docstring documents the
+  `require=["iat"]` strictness vs RFC 7519 §4.1.6 (`iat` OPTIONAL).
+- **N1, N2 (v0.5.1)**: smoke test fails loud on missing examples;
+  bank-agent examples all use module-level IDENTITY pattern.
+- **N3 (v0.5.1)**: `_validate_discovery_meta` docstring replaces
+  cryptic "C1/C2" review handles with inline explanation.
+- **H22**: CI matrix runs `[pii]` extra on every PR — Presidio API
+  breaks no longer ship silently.
+- **H23**: `mypy` now covers `packages/*/tests/` with relaxed
+  strictness — test-side type drift caught in CI.
+
+### Migration
+
+```python
+# === Task 1: IdentityToken Protocol ===
+# Before:
+def my_helper(nhi: NonHumanIdentity): ...
+# After (if you want polymorphism over NHI + VertexAgentIdentityToken):
+from eap_core.identity import IdentityToken
+def my_helper(identity: IdentityToken): ...
+
+# === Task 4: PolicyMiddleware no fallback ===
+# Before (custom pipeline construction, NOT via EnterpriseLLM):
+req = Request(model="m", messages=[], metadata={"action": "tool:transfer"})
+ctx = Context()
+await pipeline.run(req, ctx, terminal)  # used to fall back to req.metadata
+# After: set ctx.metadata explicitly
+ctx.metadata["policy.action"] = "tool:transfer"
+ctx.metadata["policy.resource"] = "transfer"
+await pipeline.run(req, ctx, terminal)
+
+# === Task 4: RealRuntimeDisabledError ===
+# Before:
+try:
+    await store.recall(...)
+except NotImplementedError as e:
+    # handle stub mode
+# After:
+from eap_core import RealRuntimeDisabledError  # or EapError
+try:
+    await store.recall(...)
+except RealRuntimeDisabledError as e:
+    # handle stub mode
+
+# === Task 9: PaymentClient required budget ===
+# Before:
+pay = PaymentClient(wallet_provider_id="my-wallet")  # silently $1
+# After:
+pay = PaymentClient(wallet_provider_id="my-wallet", max_spend_cents=500)
+```
+
+### Stats
+
+- 466 tests passing (up from 437 in v0.5.2; +29 new tests across the 11 fix tasks).
+- Lint, format, strict mypy all green.
+- Coverage: still below the 90% gate (~89%). Tracked as a v0.7.0 item alongside H18/H19 (cloud test infra).
+
+---
+
 ## [0.5.2] — 2026-05-11 — Patch release
 
 Single-fix patch closing the `__version__` drift surfaced in the v0.5.1
