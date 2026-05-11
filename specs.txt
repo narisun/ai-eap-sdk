@@ -1,0 +1,96 @@
+### Technical Specification: Enterprise Agentic AI Platform SDK ("EAP-Core")
+
+**Target Environment:** AI Coding Agents (e.g., Claude Code, GitHub Copilot)
+**Objective:** Develop a "standard-first" Python SDK and CLI to scaffold and govern agentic AI solutions. The SDK centralizes cross-cutting concerns (Safety, Observability, Compliance) using open protocols (**MCP, OTel, A2A**) to ensure vendor neutrality while supporting industrial runtimes like **AWS Bedrock AgentCore** and **Google Gemini Enterprise Agent Platform**.
+
+---
+
+#### 1. Core Architectural Strategy: The "Thin" Bridge
+
+The SDK must act as an opinionated "Paved Road." It wraps the low-level cloud runtimes (the "Power Plants") and exposes a unified, framework-agnostic interface to the Agentic AI teams (the "Value Drivers").
+
+* **Logic Isolation:** Business logic (reasoning, state graphs) is written in pure Python using standard libraries.
+* **Infrastructure Strategy:** Use the **Strategy Pattern** to swap underlying runtimes. The agent code remains identical whether running on `bedrock-agentcore` or `vertexai-agent-engine`.
+* **Identity Model:** Treat agents as **Non-Human Identities (NHI)**. The SDK must manage OIDC/OAuth 2.1 token exchange for every tool call.
+
+---
+
+#### 2. SDK Specification: The Middleware Chain
+
+The SDK must implement a **Chain of Responsibility** pattern for LLM and tool interactions.
+
+**A. Unified Client Interface (`EnterpriseLLM`)**
+
+* Expose `generate_text`, `stream_text`, and `invoke_tool`.
+* Accept a `runtime_config` to determine the cloud provider adapter.
+
+**B. Middleware Interceptors (The Trust Layer)**
+Every request/response must pass through the following chain:
+
+1. **Input Sanitization:** Regex/Classifier to detect prompt injection.
+
+
+2. **PII Masking:** Use **Microsoft Presidio** to tokenize sensitive data before it leaves the bank's VPC. Maintain a per-request vault for re-identification.
+
+
+3. **Epistemic Observability (OTel):** Start a span using **OpenTelemetry GenAI Semantic Conventions**.
+
+
+* Attributes: `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.operation.name`.
+
+
+4. **Policy Enforcement:** Check the proposed action against **Cedar Policy** or **Model Armor** definitions before execution.
+5. **Output Validation:** Use **Pydantic v2** to enforce structured schemas on LLM responses.
+
+---
+
+#### 3. Standardized Integration Layer (MCP & A2A)
+
+To remain vendor-neutral, the SDK must support the following open standards:
+
+* **Model Context Protocol (MCP):** All tools must be registered as MCP tools. The SDK provides a `@mcp_tool` decorator that automatically generates JSON Schema input/output contracts.
+* **Agent-to-Agent (A2A):** Implement the **Agent Card** specification. Every scaffolded agent must expose a `/.well-known/agent-card.json` describing its skills and authentication requirements.
+* **Dual-Mode Evaluation:** Built-in hooks for **Ragas/DeepEval**. The SDK must export (Context, Answer, Trajectory) tuples to measure **Faithfulness**:
+
+$$Faithfulness = \frac{\text{Number of claims in Answer supported by Context}}{\text{Total number of claims in Answer}}$$
+
+
+
+---
+
+#### 4. CLI Specification: The Scaffolding Engine
+
+The CLI (`eap-cli`) should automate the "Golden Path" for new projects.
+
+**Commands:**
+
+* `eap init`: Initializes a project with `.claude.md`, `pyproject.toml` (using `uv`), and OTel exporters.
+* `eap create-agent --name <name> --template <research|transactional>`: Generates a stateful agent with an A2A Agent Card and session persistence.
+* `eap create-tool --mcp`: Scaffolds a new tool as an MCP server with built-in PII masking hooks.
+* `eap eval --dataset <path>`: Runs offline regression tests using LLM-as-a-Judge against a "Golden Dataset".
+
+
+* `eap deploy --runtime <aws|gcp>`: Packages the code for **Direct Code Deployment** (ZIP-to-S3 for AWS or Cloud Run for GCP).
+
+---
+
+#### 5. Implementation Roadmap for Coding Agent
+
+1. **Foundation:** Create the `BaseRuntimeAdapter` and the `MiddlewarePipeline` classes.
+2. **Standards:** Implement `McpToolRegistry` and `OTelGenAILogger`.
+3. **Security:** Integrate `PresidioPII` middleware with a secure local vault.
+4. **Cloud:** Develop initial adapters for `Amazon Bedrock AgentCore` and `Google Vertex AI`.
+5. **CLI:** Build the `Click`-based CLI to generate project templates.
+
+**File Structure for Scaffolding:**
+eap-agent-project/
+├──.claude.md          # Context for AI coding agents
+├── pyproject.toml      # Managed by uv
+├── agent.py            # Business logic using EAP-Core SDK
+├── tools/
+│   └── bank_api.py     # MCP-decorated tool logic
+├── configs/
+│   ├── cedar_policy.pol # Security rules
+│   └── agent_card.json  # A2A metadata
+└── tests/
+└── golden_set.json  # Eval data for Faithfulness scoring
