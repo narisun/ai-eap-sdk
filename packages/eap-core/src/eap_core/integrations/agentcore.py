@@ -11,11 +11,15 @@ identity primitives are unchanged.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from typing import Any
 from urllib.parse import urlparse
 
 from eap_core.identity.token_exchange import OIDCTokenExchange as _BaseOIDCTokenExchange
+
+_LOG = logging.getLogger(__name__)
 
 
 def _origin(url: str) -> tuple[str, str, int | None]:
@@ -455,13 +459,18 @@ class InboundJwtVerifier:
         self._clock_skew = clock_skew_seconds
         self._jwks: list[dict[str, Any]] = []
         self._jwks_fetched_at: float = 0.0
+        # Single-flight guard for the async refresh path. Concurrent
+        # ``averify`` callers on a cold cache all queue on this lock and
+        # only one performs the network round-trip; the rest re-check
+        # the cache under the lock and skip the fetch.
+        self._refresh_lock: asyncio.Lock = asyncio.Lock()
 
-    def _refresh_jwks(self, http_get: Any) -> None:
-        """Fetch the JWKS from the discovery URL.
+    def _validate_discovery_meta(self, meta: dict[str, Any]) -> str:
+        """Validate a parsed OIDC discovery doc and return its ``jwks_uri``.
 
-        ``http_get`` is a callable returning a response-like object with
-        ``.json()``; injected for testability. In production code call
-        ``verify(token, http_get=httpx.get)``.
+        Shared by sync ``_refresh_jwks`` and async ``_arefresh_jwks`` —
+        keeps https / same-origin / advertised-issuer checks in one place
+        so a future tightening can't land in one path and miss the other.
 
         Enforces (C1):
 
@@ -475,9 +484,6 @@ class InboundJwtVerifier:
           (C2 cross-check). A missing field is a §6.6 silent-degrade
           attack vector — reject explicitly.
         """
-        # 1. fetch the OIDC discovery doc, find jwks_uri
-        meta_resp = http_get(self._discovery_url)
-        meta = meta_resp.json()
         jwks_uri = meta.get("jwks_uri")
         if not jwks_uri:
             raise ValueError(f"discovery doc at {self._discovery_url} has no jwks_uri")
@@ -510,7 +516,22 @@ class InboundJwtVerifier:
                 f"discovery doc issuer {advertised_iss!r} does not match "
                 f"configured issuer {self._issuer!r}"
             )
-        # 2. fetch the JWKS itself
+        return str(jwks_uri)
+
+    def _refresh_jwks(self, http_get: Any) -> None:
+        """Fetch the JWKS from the discovery URL.
+
+        ``http_get`` is a callable returning a response-like object with
+        ``.json()``; injected for testability. In production code call
+        ``verify(token, http_get=httpx.get)``.
+
+        Validation (https / same-origin / advertised-issuer cross-check)
+        is delegated to :meth:`_validate_discovery_meta` so the sync and
+        async refresh paths share one source of truth.
+        """
+        meta_resp = http_get(self._discovery_url)
+        meta = meta_resp.json()
+        jwks_uri = self._validate_discovery_meta(meta)
         jwks_resp = http_get(jwks_uri)
         keys = jwks_resp.json().get("keys", [])
         self._jwks = keys
@@ -519,10 +540,18 @@ class InboundJwtVerifier:
         self._jwks_fetched_at = _time.time()
 
     def _maybe_refresh_jwks(self, http_get: Any) -> None:
+        """Refresh JWKS if cache is cold or stale.
+
+        Uses the timestamp (not list-truthiness) as the cache-populated
+        signal — an IdP that legitimately returns ``{"keys": []}`` would
+        cause infinite re-fetch otherwise. Matches the async path's
+        invariant; see ``_amaybe_refresh_jwks``.
+        """
         import time as _time
 
-        if not self._jwks or (_time.time() - self._jwks_fetched_at) > self._cache_ttl:
-            self._refresh_jwks(http_get)
+        if self._jwks_fetched_at > 0 and (_time.time() - self._jwks_fetched_at) <= self._cache_ttl:
+            return
+        self._refresh_jwks(http_get)
 
     def verify(self, token: str, *, http_get: Any | None = None) -> dict[str, Any]:
         """Verify a JWT and return its claims.
@@ -541,6 +570,111 @@ class InboundJwtVerifier:
 
         # PyJWT picks the right key by kid header automatically given a JWKS set.
         from jwt.algorithms import RSAAlgorithm
+
+        unverified = jwt.get_unverified_header(token)
+        kid = unverified.get("kid")
+        signing_key: Any = None
+        for k in self._jwks:
+            if k.get("kid") == kid:
+                signing_key = RSAAlgorithm.from_jwk(k)
+                break
+        if signing_key is None:
+            raise jwt.InvalidTokenError(f"no JWKS key matches kid={kid!r}")
+
+        claims = jwt.decode(
+            token,
+            signing_key,
+            algorithms=["RS256", "RS384", "RS512"],
+            audience=list(self._allowed_audiences),
+            issuer=self._issuer,
+            options={
+                "verify_aud": True,
+                "verify_iss": True,
+                "verify_exp": True,
+                "verify_iat": True,
+                "require": ["exp", "iat", "aud", "iss"],
+            },
+            leeway=self._clock_skew,
+        )
+
+        if self._allowed_clients:
+            client_id = claims.get("client_id") or claims.get("azp")
+            if client_id not in self._allowed_clients:
+                raise jwt.InvalidTokenError(f"client_id {client_id!r} not allowed")
+
+        if self._allowed_scopes:
+            token_scopes = set((claims.get("scope") or "").split())
+            if not (token_scopes & self._allowed_scopes):
+                raise jwt.InvalidTokenError("no allowed scope present in token")
+
+        return claims
+
+    async def _arefresh_jwks(self, http: Any) -> None:
+        """Async sibling of :meth:`_refresh_jwks`.
+
+        ``http`` is an ``httpx.AsyncClient`` (or a compatible stub exposing
+        an awaitable ``get(url)`` returning an object with ``.json()``).
+        Validation is delegated to :meth:`_validate_discovery_meta` so
+        both refresh paths share one source of truth for the C1/C2
+        trust-pinning invariants.
+        """
+        meta_resp = await http.get(self._discovery_url)
+        meta = meta_resp.json()
+        jwks_uri = self._validate_discovery_meta(meta)
+        jwks_resp = await http.get(jwks_uri)
+        self._jwks = jwks_resp.json().get("keys", [])
+        import time as _time
+
+        self._jwks_fetched_at = _time.time()
+
+    async def _amaybe_refresh_jwks(self, http: Any) -> None:
+        """Refresh JWKS if the cache is cold/stale, single-flighting concurrent callers.
+
+        Double-checked locking: the fast path checks the cache without
+        the lock; on a miss we acquire the lock and re-check before
+        fetching, so only the first waiter performs the network round-trip.
+
+        The "cache populated" signal is ``_jwks_fetched_at > 0`` (set at
+        the end of every successful refresh) rather than the truthiness
+        of ``_jwks`` itself — an empty keys list is a valid response and
+        must not cause every concurrent caller to re-fetch.
+        """
+        import time as _time
+
+        if self._jwks_fetched_at > 0 and (_time.time() - self._jwks_fetched_at) <= self._cache_ttl:
+            return
+        async with self._refresh_lock:
+            # Re-check under the lock — another coroutine may have refreshed
+            # while we were waiting.
+            if (
+                self._jwks_fetched_at > 0
+                and (_time.time() - self._jwks_fetched_at) <= self._cache_ttl
+            ):
+                return
+            await self._arefresh_jwks(http)
+
+    async def averify(self, token: str, *, http: Any | None = None) -> dict[str, Any]:
+        """Async sibling of :meth:`verify`.
+
+        Use this from async FastAPI dependencies (or any code running in an
+        event loop) so the JWKS fetch does not block the loop. Pass an
+        ``httpx.AsyncClient`` via ``http`` to share a connection pool, or
+        accept the default (a temporary ``AsyncClient`` per call, closed
+        on return).
+        """
+        import jwt
+        from jwt.algorithms import RSAAlgorithm
+
+        owns_http = http is None
+        if http is None:
+            import httpx
+
+            http = httpx.AsyncClient()
+        try:
+            await self._amaybe_refresh_jwks(http)
+        finally:
+            if owns_http:
+                await http.aclose()
 
         unverified = jwt.get_unverified_header(token)
         kid = unverified.get("kid")
@@ -602,23 +736,32 @@ def jwt_dependency(verifier: InboundJwtVerifier) -> Any:
         async def invocations(req: InvocationRequest): ...
     """
     try:
-        from fastapi import Header, HTTPException
+        from fastapi import Depends, HTTPException
+        from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
     except ImportError as e:
         raise ImportError(
             "jwt_dependency requires the [a2a] extra (FastAPI). "
             "Install with: pip install eap-core[a2a]"
         ) from e
 
-    async def _dep(authorization: str | None = Header(default=None)) -> dict[str, Any]:
-        if not authorization or not authorization.lower().startswith("bearer "):
-            raise HTTPException(status_code=401, detail="missing bearer token")
-        token = authorization.split(None, 1)[1].strip()
-        import jwt as _jwt
+    bearer = HTTPBearer(auto_error=False)
 
+    async def _dep(
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),  # noqa: B008  — FastAPI dependency-injection pattern requires the call in the default
+    ) -> dict[str, Any]:
+        if credentials is None or credentials.scheme.lower() != "bearer":
+            raise HTTPException(status_code=401, detail="missing bearer token")
         try:
-            return verifier.verify(token)
-        except _jwt.InvalidTokenError as e:
-            raise HTTPException(status_code=401, detail=str(e)) from e
+            return await verifier.averify(credentials.credentials)
+        except Exception as e:
+            # M-N5: never reflect internal verifier state (PyJWT error
+            # text, attacker-controlled kid values, configuration hints)
+            # back to the client. Log at INFO for operators; respond
+            # with a fixed string. ``from None`` chains None so the
+            # verifier's exception context can't leak via middleware
+            # that prints ``__cause__`` or ``__context__``.
+            _LOG.info("inbound JWT verification failed: %s", e)
+            raise HTTPException(status_code=401, detail="invalid token") from None
 
     return _dep
 

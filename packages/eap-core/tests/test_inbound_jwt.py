@@ -432,3 +432,163 @@ def test_token_with_wrong_issuer_is_rejected() -> None:
     )
     with pytest.raises(_jwt.InvalidIssuerError):
         verifier.verify(token, http_get=_make_http_get(meta, jwks))
+
+
+# ---- Sync/async cache parity: empty JWKS must not refetch within TTL ------
+
+
+def test_sync_verify_does_not_refetch_empty_jwks_within_ttl() -> None:
+    """Empty-but-valid JWKS response must not cause infinite refetch on sync path.
+
+    Locks parity with ``_amaybe_refresh_jwks``: the cache-populated signal
+    is the timestamp, not the truthiness of ``self._jwks``. An IdP that
+    legitimately returns ``{"keys": []}`` would otherwise re-fetch on every
+    ``verify()`` call.
+    """
+    import jwt
+
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    fetches: list[str] = []
+
+    class FakeResp:
+        def __init__(self, payload: dict[str, Any]) -> None:
+            self._payload = payload
+
+        def json(self) -> dict[str, Any]:
+            return self._payload
+
+    def fake_http_get(url: str) -> FakeResp:
+        fetches.append(url)
+        if "well-known" in url:
+            return FakeResp(
+                {"issuer": "https://idp.example", "jwks_uri": "https://idp.example/jwks"}
+            )
+        return FakeResp({"keys": []})
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        issuer="https://idp.example",
+        allowed_audiences=["agent"],
+        jwks_cache_ttl_seconds=600,
+    )
+
+    # First call refreshes (cold cache).
+    try:
+        verifier.verify("not-a-real-token", http_get=fake_http_get)
+    except (jwt.InvalidTokenError, Exception):
+        pass
+    first_fetch_count = len(fetches)
+    assert first_fetch_count == 2  # discovery + jwks
+
+    # Second call within TTL — must NOT refetch.
+    try:
+        verifier.verify("another-not-a-real-token", http_get=fake_http_get)
+    except (jwt.InvalidTokenError, Exception):
+        pass
+    assert len(fetches) == first_fetch_count, "sync verify re-fetched within TTL on empty JWKS"
+
+
+# ---- H-N2: averify is async + JWKS refresh single-flights -----------------
+
+
+@pytest.mark.asyncio
+async def test_averify_is_async_and_uses_async_http() -> None:
+    """``averify`` must be a coroutine function so the FastAPI dependency
+    doesn't block the event loop on JWKS fetch."""
+    import inspect
+
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        issuer="https://idp.example",
+        allowed_audiences=["agent"],
+    )
+    assert inspect.iscoroutinefunction(verifier.averify)
+
+
+@pytest.mark.asyncio
+async def test_averify_single_flights_concurrent_jwks_refresh() -> None:
+    """20 concurrent ``averify()`` calls on a cold cache must fetch each
+    URL at most once — the ``_refresh_lock`` single-flights the refresh."""
+    import asyncio as _asyncio
+
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        issuer="https://idp.example",
+        allowed_audiences=["agent"],
+        jwks_cache_ttl_seconds=600,
+    )
+
+    fetches: list[str] = []
+
+    class FakeAsyncHttp:
+        async def get(self, url: str) -> Any:
+            fetches.append(url)
+
+            class _R:
+                def json(self_inner) -> dict[str, Any]:  # noqa: N805
+                    if "well-known" in url:
+                        return {
+                            "issuer": "https://idp.example",
+                            "jwks_uri": "https://idp.example/jwks",
+                        }
+                    return {"keys": []}
+
+            return _R()
+
+        async def aclose(self) -> None:
+            return None
+
+    # All 20 calls share one fake http client; each call's verify step is
+    # expected to fail (no JWKS key matches the kid), but the *refresh*
+    # side-effect is what we assert on.
+    http = FakeAsyncHttp()
+
+    async def call() -> None:
+        try:
+            await verifier.averify("not-a-real-token", http=http)
+        except Exception:
+            pass
+
+    await _asyncio.gather(*[call() for _ in range(20)])
+
+    assert fetches.count("https://idp.example/.well-known/openid-configuration") == 1
+    assert fetches.count("https://idp.example/jwks") == 1
+
+
+# ---- M-N5: jwt_dependency HTTPException detail is sanitized ---------------
+
+
+@pytest.mark.asyncio
+async def test_jwt_dependency_does_not_leak_internal_error_detail() -> None:
+    """The HTTPException detail must be a fixed sanitized string —
+    raw PyJWT error text (which can carry attacker-controlled ``kid``
+    values or verifier configuration) must never reach the response."""
+    pytest.importorskip("fastapi")
+    from fastapi import HTTPException
+
+    from eap_core.integrations.agentcore import InboundJwtVerifier, jwt_dependency
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        issuer="https://idp.example",
+        allowed_audiences=["agent"],
+    )
+    dep = jwt_dependency(verifier)
+
+    class _FakeCreds:
+        scheme = "Bearer"
+        credentials = "garbage-not-a-jwt-<kid=attacker-controlled>"
+
+    with pytest.raises(HTTPException) as exc_info:
+        await dep(credentials=_FakeCreds())
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail in {"invalid token", "missing bearer token"}
+    # Defense-in-depth: ``from None`` must clear the chain so middleware
+    # that prints __cause__ can't leak the verifier's exception.
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True  # blocks __context__ from default traceback
