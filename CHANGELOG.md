@@ -16,6 +16,64 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.6.1] — 2026-05-11 — Documentation refresh
+
+Docs-only patch closing the staleness surfaced by the v0.6.0 doc-readiness
+review. No public API or wire-format changes; existing v0.6.0 installs are
+fully compatible.
+
+### Fixed
+
+- **Version pins** (8 sites) — `@v0.2.0`/`@v0.3.0`/`@v0.3.1` pins in
+  install snippets across `README.md`, both user guides, and both package
+  READMEs bumped to `@v0.6.0`. A user copy-pasting an install snippet now
+  gets the v0.6.0 surface (matching the rest of the tutorial).
+- **`NotImplementedError` → `RealRuntimeDisabledError`** (7 sites) — stub-
+  mode prose and troubleshooting sections in both user guides, both
+  integration docs, and the developer-guide §5.7 cookbook recipe all
+  reference the correct v0.6.0 exception type.
+- **README staleness** — `Status: v0.3.0` → `Status: v0.6.0`; test count
+  `342` → `466`; coverage claim updated to reflect the current ~89% (with
+  the 90% gate tracked for v0.7.0).
+- **NHI cache buffer** — developer guide and AWS user guide updated from
+  "5-second buffer" to "30-second buffer" (matching v0.6.0's
+  `cache_buffer_seconds` default, which aligns with
+  `InboundJwtVerifier.clock_skew_seconds`).
+
+### Added
+
+- **`IdentityToken` Protocol documentation** — README Protocol table,
+  developer-guide §3.4/§3.6/§4.7/§7.3, and the Vertex integration
+  cross-cloud table now reference the new (v0.6.0) Protocol that unifies
+  `NonHumanIdentity` (async) and `VertexAgentIdentityToken` (sync).
+- **`RealRuntimeDisabledError` + `PolicyConfigurationError`** —
+  documented in developer-guide §3.6 and both user-guide troubleshooting
+  sections, with the `EapError` subclass relationship called out.
+- **`.eapignore` `!`-negation + expanded `_DEFAULT_SKIP_DIRS`** — both
+  user guides §1.17 now show the negation syntax and list every default
+  skip-dir (`.terraform`, `.next`, `.cache`, `build`, `target`, `.tox`,
+  `.coverage`, `htmlcov`, etc.).
+- **Migration sections** — README and both user guides now have a
+  "Migrating from earlier versions" section covering the three v0.6.0
+  breaking changes (Tasks 1, 4, 9) with compilable recipes.
+- **Example READMEs upleveled** — `examples/research-agent` (91 lines)
+  and `examples/transactional-agent` (96 lines) now match the depth of
+  `examples/agentcore-bank-agent`, with pattern statements, what-it-
+  demonstrates tables, real captured run output, files trees, and
+  cross-refs to user guides.
+- **Package READMEs upleveled** — `packages/eap-core/README.md` (64
+  lines) and `packages/eap-cli/README.md` (55 lines) rewritten with
+  install-matrix tables (all 8 extras), quick-links to user guides +
+  developer guide + integrations + CHANGELOG, and value statements
+  lifted from the root README's "Why a thin SDK?" intro.
+
+### Stats
+
+- 466 tests passing (unchanged — docs only).
+- Lint, format, strict mypy all green.
+
+---
+
 ## [0.6.0] — 2026-05-11 — Cleanup release
 
 Closes every actionable deferred item from the v0.4.0, v0.5.0, and v0.5.1
