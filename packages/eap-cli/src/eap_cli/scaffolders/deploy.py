@@ -58,29 +58,85 @@ _DEFAULT_SKIP_DIRS: frozenset[str] = frozenset(
         ".mypy_cache",
         ".ruff_cache",
         "node_modules",
+        # v0.6.0 additions (L-N5): common build/cache dirs that bloat
+        # the deploy package and never want to be staged by default.
+        ".terraform",
+        ".next",
+        ".nuxt",
+        ".cache",
+        "build",
+        "target",
+        ".tox",
+        ".coverage",
+        "htmlcov",
     }
 )
 
 
-def _load_eapignore(project: Path) -> tuple[str, ...]:
+def _load_eapignore(project: Path) -> tuple[list[str], list[str]]:
+    """Parse ``.eapignore`` into ``(deny_patterns, allow_patterns)``.
+
+    Lines starting with ``!`` are gitignore-style negations — they
+    re-include paths that the default deny-list or ``_DEFAULT_SKIP_DIRS``
+    would otherwise exclude (L-N1). All other non-comment, non-blank
+    lines are deny patterns matched case-sensitively against the path
+    and basename (the user controls exact spelling).
+
+    The strip happens BEFORE the comment check so a line like
+    ``"   # comment"`` (with leading whitespace) is not treated as a
+    literal pattern. Encoding is passed explicitly for cross-platform
+    stability.
+    """
     f = project / ".eapignore"
     if not f.is_file():
-        return ()
-    patterns: list[str] = []
-    # Strip BEFORE the comment check so a line like "   # comment" (with
-    # leading whitespace) is not treated as a literal pattern. Pass
-    # encoding explicitly for cross-platform stability.
+        return [], []
+    deny: list[str] = []
+    allow: list[str] = []
     for line in f.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            patterns.append(stripped)
-    return tuple(patterns)
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("!"):
+            allow.append(stripped[1:])
+        else:
+            deny.append(stripped)
+    return deny, allow
+
+
+def _allow_matches(rel: Path, user_allow: tuple[str, ...]) -> bool:
+    """Return True iff ``rel`` matches at least one ``user_allow`` pattern.
+
+    Allow patterns mirror the deny-pattern shape (case-sensitive
+    fnmatch on the basename and full relative path, plus directory
+    prefix matching) so a user can re-include a previously-excluded
+    path with the same syntax they use to exclude one. Segment-anywhere
+    matching also runs here so a nested ``foo/dist/`` can be opted back
+    in via ``!dist``.
+    """
+    if not user_allow:
+        return False
+    s = str(rel)
+    name = rel.name
+    for pattern in user_allow:
+        if fnmatch.fnmatch(name, pattern) or fnmatch.fnmatch(s, pattern):
+            return True
+        if pattern.endswith("/*"):
+            prefix = pattern[:-2]
+            if s == prefix or s.startswith(prefix + "/"):
+                return True
+        if s == pattern or s.startswith(pattern + "/"):
+            return True
+        # Segment-anywhere allow — mirrors the deny-side fix (L-N2).
+        if "/" + pattern + "/" in "/" + s + "/":
+            return True
+    return False
 
 
 def _should_include(
     rel: Path,
     default_deny: tuple[str, ...],
     user_deny: tuple[str, ...],
+    user_allow: tuple[str, ...] = (),
 ) -> bool:
     """Return True iff ``rel`` survives the deny-lists.
 
@@ -89,34 +145,63 @@ def _should_include(
     / ``ID_RSA`` must still be denied — secret naming is not always
     lowercase). The user's ``.eapignore`` is treated as case-sensitive
     so users can target exact filenames.
+
+    L-N1: ``user_allow`` patterns (gitignore-style ``!pattern`` lines)
+    re-include otherwise-excluded paths. Allow runs AFTER deny so a user
+    can opt a single file back in even when its parent dir is denied.
+
+    L-N2: deny-pattern matching is segment-anywhere — a directory name
+    like ``.env`` excludes both top-level ``.env/`` AND nested
+    ``src/.env/``. Without this, deny only matched ``rel.startswith(pat)``
+    and a nested ``.env/`` subdir leaked secrets.
     """
     s = str(rel)
     name = rel.name
     sl = s.lower()
     namel = name.lower()
     # _DEFAULT_DENY — case-insensitive
+    excluded = False
     for pattern in default_deny:
         pl = pattern.lower()
         if fnmatch.fnmatchcase(namel, pl) or fnmatch.fnmatchcase(sl, pl):
-            return False
+            excluded = True
+            break
         # Directory prefix match: ".git/*" excludes any file under .git/.
         if pl.endswith("/*"):
             prefix = pl[:-2]
             if sl == prefix or sl.startswith(prefix + "/"):
-                return False
+                excluded = True
+                break
         # Top-level path match: ".git" excludes any file at or under .git/.
         if sl == pl or sl.startswith(pl + "/"):
-            return False
-    # user .eapignore — case-sensitive (user-controlled exact patterns)
-    for pattern in user_deny:
-        if fnmatch.fnmatch(name, pattern) or fnmatch.fnmatch(s, pattern):
-            return False
-        if pattern.endswith("/*"):
-            prefix = pattern[:-2]
-            if s == prefix or s.startswith(prefix + "/"):
-                return False
-        if s == pattern or s.startswith(pattern + "/"):
-            return False
+            excluded = True
+            break
+        # Nested-dir match (L-N2): any path segment equals the pattern.
+        # The leading + trailing "/" handles top-of-path and nested cases
+        # uniformly without a separate branch.
+        if "/" + pl + "/" in "/" + sl + "/":
+            excluded = True
+            break
+    if not excluded:
+        # user .eapignore deny — case-sensitive (user-controlled exact patterns)
+        for pattern in user_deny:
+            if fnmatch.fnmatch(name, pattern) or fnmatch.fnmatch(s, pattern):
+                excluded = True
+                break
+            if pattern.endswith("/*"):
+                prefix = pattern[:-2]
+                if s == prefix or s.startswith(prefix + "/"):
+                    excluded = True
+                    break
+            if s == pattern or s.startswith(pattern + "/"):
+                excluded = True
+                break
+            if "/" + pattern + "/" in "/" + s + "/":
+                excluded = True
+                break
+    if excluded:
+        # Allow patterns (L-N1) can opt the path back in.
+        return _allow_matches(rel, user_allow)
     return True
 
 
@@ -124,6 +209,8 @@ def _iter_included_files(
     project: Path,
     default_deny: tuple[str, ...],
     user_deny: tuple[str, ...],
+    user_allow: tuple[str, ...] = (),
+    exclude_subtree: Path | None = None,
 ) -> Iterator[Path]:
     """Yield project-relative file paths that survive deny-list + .eapignore.
 
@@ -133,10 +220,55 @@ def _iter_included_files(
     pointing at ``~/.aws/credentials`` would otherwise dereference via
     ``read_bytes`` and stage the target's secret content without the
     deny-list ever seeing the target path.
+
+    L-N1: ``user_allow`` patterns can re-include directories that the
+    default skip-dir set would otherwise prune. We don't prune a
+    directory if any allow pattern matches its relative path — the
+    walk has to descend so ``_should_include`` can decide each file.
+
+    ``exclude_subtree`` short-circuits the walk for one specific
+    subtree even if allow patterns would otherwise rescue it — this
+    is how the packager refuses to stage its own ``dist/<runtime>/``
+    output back into itself when a user adds ``!dist`` to opt their
+    own ``dist/`` source bundle in.
     """
+    excluded_resolved = exclude_subtree.resolve() if exclude_subtree is not None else None
+
+    def _allow_matches_dir(dir_rel: Path) -> bool:
+        # Match an allow pattern against a directory's relative path —
+        # we want to KEEP descending into a dir if any allow pattern
+        # might let any file inside it through.
+        if not user_allow:
+            return False
+        s = str(dir_rel)
+        name = dir_rel.name
+        for pattern in user_allow:
+            # Strip a trailing "/*" — "dist/*" should still match dir "dist".
+            base = pattern[:-2] if pattern.endswith("/*") else pattern
+            if fnmatch.fnmatch(name, base) or fnmatch.fnmatch(s, base):
+                return True
+            if s == base or s.startswith(base + "/") or base.startswith(s + "/"):
+                return True
+            if "/" + base + "/" in "/" + s + "/":
+                return True
+        return False
+
     for dirpath, dirnames, filenames in os.walk(project, followlinks=False):
         # Prune skip-dirs in place — stops descent before we read them.
-        dirnames[:] = [d for d in dirnames if d not in _DEFAULT_SKIP_DIRS]
+        # An allow pattern may rescue a skip-dir; in that case, keep walking.
+        # ``exclude_subtree`` is unconditional (packager-self-output guard).
+        kept: list[str] = []
+        for d in dirnames:
+            full = Path(dirpath) / d
+            if excluded_resolved is not None and full.resolve() == excluded_resolved:
+                continue
+            if d not in _DEFAULT_SKIP_DIRS:
+                kept.append(d)
+                continue
+            dir_rel = full.relative_to(project)
+            if _allow_matches_dir(dir_rel):
+                kept.append(d)
+        dirnames[:] = kept
         for fname in filenames:
             src = Path(dirpath) / fname
             # Reject symlinks (file-pointing symlinks survive ``.is_file()``
@@ -144,7 +276,7 @@ def _iter_included_files(
             if src.is_symlink():
                 continue
             rel = src.relative_to(project)
-            if not _should_include(rel, default_deny, user_deny):
+            if not _should_include(rel, default_deny, user_deny, user_allow):
                 continue
             yield src
 
@@ -176,9 +308,22 @@ def _stage_project(project: Path, target: Path) -> list[str]:
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=True)
 
-    user_deny = _load_eapignore(project)
+    user_deny, user_allow = _load_eapignore(project)
+    # Refuse to stage the packager's own output back into itself. This
+    # only matters when an ``!dist`` allow-pattern rescues the user's
+    # source ``dist/`` from skip-dir pruning, since ``target`` lives at
+    # ``project/dist/<runtime>/``. Without this guard, ``os.walk`` would
+    # discover each freshly-written file as it appears and recurse
+    # infinitely deeper into ``dist/<runtime>/dist/<runtime>/...``.
+    exclude_subtree = target if target.is_relative_to(project) else None
     included: list[str] = []
-    for src in _iter_included_files(project, _DEFAULT_DENY, user_deny):
+    for src in _iter_included_files(
+        project,
+        _DEFAULT_DENY,
+        tuple(user_deny),
+        tuple(user_allow),
+        exclude_subtree=exclude_subtree,
+    ):
         rel = src.relative_to(project)
         dst = target / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -247,7 +392,6 @@ Entry point: {entry}
 {header_warning}
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 import inspect
 import sys
@@ -421,9 +565,10 @@ def package_aws(project: Path, *, dry_run: bool = False) -> Path:
     if dry_run:
         return target
     out.mkdir(parents=True, exist_ok=True)
-    user_deny = _load_eapignore(project)
+    user_deny, user_allow = _load_eapignore(project)
     included = [
-        src.relative_to(project) for src in _iter_included_files(project, _DEFAULT_DENY, user_deny)
+        src.relative_to(project)
+        for src in _iter_included_files(project, _DEFAULT_DENY, tuple(user_deny), tuple(user_allow))
     ]
     if not included:
         raise RuntimeError(
@@ -614,7 +759,6 @@ Entry point: {entry}
 {header_warning}
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 import inspect
 import os

@@ -113,8 +113,9 @@ def test_eapignore_comment_with_leading_whitespace(tmp_path: Path) -> None:
     # Indented ``# comment``; without the strip-first fix this becomes
     # a literal pattern and matches a file named ``   # comment``.
     (project / ".eapignore").write_text("   # this is a comment\nagent.py\n")
-    patterns = _load_eapignore(project)
-    assert patterns == ("agent.py",)
+    deny, allow = _load_eapignore(project)
+    assert deny == ["agent.py"]
+    assert allow == []
 
 
 def test_stage_project_empty_package_raises(tmp_path: Path) -> None:
@@ -180,3 +181,184 @@ def test_stage_project_yields_absolute_sources_relative_paths(tmp_path: Path) ->
             else src.resolve().is_relative_to(project.resolve())
         )
         assert os.fspath(src.relative_to(project))
+
+
+def test_packager_excludes_files_under_nested_env_directory(tmp_path: Path) -> None:
+    """L-N2: a ``src/.env/config.py`` (where ``.env`` is a SUBDIR, not top-level)
+    must not be staged. Deny-list matching has to consider every path segment,
+    not just the top-level prefix.
+    """
+    project = tmp_path / "p"
+    _seed_minimal_project(project)
+    nested = project / "src" / ".env"
+    nested.mkdir(parents=True)
+    (nested / "config.py").write_text("SECRET = 'hunter2'\n")
+    # Also seed a nested .git/ — same deny semantics.
+    (project / "vendor" / ".git").mkdir(parents=True)
+    (project / "vendor" / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+
+    target = package_agentcore(project)
+    assert not (target / "src" / ".env" / "config.py").exists(), (
+        "nested .env/config.py leaked into package"
+    )
+    assert not (target / "vendor" / ".git" / "HEAD").exists(), (
+        "nested .git/HEAD leaked into package"
+    )
+    manifest_text = (target / ".eap-manifest.txt").read_text()
+    assert ".env/config.py" not in manifest_text
+    assert ".git/HEAD" not in manifest_text
+
+
+def test_packager_skips_new_build_cache_dirs(tmp_path: Path) -> None:
+    """L-N5: common build/cache dirs (.terraform, .next, .nuxt, .cache, build,
+    target, .tox, .coverage, htmlcov) must be pruned by ``_DEFAULT_SKIP_DIRS``."""
+    project = tmp_path / "p"
+    _seed_minimal_project(project)
+    cache_dirs = [
+        ".terraform",
+        ".next",
+        ".nuxt",
+        ".cache",
+        "build",
+        "target",
+        ".tox",
+        ".coverage",
+        "htmlcov",
+    ]
+    for cache in cache_dirs:
+        d = project / cache
+        d.mkdir()
+        (d / "huge.bin").write_text("x" * 1024)
+
+    target = package_agentcore(project)
+    for cache in cache_dirs:
+        assert not (target / cache).exists(), (
+            f"{cache}/ leaked into package — missing from _DEFAULT_SKIP_DIRS"
+        )
+
+
+def test_generated_handlers_are_ruff_f401_clean(tmp_path: Path) -> None:
+    """L-N3: handler templates ship without unused imports — ruff F401/F811 clean
+    in both auth-wired and unauthenticated modes, for both runtimes.
+    """
+    import shutil
+    import subprocess
+
+    from eap_cli.scaffolders.deploy import package_agentcore, package_vertex_agent_engine
+
+    ruff = shutil.which("ruff")
+    if ruff is None:
+        pytest.skip("ruff binary not on PATH")
+
+    auth_modes: list[dict | None] = [
+        None,  # --allow-unauthenticated
+        {
+            "discovery_url": "https://idp/.well-known/openid-configuration",
+            "issuer": "https://idp",
+            "audiences": ["my-agent"],
+        },
+    ]
+    for auth in auth_modes:
+        project = tmp_path / f"p-agentcore-{'auth' if auth else 'unauth'}"
+        _seed_minimal_project(project)
+        target = package_agentcore(project, auth=auth)
+        handler = target / "handler.py"
+        assert handler.is_file()
+        result = subprocess.run(
+            [ruff, "check", "--select=F401", "--select=F811", str(handler)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"agentcore handler (auth={auth is not None}) has unused/redefined "
+            f"imports:\n{result.stdout}\n{result.stderr}"
+        )
+
+        project = tmp_path / f"p-vertex-{'auth' if auth else 'unauth'}"
+        _seed_minimal_project(project)
+        target = package_vertex_agent_engine(project, auth=auth)
+        handler = target / "handler.py"
+        assert handler.is_file()
+        result = subprocess.run(
+            [ruff, "check", "--select=F401", "--select=F811", str(handler)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"vertex handler (auth={auth is not None}) has unused/redefined "
+            f"imports:\n{result.stdout}\n{result.stderr}"
+        )
+
+
+def test_eapignore_negation_reincludes_skip_dir(tmp_path: Path) -> None:
+    """L-N1: ``!pattern`` in ``.eapignore`` re-includes a path that the default
+    skip-dir set or deny-list would otherwise exclude. A project that legitimately
+    needs to ship its ``build/`` (e.g. a pre-built frontend bundle) can opt back in.
+    """
+    project = tmp_path / "p"
+    _seed_minimal_project(project)
+    bundle = project / "build"
+    bundle.mkdir()
+    (bundle / "static.txt").write_text("frontend bundle")
+    # ``build/`` is in _DEFAULT_SKIP_DIRS as of v0.6.0; negation re-includes.
+    (project / ".eapignore").write_text("!build\n!build/*\n")
+
+    target = package_agentcore(project)
+    staged_bundle = target / "build" / "static.txt"
+    assert staged_bundle.is_file(), (
+        f"build/static.txt was not staged into {target} despite !build negation"
+    )
+
+    # Verify the iter contract too — easier to debug than the packaged tree.
+    from eap_cli.scaffolders.deploy import _DEFAULT_DENY, _iter_included_files
+
+    fresh = tmp_path / "p2"
+    _seed_minimal_project(fresh)
+    (fresh / "build").mkdir()
+    (fresh / "build" / "static.txt").write_text("frontend bundle")
+    visited = {
+        p.relative_to(fresh)
+        for p in _iter_included_files(fresh, _DEFAULT_DENY, (), ("build", "build/*"))
+    }
+    assert Path("build/static.txt") in visited, (
+        "allow-pattern !build did not re-include build/static.txt"
+    )
+
+
+def test_eapignore_negation_reincludes_nested_segment(tmp_path: Path) -> None:
+    """L-N1/L-N2 interplay: a nested ``.env/`` is deny-excluded by L-N2's
+    segment-anywhere match. An allow pattern with the same segment opts it
+    back in — i.e., the user explicitly says "yes, ship src/.env/templates/".
+    """
+    from eap_cli.scaffolders.deploy import _DEFAULT_DENY, _iter_included_files
+
+    project = tmp_path / "p"
+    _seed_minimal_project(project)
+    nested = project / "src" / ".env"
+    nested.mkdir(parents=True)
+    (nested / "config.py").write_text("# templates, not secrets\n")
+
+    # Without allow: nested .env excluded.
+    visited_no_allow = {
+        p.relative_to(project) for p in _iter_included_files(project, _DEFAULT_DENY, ())
+    }
+    assert Path("src/.env/config.py") not in visited_no_allow
+
+    # With explicit allow: re-included.
+    visited_allow = {
+        p.relative_to(project)
+        for p in _iter_included_files(project, _DEFAULT_DENY, (), ("src/.env", "src/.env/*"))
+    }
+    assert Path("src/.env/config.py") in visited_allow
+
+
+def test_eapignore_negation_load_returns_split_lists(tmp_path: Path) -> None:
+    """L-N1 unit: ``_load_eapignore`` returns ``(deny, allow)`` split by ``!``."""
+    project = tmp_path / "p"
+    _seed_minimal_project(project)
+    (project / ".eapignore").write_text(
+        "# comment\ninternal_notes.txt\n!dist\nbuild/cache\n!build/cache/keep.txt\n"
+    )
+    deny, allow = _load_eapignore(project)
+    assert deny == ["internal_notes.txt", "build/cache"]
+    assert allow == ["dist", "build/cache/keep.txt"]
