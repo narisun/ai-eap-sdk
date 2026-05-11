@@ -57,10 +57,56 @@ class ObservabilityMiddleware(PassthroughMiddleware):
             if resp.finish_reason:
                 ctx.span.set_attribute("gen_ai.response.finish_reason", resp.finish_reason)
             ctx.span.end()
+            ctx.span = None
         return resp
 
     async def on_error(self, exc: Exception, ctx: Context) -> None:
-        if ctx.span is not None:
-            ctx.span.set_attribute("gen_ai.error.type", type(exc).__name__)
-            ctx.span.record_exception(exc)
-            ctx.span.end()
+        """End any started span, recording the exception and ERROR status.
+
+        Symmetric with on_request's span start and on_response's span end:
+        a span attached to ctx must always be ended and cleared, regardless
+        of whether it's recording. Otherwise downstream consumers that
+        inspect ``ctx.span`` to detect "did observability run?" see
+        different state on success vs. error. The attribute writes
+        (set_attribute, record_exception, set_status) are gated on
+        ``is_recording()`` because they're meaningful only on recording
+        spans.
+
+        The outer try/finally guarantees ``end()`` + ``ctx.span = None``
+        always run, even if the inner attribute writes raise something
+        exotic.
+        """
+        span = getattr(ctx, "span", None)
+        if span is None:
+            return
+        # Treat missing ``is_recording`` as "recording" — caller-supplied fake
+        # spans in tests may not implement the full OTel Span protocol.
+        is_recording_fn = getattr(span, "is_recording", None)
+        recording = not callable(is_recording_fn) or is_recording_fn()
+        try:
+            if recording:
+                try:
+                    span.set_attribute("gen_ai.error.type", type(exc).__name__)
+                except Exception:  # noqa: S110 - secondary failures must not mask end()
+                    pass
+                try:
+                    span.record_exception(exc)
+                except Exception:  # noqa: S110 - secondary failures must not mask end()
+                    pass
+                try:
+                    from opentelemetry.trace import (  # type: ignore[import-not-found,unused-ignore]
+                        Status,
+                        StatusCode,
+                    )
+
+                    span.set_status(Status(StatusCode.ERROR, str(exc)))
+                except ImportError:
+                    pass  # [otel] extra not installed; status is a no-op
+                except Exception:  # noqa: S110 - secondary failures must not mask end()
+                    pass
+        finally:
+            try:
+                span.end()
+            except Exception:  # noqa: S110 - misbehaving fake spans must not propagate
+                pass
+            ctx.span = None
