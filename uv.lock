@@ -919,24 +919,60 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+a2a = [
+    { name = "eap-core", extra = ["a2a"] },
+]
+all = [
+    { name = "eap-core", extra = ["a2a", "aws", "eval", "gcp", "mcp", "otel", "pii", "policy-cedar"] },
+]
+aws = [
+    { name = "eap-core", extra = ["aws"] },
+]
 dev = [
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
+eval = [
+    { name = "eap-core", extra = ["eval"] },
+]
+gcp = [
+    { name = "eap-core", extra = ["gcp"] },
+]
+mcp = [
+    { name = "eap-core", extra = ["mcp"] },
+]
+otel = [
+    { name = "eap-core", extra = ["otel"] },
+]
+pii = [
+    { name = "eap-core", extra = ["pii"] },
+]
+policy-cedar = [
+    { name = "eap-core", extra = ["policy-cedar"] },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.1" },
     { name = "eap-core", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["a2a"], marker = "extra == 'a2a'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["aws"], marker = "extra == 'aws'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["eval"], marker = "extra == 'eval'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["gcp"], marker = "extra == 'gcp'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["mcp"], marker = "extra == 'mcp'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["otel"], marker = "extra == 'otel'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["pii"], marker = "extra == 'pii'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["pii", "otel", "aws", "gcp", "mcp", "a2a", "eval", "policy-cedar"], marker = "extra == 'all'", editable = "packages/eap-core" },
+    { name = "eap-core", extras = ["policy-cedar"], marker = "extra == 'policy-cedar'", editable = "packages/eap-core" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["pii", "otel", "aws", "gcp", "mcp", "a2a", "eval", "policy-cedar", "all", "dev"]
 
 [[package]]
 name = "eap-core"

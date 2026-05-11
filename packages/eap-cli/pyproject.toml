@@ -15,7 +15,20 @@ dependencies = [
 [project.scripts]
 eap = "eap_cli.main:cli"
 
+# Forward eap-core's optional extras through eap-cli so `eap-cli[aws]`
+# (etc.) is a working installation idiom — the eap-cli README documents
+# this as the recommended way to install cloud-side dependencies alongside
+# the CLI.
 [project.optional-dependencies]
+pii = ["eap-core[pii]"]
+otel = ["eap-core[otel]"]
+aws = ["eap-core[aws]"]
+gcp = ["eap-core[gcp]"]
+mcp = ["eap-core[mcp]"]
+a2a = ["eap-core[a2a]"]
+eval = ["eap-core[eval]"]
+policy-cedar = ["eap-core[policy-cedar]"]
+all = ["eap-core[pii,otel,aws,gcp,mcp,a2a,eval,policy-cedar]"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.4", "mypy>=1.10"]
 
 [build-system]

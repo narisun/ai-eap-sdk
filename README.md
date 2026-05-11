@@ -223,6 +223,12 @@ uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirec
 uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-cli"
 ```
 
+> The install snippets pin `@v0.6.0` deliberately — patch releases
+> (v0.6.1, v0.6.2, ...) are docs / config-only and the code surface
+> is identical to v0.6.0. To get the latest patched docs without
+> changing your installed code, `git pull` your clone or bump to
+> the latest patch tag.
+
 If you operate a private package index (e.g. AWS CodeArtifact, Azure
 Artifacts, an internal devpi), upload built wheels there and depend on
 them by name. The build is `uv build` from each `packages/<name>/`
@@ -650,7 +656,7 @@ ai-eap-sdk/
 └── pyproject.toml                           # uv workspace root
 ```
 
-**Status:** v0.6.0 — review-debt clean; full integrations with AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine. All v0.4.0 Criticals + v0.5.0/v0.5.1 follow-ups closed.
+**Status:** v0.6.1 (docs refreshed in v0.6.1, code surface v0.6.0) — review-debt clean; full integrations with AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine. All v0.4.0 Criticals + v0.5.0/v0.5.1 follow-ups closed.
 
 ---
 
