@@ -814,7 +814,8 @@ trusts ``expires_at`` (minus a small buffer) for staleness decisions.
 **What to keep in mind:**
 
 - The cache in `NonHumanIdentity` is keyed on `(audience, scope)`,
-  uses a 5-second buffer before expiry, and the cache-miss path is
+  uses a 30-second buffer (matching ``InboundJwtVerifier.clock_skew_seconds``)
+  before expiry, and the cache-miss path is
   serialized by an `asyncio.Lock` so N concurrent callers issue
   exactly one IdP request (H2). `get_token` is therefore `async` —
   every call site must `await` it. Don't subclass to disable caching;
@@ -955,7 +956,7 @@ template:
    helper or method. Construction must not touch the network or
    import the SDK.
 4. **Gate live calls** behind `EAP_ENABLE_REAL_RUNTIMES=1` so CI runs
-   without credentials. Methods raise `NotImplementedError` with a
+   without credentials. Methods raise `RealRuntimeDisabledError` with a
    setup hint when the flag is unset.
 5. **Add a new extra** under `[project.optional-dependencies]` that
    pulls the cloud's SDK. Forward it at the workspace root.

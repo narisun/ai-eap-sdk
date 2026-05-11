@@ -206,15 +206,15 @@ the git repo (pin to a tag for stability):
 ```toml
 [project]
 dependencies = [
-    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.3.0#subdirectory=packages/eap-core",
+    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-core",
 ]
 ```
 
 Or via `uv add`:
 
 ```bash
-uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.3.0#subdirectory=packages/eap-core"
-uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.3.0#subdirectory=packages/eap-cli"
+uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-core"
+uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-cli"
 ```
 
 If you operate a private package index (e.g. AWS CodeArtifact, Azure
@@ -580,12 +580,7 @@ ai-eap-sdk/
 └── pyproject.toml                           # uv workspace root
 ```
 
-**Status:** v0.3.0 — full integrations with AWS Bedrock AgentCore
-(11 services) and GCP Vertex Agent Engine. The same agent code runs
-unmodified on both clouds via the vendor-neutral Protocols above. All
-live cloud calls are gated behind `EAP_ENABLE_REAL_RUNTIMES=1` (and
-`EAP_ENABLE_REAL_DEPLOY=1` for `eap deploy` packaging) — flip the
-flags and configure creds when you're ready to hit production.
+**Status:** v0.6.0 — review-debt clean; full integrations with AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine. All v0.4.0 Criticals + v0.5.0/v0.5.1 follow-ups closed.
 
 ---
 
@@ -606,7 +601,7 @@ before merging non-trivial changes.
 
 ```bash
 uv sync --all-packages --all-extras --group dev   # install everything
-uv run pytest --cov                                # 342 tests, ≥90% coverage
+uv run pytest --cov                                # 466 tests, ~89% coverage (90% gate tracked for v0.7.0)
 uv run ruff check && uv run ruff format --check    # lint + format
 uv run mypy                                        # strict type-check
 ```

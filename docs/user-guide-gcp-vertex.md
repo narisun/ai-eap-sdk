@@ -83,8 +83,8 @@ For a downstream project, depend on EAP-Core directly:
 # pyproject.toml
 [project]
 dependencies = [
-    "eap-core[gcp,otel,mcp] @ git+https://github.com/narisun/ai-eap-sdk.git@v0.3.1#subdirectory=packages/eap-core",
-    "eap-cli @ git+https://github.com/narisun/ai-eap-sdk.git@v0.3.1#subdirectory=packages/eap-cli",
+    "eap-core[gcp,otel,mcp] @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-core",
+    "eap-cli @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-cli",
 ]
 ```
 
@@ -219,7 +219,7 @@ balance = await memory.recall(session_id="user-123", key="last_balance")
 
 Construction is cheap — no GCP SDK import, no network call. All live
 calls are gated by `EAP_ENABLE_REAL_RUNTIMES=1`; until you set it,
-methods raise `NotImplementedError` with a clear "wire credentials"
+methods raise `RealRuntimeDisabledError` with a clear "wire credentials"
 message. This keeps unit tests deterministic.
 
 The class satisfies `eap_core.memory.MemoryStore`. Drop it anywhere a
@@ -990,7 +990,7 @@ Before flipping live traffic on:
 
 ## Troubleshooting
 
-**`NotImplementedError: Vertex adapter requires the [gcp] extra and
+**`RealRuntimeDisabledError: Vertex adapter requires the [gcp] extra and
 Google Cloud credentials. Set EAP_ENABLE_REAL_RUNTIMES=1 once
 configured.`**
 

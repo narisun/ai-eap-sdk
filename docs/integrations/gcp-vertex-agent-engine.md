@@ -316,7 +316,7 @@ posture, not a project.
 Every live call to GCP is gated behind `EAP_ENABLE_REAL_RUNTIMES=1`
 (for runtime APIs) or `EAP_ENABLE_REAL_DEPLOY=1` (for `docker build`
 during deploy). Without the flag, the integration raises
-`NotImplementedError` with a setup hint. CI runs the full test suite
+`RealRuntimeDisabledError` with a setup hint. CI runs the full test suite
 without GCP credentials this way.
 
 ## Extras

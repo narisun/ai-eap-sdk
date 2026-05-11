@@ -160,7 +160,7 @@ AgentCore Memory, Code Interpreter, Browser, and an inbound JWT
 verifier. Live AgentCore calls are gated behind
 `EAP_ENABLE_REAL_RUNTIMES=1` (same env-flag pattern as the Bedrock /
 Vertex runtime adapters); without the flag, every method raises a
-clear `NotImplementedError` with a "wire credentials" message.
+clear `RealRuntimeDisabledError` with a "wire credentials" message.
 
 ### Memory — `eap_core.memory` + `AgentCoreMemoryStore`
 

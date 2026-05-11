@@ -70,8 +70,8 @@ For a downstream project, depend on EAP-Core directly:
 # pyproject.toml
 [project]
 dependencies = [
-    "eap-core[aws,otel,mcp] @ git+https://github.com/narisun/ai-eap-sdk.git@v0.3.1#subdirectory=packages/eap-core",
-    "eap-cli @ git+https://github.com/narisun/ai-eap-sdk.git@v0.3.1#subdirectory=packages/eap-cli",
+    "eap-core[aws,otel,mcp] @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-core",
+    "eap-cli @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-cli",
 ]
 ```
 
@@ -162,8 +162,9 @@ exchange = OIDCTokenExchange.from_agentcore(
 ```
 
 `OIDCTokenExchange.from_agentcore()` just fills in the AgentCore
-Identity token endpoint URL for the region. The 5-second TTL buffer
-on `NonHumanIdentity._cache` is unchanged. For tool dispatchers and
+Identity token endpoint URL for the region. The NHI's token cache uses
+the public `cache_buffer_seconds` config (default 30s, matching
+`InboundJwtVerifier.clock_skew_seconds`). For tool dispatchers and
 gateway clients that take an `identity=` argument, pass the NHI
 directly — they call `identity.get_token(...)` for the assertion
 and (when configured) use `OIDCTokenExchange.exchange(...)` to swap
@@ -221,7 +222,7 @@ balance = await memory.recall(session_id="user-123", key="last_balance")
 
 Construction is cheap — no boto3 import, no network call. All live
 calls are gated by `EAP_ENABLE_REAL_RUNTIMES=1`; until you set it,
-methods raise `NotImplementedError` with a clear "wire credentials"
+methods raise `RealRuntimeDisabledError` with a clear "wire credentials"
 message. This keeps unit tests deterministic.
 
 The class satisfies `eap_core.memory.MemoryStore`. Drop it anywhere a
@@ -551,8 +552,8 @@ class KMSIdentityProvider:
         return signed_jwt_string, expires_at
 ```
 
-Then point the NHI at it. The cache (5-second buffer before expiry)
-works the same.
+Then point the NHI at it. The cache works the same — staleness is
+controlled by the public `cache_buffer_seconds` config (default 30s).
 
 **Boto3 credentials** — `AgentCoreMemoryStore`, `PaymentClient`,
 `RegistryClient`, and `AgentCoreEvalScorer` use boto3's default chain
@@ -866,7 +867,7 @@ Before flipping live traffic on:
 
 ## Troubleshooting
 
-**`NotImplementedError: AgentCore adapter requires the [aws] extra
+**`RealRuntimeDisabledError: AgentCore adapter requires the [aws] extra
 and AWS credentials. Set EAP_ENABLE_REAL_RUNTIMES=1 once configured.`**
 
 You forgot the env flag. The flag is intentional — it prevents tests

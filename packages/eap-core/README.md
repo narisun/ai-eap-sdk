@@ -9,8 +9,8 @@ Enterprise Agentic AI Platform SDK — core middleware, runtime adapters, identi
 uv sync --all-packages --group dev
 
 # As a downstream dep (pin to a tag)
-uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.2.0#subdirectory=packages/eap-core"
-uv add "eap-core[pii,otel] @ git+https://github.com/narisun/ai-eap-sdk.git@v0.2.0#subdirectory=packages/eap-core"
+uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-core"
+uv add "eap-core[pii,otel] @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.0#subdirectory=packages/eap-core"
 ```
 
 See the top-level `README.md` for usage and the full install matrix
