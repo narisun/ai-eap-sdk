@@ -910,7 +910,7 @@ wheels = [
 
 [[package]]
 name = "eap-cli"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "packages/eap-cli" }
 dependencies = [
     { name = "click" },
@@ -940,7 +940,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "eap-core"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "packages/eap-core" }
 dependencies = [
     { name = "httpx" },

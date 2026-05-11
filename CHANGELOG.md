@@ -16,6 +16,174 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.5.0] — 2026-05-11 — Security hardening release
+
+Closes every Critical and security-flavored High finding from the v0.4.0
+enterprise pre-prod review. The SDK now passes enterprise security gates
+that v0.4.0 would have been blocked on.
+
+**Breaking changes** in this release — see migration notes below. All
+breaking changes are marked with `!` in their commit subjects.
+
+### Added
+
+- `eap deploy --auth-discovery-url / --auth-issuer / --auth-audience` flags
+  on the `agentcore` and `vertex-agent-engine` runtimes. Generated handler
+  wires `InboundJwtVerifier + jwt_dependency` when configured.
+- `eap deploy --allow-unauthenticated` opt-in for local smoke testing only.
+- `.eapignore` file support — project-local deny patterns for the deploy
+  packager.
+- `.eap-manifest.txt` emitted by each packager listing every staged file
+  for pre-push audit.
+- `eap_core.identity.resolve_token(identity, *, audience, scope)` helper —
+  awaitable-aware token dispatch supporting both async `NonHumanIdentity`
+  and sync `VertexAgentIdentityToken`.
+- `eap_core.security.INJECTION_PATTERNS` — canonical (label, pattern) tuple
+  used by both `PromptInjectionMiddleware` and `RegexThreatDetector`.
+
+### Changed (security hardening)
+
+- **C1, C2, C3** — `InboundJwtVerifier` now requires an `issuer` kwarg,
+  validates `discovery_url` and `jwks_uri` are `https://`, enforces that
+  `jwks_uri` shares its origin (scheme+host+port, case-insensitive) with
+  `discovery_url`, requires the OIDC Discovery doc to advertise an
+  `issuer` field matching the configured one, and verifies the JWT with
+  explicit `verify_iss`/`verify_aud`/`verify_exp`/`verify_iat` plus a
+  required claim list `["exp", "iat", "aud", "iss"]`. New optional
+  `clock_skew_seconds: int = 30` parameter.
+- **C4** — `InboundJwtVerifier.allowed_audiences` is now a required kwarg
+  (no default). Empty list raises `ValueError`. Audience validation can
+  no longer be silently disabled by omission.
+- **C5** — `McpToolRegistry.invoke` requires `identity` when
+  `spec.requires_auth=True` is set. Tools marked auth-required now
+  refuse to run without an identity (previously the flag was decorative).
+  `EnterpriseLLM.invoke_tool` automatically plumbs `ctx.identity`.
+- **C6** — `LocalIdPStub.verify(token, *, expected_audience)` requires
+  the audience kwarg and validates it (previously `verify_aud=False`
+  default). `verify_aud=True` is now unconditional.
+- **C7** — `InProcessCodeSandbox` requires `timeout_seconds` and
+  `max_code_bytes` constructor args (no defaults). Timeout enforced via
+  `asyncio.wait_for`; oversize input rejected pre-spawn. Subprocess kill
+  handles `ProcessLookupError` race; `OSError` from spawn surfaces as
+  `SandboxResult(exit_code=2)` instead of escaping.
+- **C8** — `eap deploy --runtime agentcore` and
+  `--runtime vertex-agent-engine` refuse to scaffold without auth flags
+  (or explicit `--allow-unauthenticated`). Generated handler wires
+  `jwt_dependency` when configured. Partial auth flags emit a specific
+  "Missing: ..." error; combining `--allow-unauthenticated` with
+  `--auth-*` flags is rejected.
+- **C9** — Deploy packagers (`package_aws`, `package_gcp`,
+  `package_agentcore`, `package_vertex_agent_engine`) honor a deny-list
+  (`.env`, `.envrc`, `.git`, `*.pem`, `*.key`, `*.tfstate`,
+  `credentials*.json`, `id_rsa*`, `id_ed25519*`, `.ssh/*`, `.aws/*`) —
+  case-insensitive for default patterns. Symlinks rejected. `.eapignore`
+  honored. `.eap-manifest.txt` emitted. Skip-dirs pruned via `os.walk`
+  (no descent into `node_modules`, `.venv`). Partial-write protection
+  via target-cleanup; spawn errors wrapped with context.
+- **C10** — `default_registry()` emits `DeprecationWarning` and is
+  removed from `eap_core.__all__`. Will be removed in v0.6.0. Migrate
+  to explicit `McpToolRegistry()` constructed per agent. Test runner
+  pins `error::DeprecationWarning` so the migration is enforced.
+- **H1** — `OIDCTokenExchange`, `GatewayClient`, `VertexGatewayClient`
+  now track http ownership; `aclose()` closes only owned pools.
+  `__aenter__/__aexit__` added. `EnterpriseLLM.aclose()` closes owned
+  components (`token_exchange`, etc.).
+- **H2** — `NonHumanIdentity.get_token` is now `async` and serialized
+  via `asyncio.Lock` per instance. Concurrent calls for the same
+  `(audience, scope)` issue exactly one IdP request.
+- **H3** — `IdentityProvider.issue` returns `tuple[str, float]` (token,
+  `time.time()`-relative expiry). `NonHumanIdentity` uses the IdP-
+  reported TTL instead of probing private `_ttl`. Cache switched to
+  wall-clock for JWT `exp` comparability.
+- **H4, H5** — `MiddlewarePipeline.run_stream` appends `mw` to `ran`
+  BEFORE awaiting `on_request`, restoring symmetry with `run`. Secondary
+  exceptions from `on_error` handlers are logged at WARNING and surfaced
+  via PEP 678 `__notes__` on the primary (no more silent swallow).
+- **H7** — `PromptInjectionError` carries `matched_hash` (16-char
+  SHA-256 prefix) + `pattern`. The raw `matched` text is no longer
+  attached, so spans/trajectories/logs don't leak user input on
+  injection detection.
+- **H9** — `PolicyMiddleware` derives `action`/`resource` from
+  `ctx.metadata["policy.*"]` (set inside the SDK from the tool name)
+  rather than `req.metadata` (caller-mutable). Spoofed metadata can no
+  longer bypass policy.
+- **H10** — Default PII regex covers Amex 15-digit, international phone,
+  IPv4, and bare US phone formats (no leading country code required).
+  IBAN detection deferred to the `[pii]` Presidio extra (regex precision
+  too poor for default install).
+- **H11** — PII unmask uses single-regex alternation longest-first (no
+  token-vs-token prefix collisions). Token width widened from 8 hex to
+  16 hex. Compiled alternation cached on `ctx.metadata` for streaming.
+  `ctx.metadata["pii.masked_count"]` populated per dev-guide §3.7.
+- **H12** — Streaming PII unmask buffers across chunk boundaries with
+  bounded lookback (32 chars). Stray `<` no longer triggers unbounded
+  buffer growth.
+- **H13** — Canonical injection patterns live in `eap_core.security`;
+  both `PromptInjectionMiddleware` and `RegexThreatDetector` import
+  from one source. No more pattern drift between two files.
+- **H15** — `LocalIdPStub()` emits `RuntimeWarning` unless
+  `for_testing=True`. Test runner pins `error::RuntimeWarning`.
+- **H16** — `VertexMemoryBankStore.recall` narrowed from
+  `except Exception` to `except gax_exceptions.NotFound`. Auth errors,
+  throttling, and transient API failures now propagate instead of
+  being silently reported as a cache miss. AgentCore side already
+  narrow; contract pinned with tests.
+
+### Migration
+
+Migration recipe for breaking changes:
+
+```python
+# Before v0.5.0:
+verifier = InboundJwtVerifier(discovery_url="https://idp/...")
+nhi = NonHumanIdentity(client_id="agent", idp=LocalIdPStub())
+token = nhi.get_token(audience="x")  # sync
+sandbox = InProcessCodeSandbox()
+client.invoke_tool("transfer_funds", {})
+
+# After v0.5.0:
+verifier = InboundJwtVerifier(
+    discovery_url="https://idp/...",
+    issuer="https://idp",                        # NEW required
+    allowed_audiences=["my-agent"],              # NEW required
+)
+nhi = NonHumanIdentity(client_id="agent", idp=LocalIdPStub(for_testing=True))
+token = await nhi.get_token(audience="x")        # now async
+sandbox = InProcessCodeSandbox(timeout_seconds=5, max_code_bytes=64_000)
+# invoke_tool now plumbs ctx.identity automatically — but if a tool is
+# requires_auth=True and your EnterpriseLLM has no identity wired, the
+# call now raises IdentityError instead of silently running unauthenticated.
+```
+
+For custom `IdentityProvider` implementations:
+
+```python
+# Before:
+def issue(self, *, client_id, audience, scope, roles=None) -> str:
+    return signed_jwt
+
+# After:
+def issue(self, *, client_id, audience, scope, roles=None) -> tuple[str, float]:
+    return signed_jwt, expires_at_wall_time
+```
+
+For `eap deploy --runtime agentcore|vertex-agent-engine`, pass the new
+`--auth-*` flags or `--allow-unauthenticated` for local-only.
+
+### Stats
+
+- **426 tests passing** (up from 381 in v0.4.0; +45 new security tests).
+- Coverage held at the v0.4.0 baseline (88-89% — see "Known limitations").
+- Lint, format, strict mypy all green.
+
+### Known limitations
+
+- The 90% coverage gate in `[tool.coverage.report]` was at 88-89% before
+  this sprint and remains at that level. Tightening below 90% would
+  block the release; raising it is deferred until after v0.5.0 ships.
+
+---
+
 ## [0.4.0] — 2026-05-11 — End-to-end user guides for AgentCore + Vertex
 
 Adds two new user-facing guides — one per cloud — covering how to
