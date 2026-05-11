@@ -2,12 +2,201 @@
 
 from __future__ import annotations
 
+import fnmatch
 import os
+import shutil
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal
 
 Runtime = Literal["aws", "gcp", "agentcore", "vertex-agent-engine"]
+
+# ---------------------------------------------------------------------------
+# Deny-list + .eapignore + manifest (C9)
+# ---------------------------------------------------------------------------
+#
+# Every packager runs project files through ``_stage_project`` (or
+# ``_iter_included_files`` for the zip case) so that secrets, version
+# control state, and other host artifacts never reach the deploy image.
+# Project authors can add patterns through a top-level ``.eapignore``
+# file. Each packaged target also writes ``.eap-manifest.txt`` listing
+# every staged file for a pre-push audit.
+
+_DEFAULT_DENY: tuple[str, ...] = (
+    ".env",
+    ".env.*",
+    ".env.local",
+    ".env.production",
+    ".envrc",
+    "credentials*.json",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "*.tfstate",
+    "*.tfstate.*",
+    ".git",
+    ".git/*",
+    ".aws",
+    ".aws/*",
+    "id_rsa",
+    "id_rsa.*",
+    "id_ed25519",
+    "id_ed25519.*",
+    ".ssh",
+    ".ssh/*",
+)
+_DEFAULT_SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        "dist",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".eap",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "node_modules",
+    }
+)
+
+
+def _load_eapignore(project: Path) -> tuple[str, ...]:
+    f = project / ".eapignore"
+    if not f.is_file():
+        return ()
+    patterns: list[str] = []
+    # Strip BEFORE the comment check so a line like "   # comment" (with
+    # leading whitespace) is not treated as a literal pattern. Pass
+    # encoding explicitly for cross-platform stability.
+    for line in f.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            patterns.append(stripped)
+    return tuple(patterns)
+
+
+def _should_include(
+    rel: Path,
+    default_deny: tuple[str, ...],
+    user_deny: tuple[str, ...],
+) -> bool:
+    """Return True iff ``rel`` survives the deny-lists.
+
+    ``_DEFAULT_DENY`` is applied case-insensitively (POSIX filesystems
+    are case-sensitive but ``.ENV`` / ``Credentials.json`` / ``PROD.PEM``
+    / ``ID_RSA`` must still be denied — secret naming is not always
+    lowercase). The user's ``.eapignore`` is treated as case-sensitive
+    so users can target exact filenames.
+    """
+    s = str(rel)
+    name = rel.name
+    sl = s.lower()
+    namel = name.lower()
+    # _DEFAULT_DENY — case-insensitive
+    for pattern in default_deny:
+        pl = pattern.lower()
+        if fnmatch.fnmatchcase(namel, pl) or fnmatch.fnmatchcase(sl, pl):
+            return False
+        # Directory prefix match: ".git/*" excludes any file under .git/.
+        if pl.endswith("/*"):
+            prefix = pl[:-2]
+            if sl == prefix or sl.startswith(prefix + "/"):
+                return False
+        # Top-level path match: ".git" excludes any file at or under .git/.
+        if sl == pl or sl.startswith(pl + "/"):
+            return False
+    # user .eapignore — case-sensitive (user-controlled exact patterns)
+    for pattern in user_deny:
+        if fnmatch.fnmatch(name, pattern) or fnmatch.fnmatch(s, pattern):
+            return False
+        if pattern.endswith("/*"):
+            prefix = pattern[:-2]
+            if s == prefix or s.startswith(prefix + "/"):
+                return False
+        if s == pattern or s.startswith(pattern + "/"):
+            return False
+    return True
+
+
+def _iter_included_files(
+    project: Path,
+    default_deny: tuple[str, ...],
+    user_deny: tuple[str, ...],
+) -> Iterator[Path]:
+    """Yield project-relative file paths that survive deny-list + .eapignore.
+
+    Uses ``os.walk`` with in-place ``dirnames`` pruning so we never
+    descend into ``_DEFAULT_SKIP_DIRS`` entries (``.venv``,
+    ``node_modules``, ...). Symlinks are skipped outright — a symlink
+    pointing at ``~/.aws/credentials`` would otherwise dereference via
+    ``read_bytes`` and stage the target's secret content without the
+    deny-list ever seeing the target path.
+    """
+    for dirpath, dirnames, filenames in os.walk(project, followlinks=False):
+        # Prune skip-dirs in place — stops descent before we read them.
+        dirnames[:] = [d for d in dirnames if d not in _DEFAULT_SKIP_DIRS]
+        for fname in filenames:
+            src = Path(dirpath) / fname
+            # Reject symlinks (file-pointing symlinks survive ``.is_file()``
+            # and ``read_bytes`` silently dereferences; that's a C9 leak).
+            if src.is_symlink():
+                continue
+            rel = src.relative_to(project)
+            if not _should_include(rel, default_deny, user_deny):
+                continue
+            yield src
+
+
+def _write_manifest(target: Path, included: list[str]) -> None:
+    (target / ".eap-manifest.txt").write_text(
+        "# Files staged for deployment (review before push).\n" + "\n".join(sorted(included)) + "\n"
+    )
+
+
+def _stage_project(project: Path, target: Path) -> list[str]:
+    """Copy project files into ``target``, honoring deny-list + .eapignore.
+
+    Returns the sorted list of relative paths included (for tests /
+    callers). Also writes ``target/.eap-manifest.txt`` listing every
+    staged file for pre-push audit. Skipped: deny-list matches,
+    ``.eapignore`` matches, ``_DEFAULT_SKIP_DIRS`` entries.
+
+    The target directory is removed and recreated to avoid leaving a
+    corrupt partial-write state on disk if a copy fails mid-way through.
+    An empty staged set raises — typically caused by an overly broad
+    ``.eapignore`` pattern like ``*``.
+    """
+    # Clean target first so a previous partial-write doesn't bleed into
+    # this run. Callers create ``target`` *before* invoking us, but the
+    # contract is "the staged dist after _stage_project belongs to this
+    # run, full stop".
+    if target.exists():
+        shutil.rmtree(target)
+    target.mkdir(parents=True, exist_ok=True)
+
+    user_deny = _load_eapignore(project)
+    included: list[str] = []
+    for src in _iter_included_files(project, _DEFAULT_DENY, user_deny):
+        rel = src.relative_to(project)
+        dst = target / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            dst.write_bytes(src.read_bytes())
+        except OSError as e:
+            # Surface enough context that the user understands the failure
+            # happened while staging a deploy package, not in their code.
+            raise RuntimeError(f"failed to stage {rel} (under deploy package step): {e}") from e
+        included.append(str(rel))
+    if not included:
+        raise RuntimeError(
+            "deploy package contains no project files — check your .eapignore "
+            "(an empty package usually means a too-broad pattern like '*')"
+        )
+    _write_manifest(target, included)
+    return included
+
 
 _DOCKERFILE_TEMPLATE = """\
 FROM python:3.11-slim
@@ -232,14 +421,30 @@ def package_aws(project: Path, *, dry_run: bool = False) -> Path:
     if dry_run:
         return target
     out.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
-        for src in project.rglob("*"):
-            if not src.is_file():
-                continue
-            rel = src.relative_to(project)
-            if rel.parts and rel.parts[0] in {"dist", ".venv", "__pycache__", ".eap"}:
-                continue
-            zf.write(src, str(rel))
+    user_deny = _load_eapignore(project)
+    included = [
+        src.relative_to(project) for src in _iter_included_files(project, _DEFAULT_DENY, user_deny)
+    ]
+    if not included:
+        raise RuntimeError(
+            "deploy package contains no project files — check your .eapignore "
+            "(an empty package usually means a too-broad pattern like '*')"
+        )
+    rel_strs = sorted(str(rel) for rel in included)
+    manifest = "# Files staged for deployment (review before push).\n" + "\n".join(rel_strs) + "\n"
+    # Stage the zip atomically: on any failure, unlink the partial file
+    # so the next run starts clean instead of inheriting half a zip.
+    try:
+        with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
+            for rel in included:
+                zf.write(project / rel, str(rel))
+            zf.writestr(".eap-manifest.txt", manifest)
+    except OSError as e:
+        if target.exists():
+            target.unlink()
+        raise RuntimeError(
+            f"failed to build deploy zip {target.name} (under deploy package step): {e}"
+        ) from e
     return target
 
 
@@ -248,18 +453,12 @@ def package_gcp(project: Path, *, service: str = "eap-agent", dry_run: bool = Fa
     if dry_run:
         return out
     out.mkdir(parents=True, exist_ok=True)
+    # Stage source FIRST so generated artifacts overwrite (and are not
+    # rejected by) any user files of the same name. Manifest reflects
+    # the staged project files only — generated artifacts are obvious.
+    _stage_project(project, out)
     (out / "Dockerfile").write_text(_DOCKERFILE_TEMPLATE)
     (out / "cloudbuild.yaml").write_text(_CLOUDBUILD_TEMPLATE.format(service=service))
-    # Stage source alongside Dockerfile for image build.
-    for src in project.rglob("*"):
-        if not src.is_file():
-            continue
-        rel = src.relative_to(project)
-        if rel.parts and rel.parts[0] in {"dist", ".venv", "__pycache__", ".eap"}:
-            continue
-        target = out / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(src.read_bytes())
     return out
 
 
@@ -339,19 +538,13 @@ def package_agentcore(
     if dry_run:
         return out
     out.mkdir(parents=True, exist_ok=True)
+    # Stage source FIRST so generated artifacts (Dockerfile, handler.py,
+    # README.md) overwrite any user files of the same name and aren't
+    # treated as project content.
+    _stage_project(project, out)
     (out / "Dockerfile").write_text(_AGENTCORE_DOCKERFILE)
     (out / "handler.py").write_text(_render_agentcore_handler(entry, auth))
     (out / "README.md").write_text(_AGENTCORE_README)
-    # Stage source alongside Dockerfile.
-    for src in project.rglob("*"):
-        if not src.is_file():
-            continue
-        rel = src.relative_to(project)
-        if rel.parts and rel.parts[0] in {"dist", ".venv", "__pycache__", ".eap"}:
-            continue
-        target = out / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(src.read_bytes())
     return out
 
 
@@ -660,18 +853,12 @@ def package_vertex_agent_engine(
     if dry_run:
         return out
     out.mkdir(parents=True, exist_ok=True)
+    # Stage source FIRST so generated artifacts overwrite any user files
+    # of the same name and aren't treated as project content.
+    _stage_project(project, out)
     (out / "Dockerfile").write_text(_VERTEX_DOCKERFILE)
     (out / "handler.py").write_text(_render_vertex_handler(entry, auth))
     (out / "README.md").write_text(_VERTEX_README)
-    for src in project.rglob("*"):
-        if not src.is_file():
-            continue
-        rel = src.relative_to(project)
-        if rel.parts and rel.parts[0] in {"dist", ".venv", "__pycache__", ".eap"}:
-            continue
-        target = out / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(src.read_bytes())
     return out
 
 

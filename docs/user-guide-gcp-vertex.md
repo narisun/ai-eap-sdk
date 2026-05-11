@@ -549,6 +549,13 @@ The handler imports your `agent.py:answer` entry function, binds to
 `0.0.0.0:${PORT:-8080}` per Cloud Run convention, and serves the
 standard `{"response": ..., "status": "success"}` shape.
 
+**Review `dist/vertex-agent-engine/.eap-manifest.txt` before pushing the**
+image — it lists every file staged for deployment. The packager already
+excludes `.env`, `.git`, `*.pem`, `*.key`, `credentials*.json`,
+`*.tfstate`, `.aws/`, `.ssh/`, and SSH private keys by default; add a
+project-level `.eapignore` (one glob per line, `#` comments allowed) to
+exclude additional files such as internal docs or scratch state.
+
 By default `eap deploy` only packages — to actually `docker build`,
 set `EAP_ENABLE_REAL_DEPLOY=1`. Then follow
 `dist/vertex-agent-engine/README.md` for the Artifact Registry push +
