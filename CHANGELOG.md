@@ -16,6 +16,60 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.4.0] — 2026-05-11 — End-to-end user guides for AgentCore + Vertex
+
+Adds two new user-facing guides — one per cloud — covering how to
+**build** an agent on each platform from `eap init` through to a
+deployed runtime. Audience is engineers using the SDK rather than
+extending it. Three-part shape: end-to-end tutorial → per-task
+reference → production checklist + troubleshooting.
+
+No public API or wire-format changes. v0.3.x installs are
+bytewise-compatible with v0.4.0; this is a docs-and-onboarding
+release.
+
+### Added — User guides
+
+- **`docs/user-guide-aws-agentcore.md`** — for engineers building
+  agents on AWS Bedrock AgentCore. Walks through prerequisites,
+  scaffold, `OIDCTokenExchange.from_agentcore`,
+  `configure_for_agentcore()`, `AgentCoreMemoryStore`, Code
+  Interpreter and Browser tool registration, `InboundJwtVerifier`
+  for defense-in-depth, `GatewayClient` outbound + `eap
+  publish-to-gateway` inbound, `RegistryClient`, `PaymentClient`
+  (x402), `AgentCoreEvalScorer`, and `eap deploy --runtime
+  agentcore`. Per-task reference (§2.1–2.12) plus a production
+  checklist and a troubleshooting section.
+- **`docs/user-guide-gcp-vertex.md`** — symmetric guide for GCP
+  Vertex Agent Engine. Same three-part structure but for
+  `VertexAgentIdentityToken`, `configure_for_vertex_observability()`,
+  `VertexMemoryBankStore`, `VertexCodeSandbox` /
+  `VertexBrowserSandbox` (and their MCP-tool registrars),
+  `VertexGatewayClient`, `VertexAgentRegistry`, `AP2PaymentClient`,
+  `VertexEvalScorer`, and `eap deploy --runtime vertex-agent-engine`.
+  Each section ends with a pointer to the AgentCore counterpart so
+  the two guides read together side-by-side.
+
+### Changed — README
+
+- New "End-to-end user guides for each cloud" section linking both
+  guides; the old "Reference docs" links to the
+  `docs/integrations/*` pages remain.
+
+### Changed — Developer Guide
+
+- Docs tour (§8.4) lists the two new user guides and the prose
+  explains the user-guide-vs-developer-guide audience split:
+  user guides for engineers *using* the SDK, developer guide for
+  engineers *extending* it.
+
+### Stats
+
+- 342 tests passing (unchanged from v0.3.1 — docs only).
+- ~1,450 lines of new user-facing documentation.
+
+---
+
 ## [0.3.1] — 2026-05-10 — Documentation refresh for v0.3.x
 
 Docs-only patch. No public API or wire-format changes; existing v0.3.0
