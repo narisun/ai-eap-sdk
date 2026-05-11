@@ -75,13 +75,23 @@ class EnterpriseLLM:
         **kwargs: Any,
     ) -> Response:
         ctx = Context(request_id=uuid.uuid4().hex, identity=self._identity)
+        # Authorization inputs are explicit keyword arguments on the public
+        # ``generate_text`` API, not free-form ``Request.metadata`` keys.
+        # Stash them on ``ctx.metadata`` (the SDK-trusted, per-pipeline slot)
+        # so ``PolicyMiddleware`` uses the values the SDK observed at the
+        # call site, not anything a later middleware (or a caller crafting
+        # a Request) might inject. ``action``/``resource`` deliberately do
+        # NOT live on ``req.metadata`` so there is exactly one source of
+        # truth — readers (eval/audit/observability) should consult
+        # ``ctx.metadata['policy.action']`` / ``['policy.resource']``.
+        resolved_resource = resource or self._config.model
+        ctx.metadata["policy.action"] = action
+        ctx.metadata["policy.resource"] = resolved_resource
         req = Request(
             model=self._config.model,
             messages=_to_messages(prompt),
             metadata={
                 "operation_name": operation_name,
-                "action": action,
-                "resource": resource or self._config.model,
                 **({"output_schema": schema} if schema else {}),
             },
             options=kwargs,
@@ -109,14 +119,18 @@ class EnterpriseLLM:
         **kwargs: Any,
     ) -> AsyncIterator[Chunk]:
         ctx = Context(request_id=uuid.uuid4().hex, identity=self._identity)
+        # See ``generate_text`` for the rationale: ``action``/``resource`` are
+        # trusted policy inputs and live ONLY on ``ctx.metadata`` to keep
+        # exactly one source of truth.
+        resolved_resource = resource or self._config.model
+        ctx.metadata["policy.action"] = action
+        ctx.metadata["policy.resource"] = resolved_resource
         req = Request(
             model=self._config.model,
             messages=_to_messages(prompt),
             stream=True,
             metadata={
                 "operation_name": operation_name,
-                "action": action,
-                "resource": resource or self._config.model,
                 **({"output_schema": schema} if schema else {}),
             },
             options=kwargs,
@@ -140,21 +154,36 @@ class EnterpriseLLM:
         if spec is None:
             raise MCPError(tool_name=tool_name, message="tool not found in registry")
 
+        # Build the request with policy-relevant fields derived inside the SDK.
+        # ``action`` and ``resource`` are authorization inputs — they MUST come
+        # from a trusted source (the tool name we just resolved), never from
+        # caller-controlled ``Request.metadata``. Allowing a caller to set
+        # ``metadata['action']='tool:lookup_account'`` would let them bypass a
+        # ``deny tool:transfer_funds`` rule.
         ctx = Context(request_id=uuid.uuid4().hex, identity=self._identity)
+        # SDK-trusted policy inputs live on ``ctx.metadata`` (per-pipeline,
+        # not part of ``Request`` and therefore not caller-mutable from the
+        # public API). ``PolicyMiddleware`` reads these — and ONLY these —
+        # for the auth decision. ``action``/``resource`` deliberately do not
+        # appear on ``req.metadata`` so there is one source of truth.
+        ctx.metadata["policy.action"] = f"tool:{tool_name}"
+        ctx.metadata["policy.resource"] = tool_name
         req = Request(
             model=self._config.model,
             messages=[],
             metadata={
                 "operation_name": "invoke_tool",
-                "action": f"tool:{tool_name}",
-                "resource": tool_name,
-                "tool_args": args,
+                "tool_name": tool_name,
             },
         )
 
         async def terminal(r: Request, c: Context) -> Response:
-            invoked_args = r.metadata.get("tool_args", args)
-            result = await registry.invoke(tool_name, invoked_args)
+            # Use the original ``args`` captured in the closure rather than
+            # ``r.metadata`` so middleware cannot swap the tool's input
+            # silently. Pass ``ctx.identity`` to the registry so the
+            # ``requires_auth`` gate sees the same identity the policy
+            # middleware just authorized against.
+            result = await registry.invoke(tool_name, args, identity=c.identity)
             return Response(text=str(result), payload=result)
 
         resp = await self._pipeline.run(req, ctx, terminal)

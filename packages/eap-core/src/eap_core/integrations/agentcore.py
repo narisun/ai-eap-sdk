@@ -389,13 +389,23 @@ class InboundJwtVerifier:
         self,
         *,
         discovery_url: str,
-        allowed_audiences: list[str] | None = None,
+        allowed_audiences: list[str],
         allowed_scopes: list[str] | None = None,
         allowed_clients: list[str] | None = None,
         jwks_cache_ttl_seconds: int = 600,
     ) -> None:
+        # Audience validation is MANDATORY. The previous default of
+        # ``allowed_audiences=None`` silently disabled ``aud`` checking,
+        # which means a default-constructed verifier would accept a token
+        # minted for ANY agent — a critical authorization gap (C4).
+        if not allowed_audiences:
+            raise ValueError(
+                "InboundJwtVerifier requires at least one allowed_audience — "
+                "audience validation is mandatory. Pass the audience(s) your "
+                "agent accepts."
+            )
         self._discovery_url = discovery_url
-        self._allowed_audiences = set(allowed_audiences or [])
+        self._allowed_audiences = set(allowed_audiences)
         self._allowed_scopes = set(allowed_scopes or [])
         self._allowed_clients = set(allowed_clients or [])
         self._cache_ttl = jwks_cache_ttl_seconds
@@ -461,8 +471,12 @@ class InboundJwtVerifier:
             token,
             signing_key,
             algorithms=["RS256", "RS384", "RS512"],
-            audience=list(self._allowed_audiences) if self._allowed_audiences else None,
-            options={"verify_aud": bool(self._allowed_audiences)},
+            audience=list(self._allowed_audiences),
+            options={
+                "verify_aud": True,
+                "require": ["exp", "iat", "aud"],
+            },
+            leeway=30,
         )
 
         if self._allowed_clients:

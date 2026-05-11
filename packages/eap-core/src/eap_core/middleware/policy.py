@@ -85,8 +85,27 @@ class PolicyMiddleware(PassthroughMiddleware):
         self._eval = evaluator
 
     async def on_request(self, req: Request, ctx: Context) -> Request:
-        action = req.metadata.get("action", "generate_text")
-        resource = req.metadata.get("resource", req.model)
+        # ``action``/``resource`` are authorization inputs and MUST come from
+        # a trusted source. When the SDK plumbed canonical values through
+        # ``ctx.metadata`` (set inside ``EnterpriseLLM.invoke_tool`` /
+        # ``generate_text``), prefer those over anything in ``req.metadata`` —
+        # ``Request.metadata`` is caller-mutable and a bad caller could
+        # otherwise spoof ``action='tool:lookup_account'`` while actually
+        # invoking ``transfer_funds`` (H9).
+        #
+        # Probe membership rather than truthiness: a caller (or a middleware)
+        # that managed to set ``ctx.metadata['policy.action'] = ''`` must not
+        # cause the trusted slot to silently yield to ``req.metadata`` via
+        # ``or``'s falsy fall-through. The trust invariant lives here, not in
+        # the SDK call sites that populate ``ctx.metadata``.
+        if "policy.action" in ctx.metadata:
+            action = ctx.metadata["policy.action"]
+        else:
+            action = req.metadata.get("action", "generate_text")
+        if "policy.resource" in ctx.metadata:
+            resource = ctx.metadata["policy.resource"]
+        else:
+            resource = req.metadata.get("resource", req.model)
         decision = self._eval.evaluate(ctx.identity, action, resource)
         if not decision.allow:
             raise PolicyDeniedError(rule_id=decision.rule_id, reason=decision.reason)

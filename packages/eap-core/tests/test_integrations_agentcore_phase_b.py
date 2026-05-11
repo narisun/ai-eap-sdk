@@ -270,6 +270,7 @@ def test_inbound_jwt_verifier_rejects_unknown_kid():
     meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
+        allowed_audiences=["my-agent"],
     )
     # Issue token with a kid the JWKS doesn't know about
     token = _issue_token(pem, "unknown-kid")
@@ -328,7 +329,8 @@ def test_jwt_dependency_requires_fastapi():
     """
     pytest.importorskip("fastapi")
     verifier = InboundJwtVerifier(
-        discovery_url="https://idp.example/.well-known/openid-configuration"
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        allowed_audiences=["my-agent"],
     )
     dep = jwt_dependency(verifier)
     assert callable(dep)

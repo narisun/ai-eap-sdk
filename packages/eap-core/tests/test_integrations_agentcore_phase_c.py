@@ -220,8 +220,11 @@ async def test_add_gateway_to_registry_registers_proxy_specs():
     assert count == 2
     assert {s.name for s in reg.list_tools()} == {"lookup_account", "get_balance"}
 
-    # Dispatching through the registry forwards to the gateway.
-    result = await reg.invoke("lookup_account", {"id": "acct-1"})
+    # Dispatching through the registry forwards to the gateway. Gateway
+    # proxy specs are marked ``requires_auth=True`` (see the dedicated
+    # test below) so the dispatcher requires an ``identity`` — pass a
+    # stub one to exercise the forwarding path.
+    result = await reg.invoke("lookup_account", {"id": "acct-1"}, identity=object())
     assert result == "called lookup_account with {'id': 'acct-1'}"
     assert gw.calls == [("lookup_account", {"id": "acct-1"})]
 

@@ -11,6 +11,8 @@ import uuid
 from pathlib import Path
 
 from eap_core import EnterpriseLLM, RuntimeConfig
+from eap_core.identity.local_idp import LocalIdPStub
+from eap_core.identity.nhi import NonHumanIdentity
 from eap_core.mcp import default_registry
 from eap_core.middleware.observability import ObservabilityMiddleware
 from eap_core.middleware.pii import PiiMaskingMiddleware
@@ -26,6 +28,15 @@ def _load_policy() -> dict:
 
 
 def build_client() -> EnterpriseLLM:
+    # ``transfer_funds`` is registered with ``requires_auth=True`` so the MCP
+    # dispatcher will refuse to invoke it without an ``identity`` plumbed
+    # through ``ctx``. Wire a workload identity here — swap ``LocalIdPStub``
+    # for a real OIDC IdP integration in production.
+    identity = NonHumanIdentity(
+        client_id="bank-agent",
+        idp=LocalIdPStub(),
+        default_audience="bank-agent",
+    )
     return EnterpriseLLM(
         RuntimeConfig(provider="local", model="echo-1"),
         middlewares=[
@@ -35,6 +46,7 @@ def build_client() -> EnterpriseLLM:
             PolicyMiddleware(JsonPolicyEvaluator(_load_policy())),
             OutputValidationMiddleware(),
         ],
+        identity=identity,
         tool_registry=default_registry(),
     )
 
