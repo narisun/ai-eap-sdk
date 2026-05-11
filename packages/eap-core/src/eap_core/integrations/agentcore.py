@@ -1279,7 +1279,7 @@ class PaymentClient:
         self,
         *,
         wallet_provider_id: str,
-        max_spend_cents: int = 100,
+        max_spend_cents: int,
         currency: str = "USD",
         session_ttl_seconds: int = 3600,
         region: str = "us-east-1",

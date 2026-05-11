@@ -88,12 +88,12 @@ def test_ap2_construction_does_not_hit_google_cloud():
     import sys
 
     sys.modules.pop("google.cloud.aiplatform_v1beta1", None)
-    _ = AP2PaymentClient(wallet_provider_id="w1", project_id="p")
+    _ = AP2PaymentClient(wallet_provider_id="w1", project_id="p", max_spend_cents=100)
     assert "google.cloud.aiplatform_v1beta1" not in sys.modules
 
 
 def test_ap2_satisfies_payment_backend_protocol():
-    c = AP2PaymentClient(wallet_provider_id="w1", project_id="p")
+    c = AP2PaymentClient(wallet_provider_id="w1", project_id="p", max_spend_cents=100)
     assert isinstance(c, PaymentBackend)
     assert c.name == "ap2_payment"
 
@@ -112,20 +112,20 @@ def test_ap2_can_afford_within_budget():
 
 
 def test_ap2_session_id_starts_none():
-    c = AP2PaymentClient(wallet_provider_id="w1", project_id="p")
+    c = AP2PaymentClient(wallet_provider_id="w1", project_id="p", max_spend_cents=100)
     assert c.session_id is None
 
 
 @pytest.mark.asyncio
 async def test_ap2_start_session_gated():
-    c = AP2PaymentClient(wallet_provider_id="w1", project_id="p")
+    c = AP2PaymentClient(wallet_provider_id="w1", project_id="p", max_spend_cents=100)
     with pytest.raises(RealRuntimeDisabledError):
         await c.start_session()
 
 
 @pytest.mark.asyncio
 async def test_ap2_authorize_gated():
-    c = AP2PaymentClient(wallet_provider_id="w1", project_id="p")
+    c = AP2PaymentClient(wallet_provider_id="w1", project_id="p", max_spend_cents=100)
     req = PaymentRequired(
         amount_cents=10,
         currency="USD",
@@ -134,6 +134,14 @@ async def test_ap2_authorize_gated():
     )
     with pytest.raises(RealRuntimeDisabledError):
         await c.authorize(req)
+
+
+def test_ap2_payment_client_construction_requires_explicit_budget():
+    """H21: Same for the Vertex / AP2 client."""
+    from eap_core.integrations.vertex import AP2PaymentClient
+
+    with pytest.raises(TypeError):
+        AP2PaymentClient(wallet_provider_id="x", project_id="p")  # type: ignore[call-arg]
 
 
 # ---- Eval adapters --------------------------------------------------------

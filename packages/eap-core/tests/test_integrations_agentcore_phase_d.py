@@ -164,6 +164,14 @@ def test_payment_client_construction_is_cheap():
     assert "boto3" not in sys.modules
 
 
+def test_payment_client_construction_requires_explicit_budget():
+    """H21: max_spend_cents must be an explicit decision, not a silent default."""
+    from eap_core.integrations.agentcore import PaymentClient
+
+    with pytest.raises(TypeError):
+        PaymentClient(wallet_provider_id="x")  # type: ignore[call-arg]
+
+
 # ---- Evaluation adapters ------------------------------------------------
 
 

@@ -714,8 +714,8 @@ class AP2PaymentClient:
         *,
         wallet_provider_id: str,
         project_id: str,
+        max_spend_cents: int,
         location: str = "us-central1",
-        max_spend_cents: int = 100,
         currency: str = "USD",
         session_ttl_seconds: int = 3600,
     ) -> None:
