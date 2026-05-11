@@ -65,13 +65,26 @@ class ThreatDetector(Protocol):
     async def assess(self, text: str) -> ThreatAssessment: ...
 
 
-_DEFAULT_INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"ignore\s+(all\s+)?(previous|prior)\s+(instructions|directives)", re.I),
-    re.compile(r"disregard\s+(all\s+)?(previous|prior)", re.I),
-    re.compile(r"<<\s*sys\s*>>", re.I),
-    re.compile(r"\byou\s+are\s+now\s+(dan|developer\s+mode)\b", re.I),
-    re.compile(r"reveal\s+(your\s+)?system\s+prompt", re.I),
+#: Canonical prompt-injection regex set.
+#:
+#: Single source of truth for both ``RegexThreatDetector`` (this module) and
+#: ``eap_core.middleware.sanitize.PromptInjectionMiddleware``. Closes H13 —
+#: previously the tuple was duplicated in two places and could drift.
+INJECTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "ignore_previous",
+        re.compile(r"ignore\s+(all\s+)?(previous|prior)\s+(instructions|directives)", re.I),
+    ),
+    ("disregard_previous", re.compile(r"disregard\s+(all\s+)?(previous|prior)", re.I)),
+    ("sys_override", re.compile(r"<<\s*sys\s*>>", re.I)),
+    ("dan_jailbreak", re.compile(r"\byou\s+are\s+now\s+(dan|developer\s+mode)\b", re.I)),
+    ("reveal_system_prompt", re.compile(r"reveal\s+(your\s+)?system\s+prompt", re.I)),
 )
+
+
+# Backwards-compatible alias retained for any external import that may have
+# referenced the previous private name. New code should use ``INJECTION_PATTERNS``.
+_DEFAULT_INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(p for _, p in INJECTION_PATTERNS)
 
 
 class RegexThreatDetector:
@@ -100,6 +113,7 @@ class RegexThreatDetector:
 
 
 __all__ = [
+    "INJECTION_PATTERNS",
     "RegexThreatDetector",
     "ThreatAssessment",
     "ThreatDetector",

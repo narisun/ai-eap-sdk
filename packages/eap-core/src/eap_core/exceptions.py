@@ -1,15 +1,30 @@
 """EAP-Core exception hierarchy."""
 
+from __future__ import annotations
+
+import hashlib
+
 
 class EapError(Exception):
     """Base for all eap-core exceptions."""
 
 
 class PromptInjectionError(EapError):
-    def __init__(self, reason: str, matched: str | None = None) -> None:
-        super().__init__(reason)
-        self.reason = reason
-        self.matched = matched
+    """Raised when prompt-injection patterns match in user input.
+
+    Carries a short SHA-256 prefix of the matched text (``matched_hash``)
+    plus the regex ``pattern`` that fired. The raw matched text is **not**
+    stored on the exception — that landed in spans / trajectories / logs
+    that may not be PII-scrubbed downstream (H7). The hash is enough for
+    audit correlation without leaking user content.
+    """
+
+    def __init__(self, *, matched: str, pattern: str) -> None:
+        self.matched_hash = hashlib.sha256(matched.encode("utf-8")).hexdigest()[:16]
+        self.pattern = pattern
+        super().__init__(
+            f"prompt-injection: pattern {pattern!r} matched (hash {self.matched_hash})"
+        )
 
 
 class PolicyDeniedError(EapError):

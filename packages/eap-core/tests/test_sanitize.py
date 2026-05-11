@@ -28,8 +28,12 @@ async def test_blocks_known_injection_patterns(payload: str):
     mw = PromptInjectionMiddleware()
     req = Request(model="m", messages=[Message(role="user", content=payload)])
     ctx = Context()
-    with pytest.raises(PromptInjectionError):
+    with pytest.raises(PromptInjectionError) as ei:
         await mw.on_request(req, ctx)
+    # Error carries hash + pattern, NOT the raw matched text (H7).
+    assert ei.value.matched_hash
+    assert ei.value.pattern
+    assert payload not in str(ei.value)
 
 
 async def test_custom_classifier_can_override_decision():

@@ -1,8 +1,10 @@
 """Prompt-injection detection middleware.
 
-Default detector is a small regex set covering common patterns. Callers
-can plug in a more sophisticated classifier (LLM- or model-based) via
-the `extra_classifier` argument.
+Default detector is a small regex set covering common patterns,
+imported from :mod:`eap_core.security` so that ``RegexThreatDetector``
+and ``PromptInjectionMiddleware`` share one source of truth (H13).
+Callers can plug in a more sophisticated classifier (LLM- or
+model-based) via the ``extra_classifier`` argument.
 """
 
 from __future__ import annotations
@@ -12,15 +14,8 @@ from collections.abc import Awaitable, Callable
 
 from eap_core.exceptions import PromptInjectionError
 from eap_core.middleware.base import PassthroughMiddleware
+from eap_core.security import INJECTION_PATTERNS
 from eap_core.types import Context, Message, Request
-
-_DEFAULT_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"ignore\s+(all\s+)?(previous|prior)\s+(instructions|directives)", re.I),
-    re.compile(r"disregard\s+(all\s+)?(previous|prior)", re.I),
-    re.compile(r"<<\s*sys\s*>>", re.I),
-    re.compile(r"\byou\s+are\s+now\s+(dan|developer\s+mode)\b", re.I),
-    re.compile(r"reveal\s+(your\s+)?system\s+prompt", re.I),
-)
 
 
 def _content_text(msg: Message) -> str:
@@ -36,20 +31,18 @@ class PromptInjectionMiddleware(PassthroughMiddleware):
 
     def __init__(
         self,
-        patterns: tuple[re.Pattern[str], ...] | None = None,
+        patterns: tuple[tuple[str, re.Pattern[str]], ...] | None = None,
         extra_classifier: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
-        self._patterns = patterns or _DEFAULT_PATTERNS
+        self._patterns: tuple[tuple[str, re.Pattern[str]], ...] = patterns or INJECTION_PATTERNS
         self._classifier = extra_classifier
 
     async def on_request(self, req: Request, ctx: Context) -> Request:
         for msg in req.messages:
             text = _content_text(msg)
-            for pat in self._patterns:
+            for _label, pat in self._patterns:
                 if pat.search(text):
-                    raise PromptInjectionError(
-                        reason=f"matched pattern {pat.pattern!r}", matched=text[:200]
-                    )
+                    raise PromptInjectionError(matched=text, pattern=pat.pattern)
             if self._classifier is not None and await self._classifier(text):
-                raise PromptInjectionError(reason="classifier flagged input", matched=text[:200])
+                raise PromptInjectionError(matched=text, pattern="<classifier>")
         return req
