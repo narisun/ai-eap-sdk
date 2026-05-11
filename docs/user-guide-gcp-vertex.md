@@ -311,6 +311,7 @@ from fastapi import FastAPI, Depends
 
 verifier = InboundJwtVerifier(
     discovery_url="https://accounts.google.com/.well-known/openid-configuration",
+    issuer="https://accounts.google.com",
     allowed_audiences=["my-bank-agent.example.com"],
     # allowed_clients=["service-account-numeric-id"],   # tighten further
 )
@@ -683,9 +684,11 @@ from fastapi import Depends
 
 verifier = InboundJwtVerifier(
     discovery_url="https://accounts.google.com/.well-known/openid-configuration",
+    issuer="https://accounts.google.com",
     allowed_audiences=["my-agent.example.com"],
     allowed_clients=["service-account-numeric-id"],   # optional
     jwks_cache_ttl_seconds=600,
+    clock_skew_seconds=30,
 )
 
 @app.post("/invocations")

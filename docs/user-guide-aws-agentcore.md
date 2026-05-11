@@ -285,6 +285,7 @@ from fastapi import FastAPI, Depends
 
 verifier = InboundJwtVerifier(
     discovery_url="https://agentcore-identity.us-east-1.amazonaws.com/.well-known/openid-configuration",
+    issuer="https://agentcore-identity.us-east-1.amazonaws.com",
     allowed_audiences=["my-bank-agent"],
     allowed_scopes=["agent:invoke"],
 )
@@ -594,10 +595,12 @@ from fastapi import Depends
 
 verifier = InboundJwtVerifier(
     discovery_url="https://agentcore-identity.us-east-1.amazonaws.com/.well-known/openid-configuration",
+    issuer="https://agentcore-identity.us-east-1.amazonaws.com",
     allowed_audiences=["my-agent"],
     allowed_scopes=["agent:invoke"],
     allowed_clients=["specific-client-id"],   # optional, narrow further
     jwks_cache_ttl_seconds=600,                # default; tune for your IdP
+    clock_skew_seconds=30,                     # default; tune for your IdP
 )
 
 @app.post("/invocations")

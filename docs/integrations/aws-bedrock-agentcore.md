@@ -227,6 +227,7 @@ from fastapi import Depends
 
 verifier = InboundJwtVerifier(
     discovery_url="https://your-idp.example/.well-known/openid-configuration",
+    issuer="https://your-idp.example",
     allowed_audiences=["my-agent"],
     allowed_scopes=["agent:invoke"],
 )

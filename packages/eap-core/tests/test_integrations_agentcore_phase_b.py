@@ -208,10 +208,14 @@ def _issue_token(
 
 def test_inbound_jwt_verifier_accepts_valid_token():
     pem, kid, jwks = _make_test_keypair_and_jwks()
-    meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["my-agent"],
+        issuer="https://idp.example",
     )
     token = _issue_token(pem, kid)
     claims = verifier.verify(token, http_get=_make_http_get(meta, jwks))
@@ -223,10 +227,14 @@ def test_inbound_jwt_verifier_rejects_wrong_audience():
     import jwt as _jwt
 
     pem, kid, jwks = _make_test_keypair_and_jwks()
-    meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["other-agent"],
+        issuer="https://idp.example",
     )
     token = _issue_token(pem, kid, aud="my-agent")
     with pytest.raises(_jwt.InvalidAudienceError):
@@ -237,11 +245,15 @@ def test_inbound_jwt_verifier_rejects_disallowed_client():
     import jwt as _jwt
 
     pem, kid, jwks = _make_test_keypair_and_jwks()
-    meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["my-agent"],
         allowed_clients=["expected-client"],
+        issuer="https://idp.example",
     )
     token = _issue_token(pem, kid, client_id="impostor")
     with pytest.raises(_jwt.InvalidTokenError, match="client_id"):
@@ -252,11 +264,15 @@ def test_inbound_jwt_verifier_rejects_missing_scope():
     import jwt as _jwt
 
     pem, kid, jwks = _make_test_keypair_and_jwks()
-    meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["my-agent"],
         allowed_scopes=["agent:admin"],
+        issuer="https://idp.example",
     )
     token = _issue_token(pem, kid, scope="agent:read")
     with pytest.raises(_jwt.InvalidTokenError, match="scope"):
@@ -267,10 +283,14 @@ def test_inbound_jwt_verifier_rejects_unknown_kid():
     import jwt as _jwt
 
     pem, _kid, jwks = _make_test_keypair_and_jwks()
-    meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["my-agent"],
+        issuer="https://idp.example",
     )
     # Issue token with a kid the JWKS doesn't know about
     token = _issue_token(pem, "unknown-kid")
@@ -282,10 +302,14 @@ def test_inbound_jwt_verifier_rejects_expired_token():
     import jwt as _jwt
 
     pem, kid, jwks = _make_test_keypair_and_jwks()
-    meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["my-agent"],
+        issuer="https://idp.example",
     )
     token = _issue_token(pem, kid, exp_offset=-60)  # expired 1 minute ago
     with pytest.raises(_jwt.ExpiredSignatureError):
@@ -295,7 +319,10 @@ def test_inbound_jwt_verifier_rejects_expired_token():
 def test_inbound_jwt_verifier_caches_jwks():
     """Repeated verify calls should not refetch JWKS within the TTL."""
     pem, kid, jwks = _make_test_keypair_and_jwks()
-    meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
     call_count = {"n": 0}
 
     def _counting_get(url: str):
@@ -307,6 +334,7 @@ def test_inbound_jwt_verifier_caches_jwks():
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["my-agent"],
+        issuer="https://idp.example",
     )
     token = _issue_token(pem, kid)
     verifier.verify(token, http_get=_counting_get)
@@ -331,6 +359,7 @@ def test_jwt_dependency_requires_fastapi():
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["my-agent"],
+        issuer="https://idp.example",
     )
     dep = jwt_dependency(verifier)
     assert callable(dep)

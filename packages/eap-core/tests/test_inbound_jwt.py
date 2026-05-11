@@ -1,9 +1,13 @@
-"""Tests for ``InboundJwtVerifier`` construction-time invariants (C4).
+"""Tests for ``InboundJwtVerifier`` construction-time invariants (C4) and
+JWKS/issuer trust pinning (C1, C2, C3).
 
 The verifier MUST refuse to be constructed without at least one
-``allowed_audience``, and ``verify`` MUST always require the ``exp``,
-``iat``, and ``aud`` claims to be present (defense against
-"unbounded-lifetime" tokens or tokens that simply omit ``aud``).
+``allowed_audience`` and without an ``issuer``, MUST reject plaintext
+discovery URLs, MUST refuse to follow a ``jwks_uri`` to a different
+origin than ``discovery_url``, and ``verify`` MUST always require the
+``exp``, ``iat``, ``aud``, and ``iss`` claims to be present (defense
+against "unbounded-lifetime" tokens or tokens that simply omit
+``aud``/``iss``).
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ def test_requires_at_least_one_audience() -> None:
         InboundJwtVerifier(
             discovery_url="https://idp.example/.well-known/openid-configuration",
             allowed_audiences=[],
+            issuer="https://idp.example",
         )
 
 
@@ -33,6 +38,232 @@ def test_requires_audience_kwarg_explicitly() -> None:
     with pytest.raises(TypeError):
         InboundJwtVerifier(  # type: ignore[call-arg]
             discovery_url="https://idp.example/.well-known/openid-configuration",
+            issuer="https://idp.example",
+        )
+
+
+# ---- C2: issuer is a required constructor arg -----------------------------
+
+
+def test_requires_issuer() -> None:
+    """Omitting ``issuer`` is a TypeError — pinning is mandatory."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    with pytest.raises(TypeError):
+        InboundJwtVerifier(  # type: ignore[call-arg]
+            discovery_url="https://idp.example/.well-known/openid-configuration",
+            allowed_audiences=["agent"],
+            # issuer missing
+        )
+
+
+# ---- C1: scheme + same-host enforcement on discovery_url + jwks_uri -------
+
+
+def test_rejects_http_discovery_url() -> None:
+    """A plaintext ``http://`` discovery URL is a MITM hole — reject."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    with pytest.raises(ValueError, match="https"):
+        InboundJwtVerifier(
+            discovery_url="http://idp.example/.well-known/openid-configuration",
+            allowed_audiences=["agent"],
+            issuer="https://idp.example",
+        )
+
+
+def test_rejects_cross_host_jwks_uri() -> None:
+    """A discovery doc that points jwks_uri at a different origin is rejected."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    class FakeResp:
+        def __init__(self, data: dict[str, Any]) -> None:
+            self._data = data
+
+        def json(self) -> dict[str, Any]:
+            return self._data
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        allowed_audiences=["agent"],
+        issuer="https://idp.example",
+    )
+
+    def http_get(url: str) -> FakeResp:
+        if url == "https://idp.example/.well-known/openid-configuration":
+            return FakeResp(
+                {
+                    "jwks_uri": "https://attacker.example/jwks",
+                    "issuer": "https://idp.example",
+                }
+            )
+        return FakeResp({"keys": []})
+
+    with pytest.raises(ValueError, match="same host"):
+        verifier._refresh_jwks(http_get)
+
+
+def test_rejects_http_jwks_uri() -> None:
+    """A discovery doc that advertises an http:// jwks_uri is rejected."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    class FakeResp:
+        def __init__(self, data: dict[str, Any]) -> None:
+            self._data = data
+
+        def json(self) -> dict[str, Any]:
+            return self._data
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        allowed_audiences=["agent"],
+        issuer="https://idp.example",
+    )
+
+    def http_get(url: str) -> FakeResp:
+        return FakeResp({"jwks_uri": "http://idp.example/jwks", "issuer": "https://idp.example"})
+
+    with pytest.raises(ValueError, match="https"):
+        verifier._refresh_jwks(http_get)
+
+
+def test_rejects_mismatched_advertised_issuer() -> None:
+    """Discovery doc's ``issuer`` field must match the configured issuer."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    class FakeResp:
+        def __init__(self, data: dict[str, Any]) -> None:
+            self._data = data
+
+        def json(self) -> dict[str, Any]:
+            return self._data
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        allowed_audiences=["agent"],
+        issuer="https://idp.example",
+    )
+
+    def http_get(url: str) -> FakeResp:
+        if url.endswith("/.well-known/openid-configuration"):
+            return FakeResp(
+                {
+                    "jwks_uri": "https://idp.example/jwks",
+                    "issuer": "https://attacker.example",
+                }
+            )
+        return FakeResp({"keys": []})
+
+    with pytest.raises(ValueError, match="issuer"):
+        verifier._refresh_jwks(http_get)
+
+
+def test_rejects_discovery_doc_without_issuer_field() -> None:
+    """OIDC Discovery 1.0 §3 makes ``issuer`` REQUIRED — a missing field
+    must not silently bypass the cross-check."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    class FakeResp:
+        def __init__(self, data: dict[str, Any]) -> None:
+            self._data = data
+
+        def json(self) -> dict[str, Any]:
+            return self._data
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        allowed_audiences=["agent"],
+        issuer="https://idp.example",
+    )
+
+    def http_get(url: str) -> FakeResp:
+        if url.endswith("/.well-known/openid-configuration"):
+            # jwks_uri present, but ``issuer`` deliberately omitted.
+            return FakeResp({"jwks_uri": "https://idp.example/jwks"})
+        return FakeResp({"keys": []})
+
+    with pytest.raises(ValueError, match="no 'issuer' field"):
+        verifier._refresh_jwks(http_get)
+
+
+def test_accepts_mixed_case_jwks_host() -> None:
+    """RFC 3986 §3.2.2: host is case-insensitive. ``IDP.example`` and
+    ``idp.example`` are the same origin."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    class FakeResp:
+        def __init__(self, data: dict[str, Any]) -> None:
+            self._data = data
+
+        def json(self) -> dict[str, Any]:
+            return self._data
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        allowed_audiences=["agent"],
+        issuer="https://idp.example",
+    )
+
+    def http_get(url: str) -> FakeResp:
+        if url.endswith("/.well-known/openid-configuration"):
+            return FakeResp(
+                {
+                    "jwks_uri": "https://IDP.example/jwks",
+                    "issuer": "https://idp.example",
+                }
+            )
+        return FakeResp({"keys": []})
+
+    # Must NOT raise — mixed-case host is the same origin.
+    verifier._refresh_jwks(http_get)
+
+
+def test_accepts_explicit_default_https_port_in_jwks_uri() -> None:
+    """``https://idp.example`` and ``https://idp.example:443`` are the
+    same origin — implicit default port must compare equal to explicit
+    ``:443``."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    class FakeResp:
+        def __init__(self, data: dict[str, Any]) -> None:
+            self._data = data
+
+        def json(self) -> dict[str, Any]:
+            return self._data
+
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        allowed_audiences=["agent"],
+        issuer="https://idp.example",
+    )
+
+    def http_get(url: str) -> FakeResp:
+        if url.endswith("/.well-known/openid-configuration"):
+            return FakeResp(
+                {
+                    "jwks_uri": "https://idp.example:443/jwks",
+                    "issuer": "https://idp.example",
+                }
+            )
+        return FakeResp({"keys": []})
+
+    # Must NOT raise — explicit :443 is the default https port.
+    verifier._refresh_jwks(http_get)
+
+
+# ---- Issuer scheme validation at construction -----------------------------
+
+
+def test_rejects_http_issuer() -> None:
+    """An ``http://`` issuer is rejected — we won't pin to a plaintext
+    issuer string while claiming https-only discovery."""
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    with pytest.raises(ValueError, match="http://"):
+        InboundJwtVerifier(
+            discovery_url="https://idp.example/.well-known/openid-configuration",
+            allowed_audiences=["agent"],
+            issuer="http://idp.example",
         )
 
 
@@ -87,10 +318,14 @@ def test_token_without_exp_is_rejected() -> None:
     from eap_core.integrations.agentcore import InboundJwtVerifier
 
     pem, kid, jwks = _make_test_keypair_and_jwks()
-    meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["my-agent"],
+        issuer="https://idp.example",
     )
     # iat + aud but no exp.
     token = _encode_token(
@@ -113,10 +348,14 @@ def test_token_without_iat_is_rejected() -> None:
     from eap_core.integrations.agentcore import InboundJwtVerifier
 
     pem, kid, jwks = _make_test_keypair_and_jwks()
-    meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["my-agent"],
+        issuer="https://idp.example",
     )
     token = _encode_token(
         pem,
@@ -138,10 +377,14 @@ def test_token_without_aud_is_rejected() -> None:
     from eap_core.integrations.agentcore import InboundJwtVerifier
 
     pem, kid, jwks = _make_test_keypair_and_jwks()
-    meta = {"jwks_uri": "https://idp.example/.well-known/jwks.json"}
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
     verifier = InboundJwtVerifier(
         discovery_url="https://idp.example/.well-known/openid-configuration",
         allowed_audiences=["my-agent"],
+        issuer="https://idp.example",
     )
     token = _encode_token(
         pem,
@@ -156,4 +399,36 @@ def test_token_without_aud_is_rejected() -> None:
     # PyJWT raises ``MissingRequiredClaimError("aud")`` because ``require``
     # includes "aud" — this is the regression test for C4.
     with pytest.raises(_jwt.MissingRequiredClaimError, match="aud"):
+        verifier.verify(token, http_get=_make_http_get(meta, jwks))
+
+
+def test_token_with_wrong_issuer_is_rejected() -> None:
+    """A token whose ``iss`` claim disagrees with the configured issuer
+    is rejected — closes C2."""
+    import jwt as _jwt
+
+    from eap_core.integrations.agentcore import InboundJwtVerifier
+
+    pem, kid, jwks = _make_test_keypair_and_jwks()
+    meta = {
+        "jwks_uri": "https://idp.example/.well-known/jwks.json",
+        "issuer": "https://idp.example",
+    }
+    verifier = InboundJwtVerifier(
+        discovery_url="https://idp.example/.well-known/openid-configuration",
+        allowed_audiences=["my-agent"],
+        issuer="https://idp.example",
+    )
+    token = _encode_token(
+        pem,
+        kid,
+        {
+            "iss": "https://attacker.example",
+            "sub": "user-1",
+            "aud": "my-agent",
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 600,
+        },
+    )
+    with pytest.raises(_jwt.InvalidIssuerError):
         verifier.verify(token, http_get=_make_http_get(meta, jwks))

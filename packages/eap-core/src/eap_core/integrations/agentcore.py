@@ -13,8 +13,24 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from urllib.parse import urlparse
 
 from eap_core.identity.token_exchange import OIDCTokenExchange as _BaseOIDCTokenExchange
+
+
+def _origin(url: str) -> tuple[str, str, int | None]:
+    """Return a normalized ``(scheme, host, port)`` origin tuple for ``url``.
+
+    Used for RFC 3986 §3.2.2-correct origin comparison: hosts are
+    case-insensitive, and an implicit default port (``443`` for https)
+    must compare equal to an explicit ``:443``. Byte-equality on
+    ``urlparse(...).netloc`` would falsely reject ``IDP.example`` vs
+    ``idp.example`` and ``idp.example`` vs ``idp.example:443``.
+    """
+    p = urlparse(url)
+    host = (p.hostname or "").lower()
+    port = p.port if p.port is not None else (443 if p.scheme == "https" else None)
+    return (p.scheme, host, port)
 
 
 def _agentcore_identity_token_endpoint(region: str) -> str:
@@ -389,26 +405,54 @@ class InboundJwtVerifier:
         self,
         *,
         discovery_url: str,
+        issuer: str,
         allowed_audiences: list[str],
         allowed_scopes: list[str] | None = None,
         allowed_clients: list[str] | None = None,
         jwks_cache_ttl_seconds: int = 600,
+        clock_skew_seconds: int = 30,
     ) -> None:
         # Audience validation is MANDATORY. The previous default of
         # ``allowed_audiences=None`` silently disabled ``aud`` checking,
         # which means a default-constructed verifier would accept a token
         # minted for ANY agent — a critical authorization gap (C4).
+        #
+        # ``discovery_url`` MUST be https — plaintext OIDC discovery is a
+        # MITM hole. An attacker who can rewrite the discovery doc can
+        # point ``jwks_uri`` at their own JWKS and forge tokens (C1).
+        # ``issuer`` is required so we can pin the ``iss`` claim during
+        # ``jwt.decode`` (C2) and cross-check the discovery doc's
+        # advertised issuer.
+        parsed = urlparse(discovery_url)
+        if parsed.scheme != "https":
+            raise ValueError(
+                f"discovery_url must be https (got {parsed.scheme!r}); "
+                "plaintext OIDC discovery is insecure"
+            )
         if not allowed_audiences:
             raise ValueError(
                 "InboundJwtVerifier requires at least one allowed_audience — "
                 "audience validation is mandatory. Pass the audience(s) your "
                 "agent accepts."
             )
+        # ``issuer`` may legally be a non-URL identifier (some OIDC providers
+        # use opaque strings), but if it parses as a URL the scheme MUST NOT
+        # be ``http://`` — pinning ``iss`` to a plaintext URL claims https-only
+        # discovery while accepting an http-flavored issuer.
+        issuer_parsed = urlparse(issuer)
+        if issuer_parsed.scheme == "http":
+            raise ValueError(
+                f"issuer must not use http:// scheme (got {issuer!r}); "
+                "use https:// or a non-URL issuer identifier"
+            )
         self._discovery_url = discovery_url
+        self._discovery_origin = _origin(discovery_url)
+        self._issuer = issuer
         self._allowed_audiences = set(allowed_audiences)
         self._allowed_scopes = set(allowed_scopes or [])
         self._allowed_clients = set(allowed_clients or [])
         self._cache_ttl = jwks_cache_ttl_seconds
+        self._clock_skew = clock_skew_seconds
         self._jwks: list[dict[str, Any]] = []
         self._jwks_fetched_at: float = 0.0
 
@@ -418,6 +462,18 @@ class InboundJwtVerifier:
         ``http_get`` is a callable returning a response-like object with
         ``.json()``; injected for testability. In production code call
         ``verify(token, http_get=httpx.get)``.
+
+        Enforces (C1):
+
+        - The advertised ``jwks_uri`` is https.
+        - The advertised ``jwks_uri`` is on the SAME origin as
+          ``discovery_url`` (RFC 3986 §3.2.2 case-insensitive host, plus
+          implicit-default-port normalization) — we refuse to fetch keys
+          from a third-party origin even if the discovery doc tells us to.
+        - The discovery doc's ``issuer`` field is REQUIRED (OIDC
+          Discovery 1.0 §3) and must match the configured ``issuer``
+          (C2 cross-check). A missing field is a §6.6 silent-degrade
+          attack vector — reject explicitly.
         """
         # 1. fetch the OIDC discovery doc, find jwks_uri
         meta_resp = http_get(self._discovery_url)
@@ -425,6 +481,35 @@ class InboundJwtVerifier:
         jwks_uri = meta.get("jwks_uri")
         if not jwks_uri:
             raise ValueError(f"discovery doc at {self._discovery_url} has no jwks_uri")
+        parsed = urlparse(jwks_uri)
+        if parsed.scheme != "https":
+            raise ValueError(
+                f"jwks_uri must be https (got {parsed.scheme!r}); "
+                "plaintext JWKS retrieval is insecure"
+            )
+        jwks_origin = _origin(jwks_uri)
+        if jwks_origin != self._discovery_origin:
+            raise ValueError(
+                f"jwks_uri origin {jwks_origin!r} does not match discovery origin "
+                f"{self._discovery_origin!r} — refusing to fetch keys from a "
+                "third-party origin (must be on the same host as discovery_url)"
+            )
+        # Cross-check: the discovery doc MUST advertise its issuer (OIDC
+        # Discovery 1.0 §3 makes ``issuer`` REQUIRED) and it must agree
+        # with the configured one. A missing field would silently bypass
+        # the cross-check; a mismatch means the discovery doc is for a
+        # different IdP (or has been tampered with).
+        advertised_iss = meta.get("issuer")
+        if not advertised_iss:
+            raise ValueError(
+                f"discovery doc at {self._discovery_url} has no 'issuer' field "
+                "(required by OIDC Discovery 1.0)"
+            )
+        if advertised_iss != self._issuer:
+            raise ValueError(
+                f"discovery doc issuer {advertised_iss!r} does not match "
+                f"configured issuer {self._issuer!r}"
+            )
         # 2. fetch the JWKS itself
         jwks_resp = http_get(jwks_uri)
         keys = jwks_resp.json().get("keys", [])
@@ -472,11 +557,15 @@ class InboundJwtVerifier:
             signing_key,
             algorithms=["RS256", "RS384", "RS512"],
             audience=list(self._allowed_audiences),
+            issuer=self._issuer,
             options={
                 "verify_aud": True,
-                "require": ["exp", "iat", "aud"],
+                "verify_iss": True,
+                "verify_exp": True,
+                "verify_iat": True,
+                "require": ["exp", "iat", "aud", "iss"],
             },
-            leeway=30,
+            leeway=self._clock_skew,
         )
 
         if self._allowed_clients:
@@ -505,6 +594,7 @@ def jwt_dependency(verifier: InboundJwtVerifier) -> Any:
 
         verifier = InboundJwtVerifier(
             discovery_url="https://your-idp/.well-known/openid-configuration",
+            issuer="https://your-idp",
             allowed_audiences=["my-agent-audience"],
         )
 
