@@ -78,6 +78,80 @@ class JsonPolicyEvaluator:
         return PolicyDecision(False, "default-deny", "no rule matched")
 
 
+class CedarPolicyEvaluator:
+    """Real Cedar engine adapter. Requires the ``[policy-cedar]`` extra.
+
+    Unlike :class:`JsonPolicyEvaluator` (which takes a JSON document and
+    runs an in-house matcher), this evaluator takes a Cedar DSL policy
+    text and delegates to :func:`cedarpy.is_authorized` for the decision.
+    Use this when you need Cedar's full semantics (entity hierarchies,
+    ABAC context, ``like`` / ``in`` operators, ``when`` / ``unless``
+    clauses with attribute access).
+
+    The evaluator maps EAP-Core's ``(principal, action, resource)``
+    triple onto Cedar's request shape:
+
+    - principal: ``User::"<client_id>"`` (or ``Unknown::"anonymous"``
+      when no ``client_id`` is resolvable)
+    - action:    ``Action::"<action>"``
+    - resource:  ``Resource::"<resource>"``
+    - context:   empty dict (subclass and override ``_context`` to inject)
+
+    Custom entity hierarchies (the third argument to
+    :func:`cedarpy.is_authorized`) default to ``[]`` — callers needing
+    groups or attributes should subclass and override :meth:`_entities`.
+    """
+
+    def __init__(self, policy_text: str) -> None:
+        try:
+            import cedarpy  # noqa: F401
+        except ImportError as e:
+            raise PolicyConfigurationError(
+                "CedarPolicyEvaluator requires the [policy-cedar] extra "
+                "(install with `pip install eap-core[policy-cedar]`)."
+            ) from e
+        self._policy_text = policy_text
+
+    def _entities(self) -> list[dict[str, Any]]:
+        """Entity store passed to Cedar. Default: empty list.
+
+        Override to inject entity hierarchies (parents, attributes) when
+        your policies need them.
+        """
+        return []
+
+    def evaluate(self, principal: Any, action: str, resource: str) -> PolicyDecision:
+        import cedarpy
+
+        principal_id = getattr(principal, "client_id", None) if principal else None
+        principal_uid = f'User::"{principal_id}"' if principal_id else 'Unknown::"anonymous"'
+        request = {
+            "principal": principal_uid,
+            "action": f'Action::"{action}"',
+            "resource": f'Resource::"{resource}"',
+            "context": {},
+        }
+        result = cedarpy.is_authorized(
+            request=request,
+            policies=self._policy_text,
+            entities=self._entities(),
+        )
+        # cedarpy>=4.x returns an AuthzResult dataclass-like object with
+        # ``.decision`` (a ``Decision`` enum: Allow/Deny/NoDecision) and
+        # ``.diagnostics`` (with ``.reasons`` list[str] of policy ids and
+        # ``.errors`` list). See Step 1.1 of the v0.7.0 plan for the
+        # discovery output that pinned this shape.
+        decision = result.decision
+        reasons = result.diagnostics.reasons
+        rule_id = reasons[0] if reasons else "cedar-default"
+        allow = decision == cedarpy.Decision.Allow
+        return PolicyDecision(
+            allow=allow,
+            rule_id=rule_id,
+            reason=f"cedar decision: {decision.value}",
+        )
+
+
 class PolicyMiddleware(PassthroughMiddleware):
     name = "policy"
 

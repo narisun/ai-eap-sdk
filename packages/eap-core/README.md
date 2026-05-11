@@ -29,7 +29,7 @@ downstream `uv add` flow — live in the top-level
 | `mcp` | Official `mcp` SDK — stdio MCP server transport (default uses the in-tree pure-Python registry) |
 | `a2a` | `fastapi` — serve the A2A AgentCard over HTTP |
 | `eval` | `ragas` adapter for `EvalRunner` (default uses the in-tree `FaithfulnessScorer`) |
-| `policy-cedar` | `cedarpy` — production policy engine (default uses the in-tree JSON evaluator) |
+| `policy-cedar` | `cedarpy` — real Cedar engine via `CedarPolicyEvaluator` (default uses the in-tree `JsonPolicyEvaluator`). See [developer-guide §4.4](../../docs/developer-guide.md#44-add-a-custom-policy-evaluator) for the swap. |
 
 Install one at a time or all at once:
 

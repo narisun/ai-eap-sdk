@@ -705,6 +705,38 @@ mw = PolicyMiddleware(OPAPolicyEvaluator(opa_url="http://opa:8181", package="eap
   should fail closed (deny) with a `rule_id` like `"opa-error"` so
   audit can distinguish from real denials.
 
+#### Real Cedar engine (`CedarPolicyEvaluator`)
+
+For production deployments where the Cedar-shaped JSON gate hits its
+expressiveness ceiling, `CedarPolicyEvaluator` delegates to AWS's
+open-source Cedar engine (`cedarpy>=2.4`) under the `[policy-cedar]`
+extra. It accepts Cedar DSL text directly and supports the full
+grammar: `when` / `unless` clauses with attribute access, entity
+hierarchies, `like` and `in` operators, etc.
+
+```python
+from eap_core.middleware.policy import CedarPolicyEvaluator, PolicyMiddleware
+
+policy = """
+permit (principal, action == Action::"read", resource);
+forbid (principal, action == Action::"transfer", resource)
+  when { !(principal has roles && principal.roles.contains("admin")) };
+"""
+mw = PolicyMiddleware(CedarPolicyEvaluator(policy))
+```
+
+The Protocol is the same one `JsonPolicyEvaluator` implements
+(`PolicyEvaluator.evaluate(principal, action, resource) → PolicyDecision`),
+so swapping engines is a one-line change. EAP-Core maps the
+`(principal, action, resource)` triple onto Cedar's request shape:
+`User::"<client_id>"`, `Action::"<action>"`, `Resource::"<resource>"`
+(falling back to `Unknown::"anonymous"` when no `client_id` resolves).
+Callers needing entity hierarchies subclass and override
+`_entities()`. Decision-parity tests in
+`packages/eap-core/tests/extras/test_policy_cedar.py` lock the common
+cases (permit-all, default-deny, action filter, principal pinning
+both ways) so future cedarpy bumps surface behavior drift.
+
 ### 4.5 Add a CLI template
 
 **When.** You have a project type the existing templates don't
