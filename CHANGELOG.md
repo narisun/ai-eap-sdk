@@ -16,6 +16,45 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.6.3] — 2026-05-11 — Patch release
+
+Patch closing the three Medium-severity findings + one Low from the
+v0.6.2 pre-prod review. Test-quality and doc-drift only — no public
+API, wire-format, or packaging changes. Existing v0.6.2 installs
+remain fully compatible.
+
+### Fixed
+
+- **M2 (v0.6.2 review)** — The `eap-cli` extras regression test
+  shipped in v0.6.2 was tautological: it only checked extra *names*
+  in `Provides-Extra`, not that each forwarder bound to
+  `eap-core[<extra>]` in `Requires-Dist`. A reviewer sabotaged
+  `aws = []` in `packages/eap-cli/pyproject.toml` and the test
+  still passed. Strengthened to assert three invariants: every
+  forwarder appears in `Provides-Extra`, each forwarder binds to
+  the matching `eap-core[<extra>]` in `Requires-Dist`, and `all`
+  aggregates every forwarder. Mutation-tested.
+- **M1 (v0.6.2 review)** — `README.md` install-pin convention
+  claimed patch releases were "code surface identical to v0.6.0".
+  v0.6.2 invalidated this by adding forwarded extras to
+  `eap-cli`. Advanced the canonical pin to `@v0.6.3` and reworded
+  the convention to say patches may carry packaging changes.
+- **M3 (v0.6.2 review)** — `docs/developer-guide.md` §10 merge
+  checklist still said `≥90% coverage` even after §9.2 was updated
+  to the 86% gate in v0.6.2. Updated to match §9.2.
+- **L1 (v0.6.2 review)** — `README.md` status banner dropped the
+  stale "code surface v0.6.0" parenthetical.
+
+### Stats
+
+- 467 tests passing (same as v0.6.2; v0.6.3 strengthens an existing
+  test rather than adding a new one).
+- Lint, format, strict mypy, **coverage gate at 86% (measured 87.22%)** — all green.
+- Source code (`packages/*/src/**/*.py`) byte-identical to v0.6.2 —
+  security primitives untouched.
+
+---
+
 ## [0.6.2] — 2026-05-11 — Patch release
 
 Patch closing the two Medium-severity findings from the v0.6.1
