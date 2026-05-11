@@ -202,8 +202,8 @@ class AgentCoreMemoryStore:
     async def remember(self, session_id: str, key: str, value: str) -> None:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover  — exercised in cloud workflow
-        client.put_memory_record(  # pragma: no cover
+        client = self._client()
+        client.put_memory_record(
             memoryId=self._memory_id,
             sessionId=session_id,
             recordKey=key,
@@ -213,8 +213,8 @@ class AgentCoreMemoryStore:
     async def recall(self, session_id: str, key: str) -> str | None:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        try:  # pragma: no cover
+        client = self._client()
+        try:
             resp = client.get_memory_record(
                 memoryId=self._memory_id,
                 sessionId=session_id,
@@ -222,33 +222,27 @@ class AgentCoreMemoryStore:
             )
             value = resp.get("recordValue")
             return str(value) if value is not None else None
-        except client.exceptions.ResourceNotFoundException:  # pragma: no cover
+        except client.exceptions.ResourceNotFoundException:
             return None
 
     async def list_keys(self, session_id: str) -> list[str]:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        resp = client.list_memory_records(  # pragma: no cover
-            memoryId=self._memory_id, sessionId=session_id
-        )
-        return [r["recordKey"] for r in resp.get("records", [])]  # pragma: no cover
+        client = self._client()
+        resp = client.list_memory_records(memoryId=self._memory_id, sessionId=session_id)
+        return [r["recordKey"] for r in resp.get("records", [])]
 
     async def forget(self, session_id: str, key: str) -> None:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        client.delete_memory_record(  # pragma: no cover
-            memoryId=self._memory_id, sessionId=session_id, recordKey=key
-        )
+        client = self._client()
+        client.delete_memory_record(memoryId=self._memory_id, sessionId=session_id, recordKey=key)
 
     async def clear(self, session_id: str) -> None:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        client.delete_memory_session(  # pragma: no cover
-            memoryId=self._memory_id, sessionId=session_id
-        )
+        client = self._client()
+        client.delete_memory_session(memoryId=self._memory_id, sessionId=session_id)
 
 
 # ---- Code Interpreter ------------------------------------------------------
@@ -284,15 +278,13 @@ def register_code_interpreter_tools(
     def _execute(language: str, code: str) -> dict[str, Any]:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        try:  # pragma: no cover
+        try:
             import boto3
-        except ImportError as e:  # pragma: no cover
+        except ImportError as e:  # pragma: no cover  — extras-only failure path
             raise ImportError("Code Interpreter tools require the [aws] extra") from e
-        client = boto3.client("bedrock-agentcore", region_name=region)  # pragma: no cover
-        resp = client.invoke_code_interpreter(  # pragma: no cover
-            language=language, code=code, sessionId=session_id
-        )
-        return {  # pragma: no cover
+        client = boto3.client("bedrock-agentcore", region_name=region)
+        resp = client.invoke_code_interpreter(language=language, code=code, sessionId=session_id)
+        return {
             "stdout": resp.get("stdout", ""),
             "stderr": resp.get("stderr", ""),
             "exit_code": resp.get("exitCode", 0),
@@ -347,15 +339,13 @@ def register_browser_tools(
     def _browser_call(action: str, **kwargs: Any) -> dict[str, Any]:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        try:  # pragma: no cover
+        try:
             import boto3
-        except ImportError as e:  # pragma: no cover
+        except ImportError as e:  # pragma: no cover  — extras-only failure path
             raise ImportError("Browser tools require the [aws] extra") from e
-        client = boto3.client("bedrock-agentcore", region_name=region)  # pragma: no cover
-        resp = client.invoke_browser_action(  # pragma: no cover
-            action=action, sessionId=session_id, **kwargs
-        )
-        return dict(resp)  # pragma: no cover
+        client = boto3.client("bedrock-agentcore", region_name=region)
+        resp = client.invoke_browser_action(action=action, sessionId=session_id, **kwargs)
+        return dict(resp)
 
     @mcp_tool(description="Navigate the AgentCore Browser to a URL.")
     async def browser_navigate(url: str) -> dict[str, Any]:
@@ -959,28 +949,26 @@ class GatewayClient:
         """Return the tools the gateway advertises via ``tools/list``."""
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        result = await self._rpc("tools/list", {})  # pragma: no cover
-        return list(result.get("tools", []))  # pragma: no cover
+        result = await self._rpc("tools/list", {})
+        return list(result.get("tools", []))
 
     async def invoke(self, name: str, args: dict[str, Any]) -> Any:
         """Call a tool via ``tools/call`` and return its result."""
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        result = await self._rpc(  # pragma: no cover
-            "tools/call", {"name": name, "arguments": args}
-        )
+        result = await self._rpc("tools/call", {"name": name, "arguments": args})
         # MCP returns ``content`` (list of TextContent / etc.). For SDK
         # ergonomics, surface text content directly when there's exactly
         # one TextContent; otherwise return the full content list.
-        content = result.get("content", [])  # pragma: no cover
-        if (  # pragma: no cover
+        content = result.get("content", [])
+        if (
             isinstance(content, list)
             and len(content) == 1
             and isinstance(content[0], dict)
             and content[0].get("type") == "text"
         ):
             return content[0].get("text", "")
-        return content  # pragma: no cover
+        return content
 
     async def aclose(self) -> None:
         if self._owns_http:
@@ -1155,40 +1143,40 @@ class RegistryClient:
         """
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        body = card.model_dump()  # pragma: no cover
-        resp = client.create_registry_record(  # pragma: no cover
+        client = self._client()
+        body = card.model_dump()
+        resp = client.create_registry_record(
             registryName=self._registry_name,
             recordType="AGENT",
             name=body.get("name", "unnamed"),
             description=body.get("description", ""),
             metadata=body,
         )
-        return str(resp.get("recordId", ""))  # pragma: no cover
+        return str(resp.get("recordId", ""))
 
     async def publish_mcp_server(self, name: str, *, description: str, mcp_endpoint: str) -> str:
         """Publish an MCP server record (e.g. one generated by `eap create-mcp-server`)."""
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        resp = client.create_registry_record(  # pragma: no cover
+        client = self._client()
+        resp = client.create_registry_record(
             registryName=self._registry_name,
             recordType="MCP_SERVER",
             name=name,
             description=description,
             metadata={"mcpEndpoint": mcp_endpoint},
         )
-        return str(resp.get("recordId", ""))  # pragma: no cover
+        return str(resp.get("recordId", ""))
 
     async def get_record(self, name: str) -> dict[str, Any] | None:
         """Fetch a record by name; returns ``None`` if absent."""
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        try:  # pragma: no cover
+        client = self._client()
+        try:
             resp = client.get_registry_record(registryName=self._registry_name, name=name)
             return dict(resp.get("record", {}))
-        except client.exceptions.ResourceNotFoundException:  # pragma: no cover
+        except client.exceptions.ResourceNotFoundException:
             return None
 
     async def search(self, query: str, *, max_results: int = 10) -> list[dict[str, Any]]:
@@ -1200,11 +1188,11 @@ class RegistryClient:
         """
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        resp = client.search_registry_records(  # pragma: no cover
+        client = self._client()
+        resp = client.search_registry_records(
             registryName=self._registry_name, query=query, maxResults=max_results
         )
-        return list(resp.get("records", []))  # pragma: no cover
+        return list(resp.get("records", []))
 
     async def list_records(
         self, *, record_type: str | None = None, max_results: int = 100
@@ -1212,15 +1200,15 @@ class RegistryClient:
         """List all records in the registry; optionally filter by type."""
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        kwargs: dict[str, Any] = {  # pragma: no cover
+        client = self._client()
+        kwargs: dict[str, Any] = {
             "registryName": self._registry_name,
             "maxResults": max_results,
         }
-        if record_type is not None:  # pragma: no cover
+        if record_type is not None:
             kwargs["recordType"] = record_type
-        resp = client.list_registry_records(**kwargs)  # pragma: no cover
-        return list(resp.get("records", []))  # pragma: no cover
+        resp = client.list_registry_records(**kwargs)
+        return list(resp.get("records", []))
 
 
 # ---- Payments (x402) -------------------------------------------------------
@@ -1321,15 +1309,15 @@ class PaymentClient:
         """
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        resp = client.create_payment_session(  # pragma: no cover
+        client = self._client()
+        resp = client.create_payment_session(
             walletProviderId=self._wallet_provider_id,
             maxSpendAmountCents=self._max_spend_cents,
             currency=self._currency,
             ttlSeconds=self._ttl,
         )
-        self._session_id = str(resp.get("sessionId", ""))  # pragma: no cover
-        return self._session_id  # pragma: no cover  # type: ignore[return-value]
+        self._session_id = str(resp.get("sessionId", ""))
+        return self._session_id
 
     def can_afford(self, amount_cents: int) -> bool:
         """Pre-check: would this payment fit within the remaining budget?"""
@@ -1351,23 +1339,23 @@ class PaymentClient:
         """
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        if self._session_id is None:  # pragma: no cover
+        if self._session_id is None:
             raise RuntimeError("call start_session() before authorize_and_retry()")
-        if not self.can_afford(req.amount_cents):  # pragma: no cover
+        if not self.can_afford(req.amount_cents):
             raise RuntimeError(
                 f"payment of {req.amount_cents} {req.currency} would exceed "
                 f"remaining budget {self.remaining_cents}"
             )
-        client = self._client()  # pragma: no cover
-        resp = client.authorize_payment(  # pragma: no cover
+        client = self._client()
+        resp = client.authorize_payment(
             sessionId=self._session_id,
             amountCents=req.amount_cents,
             currency=req.currency,
             merchant=req.merchant,
             originalUrl=req.original_url,
         )
-        self._spent_cents += req.amount_cents  # pragma: no cover
-        return dict(resp.get("receipt", {}))  # pragma: no cover
+        self._spent_cents += req.amount_cents
+        return dict(resp.get("receipt", {}))
 
 
 # ---- Evaluations adapters --------------------------------------------------
@@ -1447,9 +1435,9 @@ class AgentCoreEvalScorer:
 
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_AGENTCORE_GUIDE)
-        client = self._client()  # pragma: no cover
-        row = to_agentcore_eval_dataset([traj])[0]  # pragma: no cover
-        resp = client.evaluate_trace(  # pragma: no cover
+        client = self._client()
+        row = to_agentcore_eval_dataset([traj])[0]
+        resp = client.evaluate_trace(
             evaluatorArn=self._evaluator_arn,
             input={
                 "question": row["question"],
@@ -1457,8 +1445,8 @@ class AgentCoreEvalScorer:
                 "contexts": row["contexts"],
             },
         )
-        score_value = float(resp.get("score", 0.0))  # pragma: no cover
-        return FaithfulnessResult(  # pragma: no cover
+        score_value = float(resp.get("score", 0.0))
+        return FaithfulnessResult(
             request_id=traj.request_id,
             score=score_value,
             notes=str(resp.get("explanation", "")),

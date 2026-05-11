@@ -206,8 +206,8 @@ class VertexMemoryBankStore:
     async def remember(self, session_id: str, key: str, value: str) -> None:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        client.upsert_memory(  # pragma: no cover
+        client = self._client()
+        client.upsert_memory(
             parent=self._parent(),
             session_id=session_id,
             key=key,
@@ -220,6 +220,7 @@ class VertexMemoryBankStore:
         # Narrow the swallowed exception to Google's NotFound so credential
         # errors, throttling, and transient API failures propagate to the
         # caller instead of being silently reported as a cache miss (H16).
+        # pragma: no cover comments stay — google.api_core is gcp-extra only.
         from google.api_core import exceptions as gax_exceptions  # pragma: no cover
 
         client = self._client()  # pragma: no cover
@@ -234,24 +235,20 @@ class VertexMemoryBankStore:
     async def list_keys(self, session_id: str) -> list[str]:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        resp = client.list_memories(  # pragma: no cover
-            parent=self._parent(), session_id=session_id
-        )
-        return [m.key for m in resp.memories]  # pragma: no cover
+        client = self._client()
+        resp = client.list_memories(parent=self._parent(), session_id=session_id)
+        return [m.key for m in resp.memories]
 
     async def forget(self, session_id: str, key: str) -> None:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        client.delete_memory(  # pragma: no cover
-            parent=self._parent(), session_id=session_id, key=key
-        )
+        client = self._client()
+        client.delete_memory(parent=self._parent(), session_id=session_id, key=key)
 
     async def clear(self, session_id: str) -> None:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
+        client = self._client()
         client.delete_session(parent=self._parent(), session_id=session_id)
 
 
@@ -297,17 +294,15 @@ class VertexCodeSandbox:
 
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        parent = (  # pragma: no cover
-            f"projects/{self._project_id}/locations/{self._location}"
-        )
-        resp = client.execute_code(  # pragma: no cover
+        client = self._client()
+        parent = f"projects/{self._project_id}/locations/{self._location}"
+        resp = client.execute_code(
             parent=parent,
             language=language,
             code=code,
             sandbox_id=self._sandbox_id,
         )
-        return SandboxResult(  # pragma: no cover
+        return SandboxResult(
             stdout=resp.stdout or "",
             stderr=resp.stderr or "",
             exit_code=int(resp.exit_code or 0),
@@ -398,14 +393,14 @@ class VertexBrowserSandbox:
     async def _action(self, action: str, **params: Any) -> dict[str, Any]:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        resp = client.invoke_browser_action(  # pragma: no cover
+        client = self._client()
+        resp = client.invoke_browser_action(
             parent=self._parent(),
             session_id=self._session_id,
             action=action,
             params=params,
         )
-        return dict(resp.result) if resp.result else {}  # pragma: no cover
+        return dict(resp.result) if resp.result else {}
 
     async def navigate(self, url: str) -> dict[str, Any]:
         return await self._action("navigate", url=url)
@@ -567,24 +562,22 @@ class VertexGatewayClient:
     async def list_tools(self) -> list[dict[str, Any]]:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        result = await self._rpc("tools/list", {})  # pragma: no cover
-        return list(result.get("tools", []))  # pragma: no cover
+        result = await self._rpc("tools/list", {})
+        return list(result.get("tools", []))
 
     async def invoke(self, name: str, args: dict[str, Any]) -> Any:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        result = await self._rpc(  # pragma: no cover
-            "tools/call", {"name": name, "arguments": args}
-        )
-        content = result.get("content", [])  # pragma: no cover
-        if (  # pragma: no cover
+        result = await self._rpc("tools/call", {"name": name, "arguments": args})
+        content = result.get("content", [])
+        if (
             isinstance(content, list)
             and len(content) == 1
             and isinstance(content[0], dict)
             and content[0].get("type") == "text"
         ):
             return content[0].get("text", "")
-        return content  # pragma: no cover
+        return content
 
     async def aclose(self) -> None:
         if self._owns_http:
@@ -643,34 +636,34 @@ class VertexAgentRegistry:
             raise ValueError("record must have a 'name' field")
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        resp = client.create_registry_record(  # pragma: no cover
+        client = self._client()
+        resp = client.create_registry_record(
             parent=self._parent(),
             record_type=record.get("record_type", "AGENT"),
             name=record["name"],
             description=record.get("description", ""),
             metadata=record,
         )
-        return str(resp.record_id)  # pragma: no cover
+        return str(resp.record_id)
 
     async def get(self, name: str) -> dict[str, Any] | None:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        try:  # pragma: no cover
+        client = self._client()
+        try:
             resp = client.get_registry_record(parent=self._parent(), name=name)
             return dict(resp.record) if resp.record else None
-        except Exception:  # pragma: no cover
+        except Exception:
             return None
 
     async def search(self, query: str, *, max_results: int = 10) -> list[dict[str, Any]]:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        resp = client.search_registry_records(  # pragma: no cover
+        client = self._client()
+        resp = client.search_registry_records(
             parent=self._parent(), query=query, max_results=max_results
         )
-        return [dict(r) for r in resp.records]  # pragma: no cover
+        return [dict(r) for r in resp.records]
 
     async def list_records(
         self,
@@ -680,15 +673,15 @@ class VertexAgentRegistry:
     ) -> list[dict[str, Any]]:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        kwargs: dict[str, Any] = {  # pragma: no cover
+        client = self._client()
+        kwargs: dict[str, Any] = {
             "parent": self._parent(),
             "max_results": max_results,
         }
-        if record_type is not None:  # pragma: no cover
+        if record_type is not None:
             kwargs["record_type"] = record_type
-        resp = client.list_registry_records(**kwargs)  # pragma: no cover
-        return [dict(r) for r in resp.records]  # pragma: no cover
+        resp = client.list_registry_records(**kwargs)
+        return [dict(r) for r in resp.records]
 
 
 # ---- Payments (AP2) --------------------------------------------------------
@@ -758,16 +751,16 @@ class AP2PaymentClient:
     async def start_session(self) -> str:
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        resp = client.create_payment_session(  # pragma: no cover
+        client = self._client()
+        resp = client.create_payment_session(
             parent=self._parent(),
             wallet_provider_id=self._wallet_provider_id,
             max_spend_amount_cents=self._max_spend_cents,
             currency=self._currency,
             ttl_seconds=self._ttl,
         )
-        self._session_id = str(resp.session_id)  # pragma: no cover
-        return self._session_id  # pragma: no cover  # type: ignore[return-value]
+        self._session_id = str(resp.session_id)
+        return self._session_id
 
     async def authorize(self, req: Any) -> dict[str, Any]:
         """Sign an AP2 payment request and return a receipt.
@@ -777,23 +770,23 @@ class AP2PaymentClient:
         """
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        if self._session_id is None:  # pragma: no cover
+        if self._session_id is None:
             raise RuntimeError("call start_session() before authorize()")
-        if not self.can_afford(req.amount_cents):  # pragma: no cover
+        if not self.can_afford(req.amount_cents):
             raise RuntimeError(
                 f"payment of {req.amount_cents} {req.currency} would exceed "
                 f"remaining budget {self.remaining_cents}"
             )
-        client = self._client()  # pragma: no cover
-        resp = client.authorize_payment(  # pragma: no cover
+        client = self._client()
+        resp = client.authorize_payment(
             session_id=self._session_id,
             amount_cents=req.amount_cents,
             currency=req.currency,
             merchant=req.merchant,
             original_url=req.original_url,
         )
-        self._spent_cents += req.amount_cents  # pragma: no cover
-        return dict(resp.receipt) if resp.receipt else {}  # pragma: no cover
+        self._spent_cents += req.amount_cents
+        return dict(resp.receipt) if resp.receipt else {}
 
 
 # ---- Evaluations adapters --------------------------------------------------
@@ -865,12 +858,10 @@ class VertexEvalScorer:
 
         if not _real_runtimes_enabled():
             raise RealRuntimeDisabledError(_VERTEX_GUIDE)
-        client = self._client()  # pragma: no cover
-        row = to_vertex_eval_dataset([traj])[0]  # pragma: no cover
-        parent = (  # pragma: no cover
-            f"projects/{self._project_id}/locations/{self._location}"
-        )
-        resp = client.evaluate_instance(  # pragma: no cover
+        client = self._client()
+        row = to_vertex_eval_dataset([traj])[0]
+        parent = f"projects/{self._project_id}/locations/{self._location}"
+        resp = client.evaluate_instance(
             parent=parent,
             metric=self._metric,
             instance={
@@ -879,8 +870,8 @@ class VertexEvalScorer:
                 "context": row["context"],
             },
         )
-        score_value = float(resp.score)  # pragma: no cover
-        return FaithfulnessResult(  # pragma: no cover
+        score_value = float(resp.score)
+        return FaithfulnessResult(
             request_id=traj.request_id,
             score=score_value,
             notes=str(resp.explanation or ""),
