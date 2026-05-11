@@ -40,6 +40,14 @@ from eap_core.payments import PaymentRequired
 # the cache.
 MEMORY = build_memory()
 
+# Workload identity for the agent. ``transfer_funds`` declares
+# ``requires_auth=True``; the v0.5.0 C5 dispatcher enforcement in
+# ``McpToolRegistry.invoke`` refuses such tools without an identity.
+# Construction is cheap and does not touch ``boto3`` — the real
+# AgentCore Identity chain is only invoked the first time
+# ``get_token()`` runs under ``EAP_ENABLE_REAL_RUNTIMES=1``.
+IDENTITY = build_identity()
+
 # Explicit per-process tool registry — replaces the deprecated
 # ``default_registry()`` module-level singleton. Constructed once at
 # module import; agents in other processes get their own instance.
@@ -69,7 +77,7 @@ def build_client() -> EnterpriseLLM:
             OutputValidationMiddleware(),
         ],
         tool_registry=REGISTRY,
-        identity=build_identity(),
+        identity=IDENTITY,
     )
 
 

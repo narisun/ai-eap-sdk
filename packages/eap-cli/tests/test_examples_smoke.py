@@ -28,10 +28,19 @@ _SKIP = {"mcp-server-example"}
 
 def _discover_examples() -> list[str]:
     if not _EXAMPLES.is_dir():
-        return []
-    return sorted(
+        pytest.fail(
+            f"examples/ directory not found at {_EXAMPLES} — "
+            "this smoke test is workspace-only by design"
+        )
+    discovered = sorted(
         p.name for p in _EXAMPLES.iterdir() if (p / "agent.py").is_file() and p.name not in _SKIP
     )
+    if not discovered:
+        pytest.fail(
+            f"no examples discovered in {_EXAMPLES} (excluding {_SKIP}) — "
+            "either the discovery layout changed or examples were removed"
+        )
+    return discovered
 
 
 def _purge_sibling_modules() -> None:
