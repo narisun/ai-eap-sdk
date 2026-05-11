@@ -709,7 +709,7 @@ mw = PolicyMiddleware(OPAPolicyEvaluator(opa_url="http://opa:8181", package="eap
 
 For production deployments where the Cedar-shaped JSON gate hits its
 expressiveness ceiling, `CedarPolicyEvaluator` delegates to AWS's
-open-source Cedar engine (`cedarpy>=2.4`) under the `[policy-cedar]`
+open-source Cedar engine (`cedarpy>=4`) under the `[policy-cedar]`
 extra. It accepts Cedar DSL text directly and supports the full
 grammar: `when` / `unless` clauses with attribute access, entity
 hierarchies, `like` and `in` operators, etc.
@@ -724,6 +724,14 @@ forbid (principal, action == Action::"transfer", resource)
 """
 mw = PolicyMiddleware(CedarPolicyEvaluator(policy))
 ```
+
+The role-based `when` clause above assumes the caller has overridden
+`_entities()` to return entity records that carry a `roles` attribute
+for each principal (see Cedar's entity-store documentation). With the
+default empty entity store, `principal has roles` evaluates to false,
+the negation evaluates to true, and the `forbid` matches every
+transfer — useful as a tightening default, but not the role-gated
+behavior the policy reads as.
 
 The Protocol is the same one `JsonPolicyEvaluator` implements
 (`PolicyEvaluator.evaluate(principal, action, resource) → PolicyDecision`),

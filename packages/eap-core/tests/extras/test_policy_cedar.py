@@ -21,7 +21,6 @@ from eap_core.middleware.policy import (
 @dataclass
 class _Principal:
     client_id: str
-    roles: tuple[str, ...] = ()
 
 
 # ---- decision-parity matrix ------------------------------------------------
@@ -181,6 +180,19 @@ def test_cedar_anonymous_principal_when_no_client_id() -> None:
     decision = e.evaluate(None, "read", "doc:1")
     assert decision.allow is False
     assert decision.reason.startswith("cedar decision:")
+
+
+def test_cedar_malformed_policy_surfaces_diagnostics_in_reason() -> None:
+    """Malformed policy text drives cedarpy to ``Decision.NoDecision``
+    with ``diagnostics.errors`` populated. The evaluator must surface
+    those errors in ``PolicyDecision.reason`` (joined into the string)
+    so operators see the actual parse failure in audit logs rather than
+    just the bare ``NoDecision`` enum.
+    """
+    e = CedarPolicyEvaluator("not valid cedar syntax")
+    decision = e.evaluate(_Principal("alice"), "read", "doc:1")
+    assert decision.allow is False
+    assert "errors:" in decision.reason
 
 
 def test_cedar_missing_extra_raises_configuration_error(

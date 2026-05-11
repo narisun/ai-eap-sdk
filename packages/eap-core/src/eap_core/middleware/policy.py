@@ -142,13 +142,29 @@ class CedarPolicyEvaluator:
         # ``.errors`` list). See Step 1.1 of the v0.7.0 plan for the
         # discovery output that pinned this shape.
         decision = result.decision
-        reasons = result.diagnostics.reasons
+        diagnostics = result.diagnostics
+        reasons = diagnostics.reasons
+        errors = diagnostics.errors
         rule_id = reasons[0] if reasons else "cedar-default"
         allow = decision == cedarpy.Decision.Allow
+        # Build the human-readable reason. For non-Allow decisions we
+        # join ``diagnostics.errors`` into the reason string so the
+        # actual parse/evaluation failure (e.g. malformed policy text,
+        # malformed entity UID) propagates to ``PolicyDeniedError.reason``
+        # and is visible in audit logs — otherwise an operator only sees
+        # the bare ``NoDecision`` enum and has nothing to debug from.
+        if decision == cedarpy.Decision.NoDecision and errors:
+            reason = f"cedar decision: NoDecision; errors: {'; '.join(errors)}"
+        elif decision == cedarpy.Decision.Deny and not reasons and errors:
+            # Defensive: Cedar should set reasons on a normal Deny match,
+            # but if it doesn't and there's an error condition, surface it.
+            reason = f"cedar decision: Deny; errors: {'; '.join(errors)}"
+        else:
+            reason = f"cedar decision: {decision.value}"
         return PolicyDecision(
             allow=allow,
             rule_id=rule_id,
-            reason=f"cedar decision: {decision.value}",
+            reason=reason,
         )
 
 

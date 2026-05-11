@@ -1028,7 +1028,7 @@ policy-cedar = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.34" },
-    { name = "cedarpy", marker = "extra == 'policy-cedar'", specifier = ">=2.4" },
+    { name = "cedarpy", marker = "extra == 'policy-cedar'", specifier = ">=4" },
     { name = "datasets", marker = "extra == 'eval'", specifier = ">=2.18" },
     { name = "fastapi", marker = "extra == 'a2a'", specifier = ">=0.110" },
     { name = "google-cloud-aiplatform", marker = "extra == 'gcp'", specifier = ">=1.50" },
