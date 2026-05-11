@@ -147,7 +147,7 @@ from eap_core.integrations.agentcore import OIDCTokenExchange
 #    issues short-lived assertions on each `get_token` call.
 nhi = NonHumanIdentity(
     client_id="my-bank-agent",
-    idp=LocalIdPStub(),                # swap to real IdP signer in production
+    idp=LocalIdPStub(for_testing=True),  # swap to real IdP signer in production
     default_audience="https://api.bank.example",
 )
 
@@ -504,7 +504,7 @@ from eap_core.integrations.agentcore import OIDCTokenExchange
 
 nhi = NonHumanIdentity(
     client_id="my-agent",
-    idp=LocalIdPStub(),
+    idp=LocalIdPStub(for_testing=True),
     default_audience="https://api.bank.example",
 )
 exchange = OIDCTokenExchange.from_agentcore(region="us-east-1")

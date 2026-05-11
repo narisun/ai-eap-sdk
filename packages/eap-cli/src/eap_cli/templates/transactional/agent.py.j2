@@ -34,7 +34,7 @@ def build_client() -> EnterpriseLLM:
     # for a real OIDC IdP integration in production.
     identity = NonHumanIdentity(
         client_id="bank-agent",
-        idp=LocalIdPStub(),
+        idp=LocalIdPStub(for_testing=True),
         default_audience="bank-agent",
     )
     return EnterpriseLLM(

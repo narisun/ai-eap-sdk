@@ -103,6 +103,9 @@ markers = [
     "cloud: tests that hit real cloud APIs (skipped without EAP_ENABLE_REAL_RUNTIMES=1)",
     "extras: tests that require optional extras",
 ]
+filterwarnings = [
+    "error::RuntimeWarning",
+]
 
 [tool.coverage.run]
 source = ["packages/eap-core/src", "packages/eap-cli/src"]

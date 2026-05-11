@@ -91,7 +91,7 @@ def build_identity() -> NonHumanIdentity:
     """
     return NonHumanIdentity(
         client_id="bank-agent",
-        idp=LocalIdPStub(),
+        idp=LocalIdPStub(for_testing=True),
         default_audience="https://api.bank.example",
     )
 
