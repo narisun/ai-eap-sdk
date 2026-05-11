@@ -10,7 +10,13 @@ The same version applies to both workspace packages (`eap-core` and
 
 ---
 
-## [Unreleased] — GCP Vertex Agent Engine integration + vendor-neutral Protocols
+## [Unreleased]
+
+Nothing yet. Open a PR.
+
+---
+
+## [0.3.0] — 2026-05-10 — GCP Vertex Agent Engine integration + vendor-neutral Protocols
 
 Adds full integration with GCP Vertex AI Agent Engine across the
 parallel surface to AgentCore (Runtime, Observability, Identity,
