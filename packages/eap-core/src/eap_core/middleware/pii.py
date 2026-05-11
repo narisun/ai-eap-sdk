@@ -185,6 +185,15 @@ class PiiMaskingMiddleware(PassthroughMiddleware):
         cache_key = f"pii._unmask_cache_{len(vault)}"
         cached: re.Pattern[str] | None = None
         if ctx is not None:
+            # Drop any stale cache entries (vault grew since last call)
+            # — keeps the per-context cache bounded to one entry (M-N6).
+            stale_keys = [
+                k
+                for k in list(ctx.metadata)
+                if k.startswith("pii._unmask_cache_") and k != cache_key
+            ]
+            for k in stale_keys:
+                del ctx.metadata[k]
             cached = ctx.metadata.get(cache_key)
         if cached is None:
             tokens = sorted(vault.keys(), key=len, reverse=True)

@@ -303,3 +303,21 @@ async def test_on_stream_chunk_does_not_buffer_unboundedly():
     # And the emitted text covers the bulk of the input (modulo the held
     # tail near the stray '<').
     assert len(out.text) > 1000
+
+
+def test_pii_unmask_cache_does_not_grow_unboundedly():
+    """If a request grows its vault during on_response (e.g. middleware
+    that masks new PII mid-stream), the unmask cache must not retain
+    a Pattern per intermediate vault size."""
+    from eap_core.middleware.pii import PiiMaskingMiddleware
+    from eap_core.types import Context
+
+    mw = PiiMaskingMiddleware()
+    ctx = Context()
+    # Simulate vault growth by calling _unmask repeatedly with growing vault.
+    for i in range(50):
+        ctx.vault[f"<EMAIL_{i:016x}>"] = f"user{i}@x.com"
+        mw._unmask("foo", vault=ctx.vault, ctx=ctx)
+    # Cache should hold at most ONE compiled pattern (the latest size), not 50.
+    cache_keys = [k for k in ctx.metadata if k.startswith("pii._unmask_cache_")]
+    assert len(cache_keys) <= 1
