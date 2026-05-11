@@ -16,6 +16,56 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.3.1] — 2026-05-10 — Documentation refresh for v0.3.x
+
+Docs-only patch. No public API or wire-format changes; existing v0.3.0
+installs are bytewise-compatible with v0.3.1.
+
+### Changed — README
+
+- Lead-in now reflects both cloud integrations (AgentCore + Vertex)
+  and the vendor-neutral Protocol layer that makes them swappable.
+- New cross-cloud Protocol table: in-process default ↔ AWS impl ↔
+  GCP impl for `MemoryStore`, `CodeSandbox`, `BrowserSandbox`,
+  `AgentRegistry`, `PaymentBackend`, `ThreatDetector`, plus the
+  `NonHumanIdentity`-shaped seam.
+- `eap deploy` documents the four runtime targets (`aws`, `gcp`,
+  `agentcore`, `vertex-agent-engine`) with the HTTP contract per
+  target.
+- Install section adds `[aws]`, `[gcp]`, `[policy-cedar]` extras.
+- Repository-layout block shows `integrations/`, the new Protocol
+  modules (`sandbox.py` / `discovery.py` / `payments.py` /
+  `security.py` / `memory.py`), and `docs/integrations/`.
+- Open-protocols list adds **x402 / AP2** (agent payments).
+- Production checklist adds AgentCore + Vertex deploy steps with
+  pointers to the per-cloud docs.
+- Pinned dep version bumped `@v0.2.0` → `@v0.3.0`.
+- Status line updated to v0.3.0 framing; default test count
+  refreshed (153 → 342).
+
+### Changed — Developer Guide
+
+- Stability table (§7.3) lists the four new top-level Protocols,
+  `SandboxResult`, the in-process defaults, and a row for the
+  `integrations/` classes vs. the LLM-adapter `runtimes/` ones.
+- Codebase tour (§8.2) shows `integrations/agentcore.py` +
+  `integrations/vertex.py` and the new Protocol modules, plus a
+  two-layer explainer for `runtimes/` (LLM adapters) vs.
+  `integrations/` (agent-platform adapters).
+- Docs tour (§8.4) adds `docs/integrations/`.
+- New §5.7 **"New cloud-platform integrations"** — the 9-step
+  recipe for shipping a new cloud the same way AgentCore and Vertex
+  were shipped (lazy import + env gating + Protocol conformance +
+  per-phase tests + `docs/integrations/<cloud>.md`).
+- Renumbers the original "New policy engines" to §5.8.
+
+### Stats
+
+- 342 tests passing (unchanged from v0.3.0).
+- Lint / format / strict mypy all green.
+
+---
+
 ## [0.3.0] — 2026-05-10 — GCP Vertex Agent Engine integration + vendor-neutral Protocols
 
 Adds full integration with GCP Vertex AI Agent Engine across the
