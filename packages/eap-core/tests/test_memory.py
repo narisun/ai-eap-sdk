@@ -131,20 +131,25 @@ async def test_memorystore_protocol_remember_default_body_is_async_noop() -> Non
     # The Protocol body is ``...``; the resulting coroutine awaits to None
     # (no raise). The contract being pinned: subclasses are free to add
     # behavior, but the bare Protocol's default never raises.
-    await MemoryStore.remember(_Sentinel(), "s", "k", "v")  # type: ignore[arg-type]
+    result = await MemoryStore.remember(_Sentinel(), "s", "k", "v")  # type: ignore[arg-type,func-returns-value]
+    assert result is None
 
 
 async def test_memorystore_protocol_recall_default_body_is_async_noop() -> None:
-    await MemoryStore.recall(_Sentinel(), "s", "k")  # type: ignore[arg-type]
+    result = await MemoryStore.recall(_Sentinel(), "s", "k")  # type: ignore[arg-type]
+    assert result is None
 
 
 async def test_memorystore_protocol_list_keys_default_body_is_async_noop() -> None:
-    await MemoryStore.list_keys(_Sentinel(), "s")  # type: ignore[arg-type]
+    result = await MemoryStore.list_keys(_Sentinel(), "s")  # type: ignore[arg-type]
+    assert result is None
 
 
 async def test_memorystore_protocol_forget_default_body_is_async_noop() -> None:
-    await MemoryStore.forget(_Sentinel(), "s", "k")  # type: ignore[arg-type]
+    result = await MemoryStore.forget(_Sentinel(), "s", "k")  # type: ignore[arg-type,func-returns-value]
+    assert result is None
 
 
 async def test_memorystore_protocol_clear_default_body_is_async_noop() -> None:
-    await MemoryStore.clear(_Sentinel(), "s")  # type: ignore[arg-type]
+    result = await MemoryStore.clear(_Sentinel(), "s")  # type: ignore[arg-type,func-returns-value]
+    assert result is None
