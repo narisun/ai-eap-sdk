@@ -66,6 +66,93 @@ async def test_memory_forget_and_clear_raise_without_env_flag():
         await store.clear("session-1")
 
 
+# ---- AgentCoreMemoryStore.recall — narrowed exception handling (H16) -----
+#
+# ``recall`` already catches only ``client.exceptions.ResourceNotFoundException``
+# (the symmetric AgentCore-side guarantee); these tests pin that contract in
+# place so a future widening of the ``except`` clause is caught immediately.
+# boto3 dynamically generates exception classes on the client instance — the
+# stubs below mimic that shape: ``client.exceptions.X`` resolves to a real
+# Python exception type and ``raise`` instantiates it normally.
+
+
+class _ResourceNotFoundException(Exception):  # noqa: N818  — mirrors boto3's class name
+    """Stand-in for boto3's dynamically-generated ResourceNotFoundException."""
+
+
+class _ThrottlingException(Exception):  # noqa: N818  — mirrors boto3's class name
+    """Stand-in for boto3's dynamically-generated ThrottlingException."""
+
+
+class _CredentialsError(Exception):
+    """Stand-in for botocore.exceptions.NoCredentialsError / ClientError."""
+
+
+class _FakeBotoExceptions:
+    ResourceNotFoundException = _ResourceNotFoundException
+
+
+class _FakeBotoClient:
+    """Mimics enough of the boto3 client surface for ``recall`` to drive it."""
+
+    exceptions = _FakeBotoExceptions()
+
+    def __init__(self, *, raises: BaseException | None, response: dict | None = None):
+        self._raises = raises
+        self._response = response or {}
+
+    def get_memory_record(self, **_kwargs):
+        if self._raises is not None:
+            raise self._raises
+        return self._response
+
+
+@pytest.mark.asyncio
+async def test_agentcore_memory_recall_returns_none_on_not_found(monkeypatch):
+    """``ResourceNotFoundException`` maps to ``None`` (cache miss)."""
+    monkeypatch.setenv("EAP_ENABLE_REAL_RUNTIMES", "1")
+    store = AgentCoreMemoryStore(memory_id="mem-1")
+    fake = _FakeBotoClient(raises=_ResourceNotFoundException("absent"))
+    monkeypatch.setattr(store, "_client", lambda: fake)
+
+    assert await store.recall("session-1", "key-1") is None
+
+
+@pytest.mark.asyncio
+async def test_agentcore_memory_recall_propagates_throttle_error(monkeypatch):
+    """ThrottlingException must propagate — NOT be silently masked (H16)."""
+    monkeypatch.setenv("EAP_ENABLE_REAL_RUNTIMES", "1")
+    store = AgentCoreMemoryStore(memory_id="mem-1")
+    fake = _FakeBotoClient(raises=_ThrottlingException("429"))
+    monkeypatch.setattr(store, "_client", lambda: fake)
+
+    with pytest.raises(_ThrottlingException):
+        await store.recall("session-1", "key-1")
+
+
+@pytest.mark.asyncio
+async def test_agentcore_memory_recall_propagates_credentials_error(monkeypatch):
+    """Credentials / auth errors must propagate (H16)."""
+    monkeypatch.setenv("EAP_ENABLE_REAL_RUNTIMES", "1")
+    store = AgentCoreMemoryStore(memory_id="mem-1")
+    fake = _FakeBotoClient(raises=_CredentialsError("no aws creds"))
+    monkeypatch.setattr(store, "_client", lambda: fake)
+
+    with pytest.raises(_CredentialsError):
+        await store.recall("session-1", "key-1")
+
+
+@pytest.mark.asyncio
+async def test_agentcore_memory_recall_returns_value_on_hit(monkeypatch):
+    """Happy-path: recordValue surfaces back to the caller."""
+    monkeypatch.setenv("EAP_ENABLE_REAL_RUNTIMES", "1")
+    store = AgentCoreMemoryStore(memory_id="mem-1")
+    fake = _FakeBotoClient(raises=None, response={"recordValue": "hello"})
+    monkeypatch.setattr(store, "_client", lambda: fake)
+
+    assert await store.recall("session-1", "key-1") == "hello"
+
+
 # ---- Code Interpreter tools ----------------------------------------------
 
 

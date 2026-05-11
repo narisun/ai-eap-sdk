@@ -78,6 +78,67 @@ def test_memory_bank_parent_path_format():
     assert s._parent() == "projects/p1/locations/europe-west1/memoryBanks/mb-xx"
 
 
+# ---- VertexMemoryBankStore.recall — narrowed exception handling (H16) ----
+#
+# These tests need ``google.api_core.exceptions`` to import the NotFound /
+# PermissionDenied types. The [gcp] extra is not installed in the default
+# test-core matrix; ``pytest.importorskip`` gates the tests so they skip
+# cleanly when the extra is missing — they still document the contract.
+
+
+@pytest.mark.asyncio
+async def test_memory_bank_recall_returns_none_on_not_found(monkeypatch):
+    """``NotFound`` from the Vertex client maps to ``None`` (cache miss)."""
+    gax_exceptions = pytest.importorskip("google.api_core.exceptions")
+    monkeypatch.setenv("EAP_ENABLE_REAL_RUNTIMES", "1")
+
+    store = VertexMemoryBankStore(project_id="p", memory_bank_id="mb1")
+
+    class _NotFoundClient:
+        def get_memory(self, **_kwargs):
+            raise gax_exceptions.NotFound("memory record absent")
+
+    monkeypatch.setattr(store, "_client", lambda: _NotFoundClient())
+
+    assert await store.recall("session-1", "key-1") is None
+
+
+@pytest.mark.asyncio
+async def test_memory_bank_recall_propagates_credentials_error(monkeypatch):
+    """Auth errors must propagate — NOT be silently masked as cache miss (H16)."""
+    gax_exceptions = pytest.importorskip("google.api_core.exceptions")
+    monkeypatch.setenv("EAP_ENABLE_REAL_RUNTIMES", "1")
+
+    store = VertexMemoryBankStore(project_id="p", memory_bank_id="mb1")
+
+    class _DeniedClient:
+        def get_memory(self, **_kwargs):
+            raise gax_exceptions.PermissionDenied("403 forbidden")
+
+    monkeypatch.setattr(store, "_client", lambda: _DeniedClient())
+
+    with pytest.raises(gax_exceptions.PermissionDenied):
+        await store.recall("session-1", "key-1")
+
+
+@pytest.mark.asyncio
+async def test_memory_bank_recall_propagates_throttle_error(monkeypatch):
+    """Throttling / quota errors must propagate (H16)."""
+    gax_exceptions = pytest.importorskip("google.api_core.exceptions")
+    monkeypatch.setenv("EAP_ENABLE_REAL_RUNTIMES", "1")
+
+    store = VertexMemoryBankStore(project_id="p", memory_bank_id="mb1")
+
+    class _ThrottleClient:
+        def get_memory(self, **_kwargs):
+            raise gax_exceptions.ResourceExhausted("429 quota exceeded")
+
+    monkeypatch.setattr(store, "_client", lambda: _ThrottleClient())
+
+    with pytest.raises(gax_exceptions.ResourceExhausted):
+        await store.recall("session-1", "key-1")
+
+
 # ---- VertexCodeSandbox ----------------------------------------------------
 
 

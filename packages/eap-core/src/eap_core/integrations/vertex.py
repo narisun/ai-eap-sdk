@@ -203,14 +203,19 @@ class VertexMemoryBankStore:
     async def recall(self, session_id: str, key: str) -> str | None:
         if not _real_runtimes_enabled():
             raise NotImplementedError(_VERTEX_GUIDE)
+        # Narrow the swallowed exception to Google's NotFound so credential
+        # errors, throttling, and transient API failures propagate to the
+        # caller instead of being silently reported as a cache miss (H16).
+        from google.api_core import exceptions as gax_exceptions  # pragma: no cover
+
         client = self._client()  # pragma: no cover
         try:  # pragma: no cover
             resp = client.get_memory(parent=self._parent(), session_id=session_id, key=key)
             return str(resp.value) if resp.value else None
-        except Exception:  # pragma: no cover
-            # google.api_core.exceptions.NotFound, etc. — match the
-            # AgentCore "absent => None" contract.
+        except gax_exceptions.NotFound:  # pragma: no cover
+            # Absent key matches the AgentCore "missing => None" contract.
             return None
+        # Any other gax exception (auth, throttle, transient) — propagate.
 
     async def list_keys(self, session_id: str) -> list[str]:
         if not _real_runtimes_enabled():
