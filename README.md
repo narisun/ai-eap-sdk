@@ -95,10 +95,18 @@ production. The same agent code works on either cloud:
 | `ThreatDetector` | `RegexThreatDetector` | — | — |
 | `NonHumanIdentity`-shaped | `LocalIdPStub` | `OIDCTokenExchange` | `VertexAgentIdentityToken` |
 
-See [`docs/integrations/aws-bedrock-agentcore.md`](docs/integrations/aws-bedrock-agentcore.md)
-and [`docs/integrations/gcp-vertex-agent-engine.md`](docs/integrations/gcp-vertex-agent-engine.md)
-for the full per-cloud surface (gateways, observability wiring,
-deploy targets, eval scorers, payments).
+**End-to-end user guides for each cloud** (zero to deployed agent,
+with every command and every snippet):
+
+- [`docs/user-guide-aws-agentcore.md`](docs/user-guide-aws-agentcore.md)
+  — AWS Bedrock AgentCore.
+- [`docs/user-guide-gcp-vertex.md`](docs/user-guide-gcp-vertex.md)
+  — GCP Vertex Agent Engine.
+
+**Reference docs** (positioning + service-by-service mapping):
+
+- [`docs/integrations/aws-bedrock-agentcore.md`](docs/integrations/aws-bedrock-agentcore.md)
+- [`docs/integrations/gcp-vertex-agent-engine.md`](docs/integrations/gcp-vertex-agent-engine.md)
 
 Other cross-cutting concerns wired at the SDK level:
 

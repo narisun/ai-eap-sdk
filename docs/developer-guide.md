@@ -1271,6 +1271,8 @@ This way, every CLI command is reusable as a library function.
 ```
 docs/
 ├── developer-guide.md                       # this file
+├── user-guide-aws-agentcore.md              # for engineers building on AgentCore
+├── user-guide-gcp-vertex.md                 # for engineers building on Vertex
 ├── integrations/
 │   ├── aws-bedrock-agentcore.md             # AgentCore positioning + per-service mapping
 │   └── gcp-vertex-agent-engine.md           # Vertex positioning + per-service mapping
@@ -1285,9 +1287,12 @@ docs/
 
 The spec is the source of truth for *intent*. The plans document the
 *how*. This guide explains the *why*. The per-cloud integration docs
-explain the *how* of each platform mapping. Keep them in sync — if a
-plan diverges from the spec during implementation, update the spec;
-when you add or change a cloud integration, update the matching doc.
+explain the *how* of each platform mapping. The user guides explain
+the *how* of building an agent on each cloud (audience: engineers
+*using* the SDK, not extending it). Keep them in sync — if a plan
+diverges from the spec during implementation, update the spec; when
+you add or change a cloud integration, update both the integration
+doc and the matching user guide.
 
 ---
 
