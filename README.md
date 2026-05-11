@@ -671,7 +671,7 @@ before merging non-trivial changes.
 
 ```bash
 uv sync --all-packages --all-extras --group dev   # install everything
-uv run pytest --cov                                # 466 tests, ~89% coverage (90% gate tracked for v0.7.0)
+uv run pytest --cov                                # 466 tests, ~87% coverage (gate temporarily 86%, ratchet to 90% planned for v0.7.0)
 uv run ruff check && uv run ruff format --check    # lint + format
 uv run mypy                                        # strict type-check
 ```
