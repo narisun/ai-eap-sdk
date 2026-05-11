@@ -15,6 +15,7 @@ from tools.get_account import get_account
 from tools.transfer_funds import transfer_funds
 
 from eap_core import EnterpriseLLM, RuntimeConfig
+from eap_core.identity import LocalIdPStub, NonHumanIdentity
 from eap_core.mcp import McpToolRegistry
 from eap_core.middleware.observability import ObservabilityMiddleware
 from eap_core.middleware.pii import PiiMaskingMiddleware
@@ -27,6 +28,18 @@ from eap_core.middleware.validate import OutputValidationMiddleware
 REGISTRY = McpToolRegistry()
 REGISTRY.register(get_account.spec)
 REGISTRY.register(transfer_funds.spec)
+
+# Workload identity for the agent. ``transfer_funds`` declares
+# ``requires_auth=True``; the v0.5.0 C5 dispatcher enforcement in
+# ``McpToolRegistry.invoke`` refuses such tools without an identity.
+# ``LocalIdPStub`` signs locally — fine for tests and the in-tree
+# example. In production, swap for a real IdP (e.g. AgentCore
+# ``OIDCTokenExchange.from_agentcore(...)``).
+IDENTITY = NonHumanIdentity(
+    client_id="transactional-agent",
+    idp=LocalIdPStub(for_testing=True),
+    default_audience="https://api.bank.example",
+)
 
 
 def _load_policy() -> dict:
@@ -44,6 +57,7 @@ def build_client() -> EnterpriseLLM:
             OutputValidationMiddleware(),
         ],
         tool_registry=REGISTRY,
+        identity=IDENTITY,
     )
 
 

@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 
 from cloud_wiring import (
+    build_identity,
     build_memory,
     build_payments,
     build_registry,
@@ -39,6 +40,14 @@ from eap_core.payments import PaymentRequired
 # the cache.
 MEMORY = build_memory()
 
+# Workload identity for the agent. ``transfer_funds`` declares
+# ``requires_auth=True``; the v0.5.0 C5 dispatcher enforcement in
+# ``McpToolRegistry.invoke`` refuses such tools without an identity.
+# Construction is cheap and does not touch ``google.auth`` — the
+# real ADC chain is only invoked the first time ``get_token()`` runs
+# under ``EAP_ENABLE_REAL_RUNTIMES=1``.
+IDENTITY = build_identity()
+
 # Explicit per-process tool registry — replaces the deprecated
 # ``default_registry()`` module-level singleton. Constructed once at
 # module import; agents in other processes get their own instance.
@@ -58,10 +67,9 @@ def build_client() -> EnterpriseLLM:
     Swap `provider="local"` → `provider="vertex"` when ready and set
     `EAP_ENABLE_REAL_RUNTIMES=1`.
 
-    Note: Vertex's auth flow uses Application Default Credentials
-    rather than RFC 8693, so we don't pass an `identity=` here —
-    `VertexAgentIdentityToken` is used directly by callers that need
-    a Bearer token (e.g. `VertexGatewayClient`).
+    `VertexAgentIdentityToken` satisfies the same get_token shape as
+    `NonHumanIdentity` (see `eap_core.identity.resolve_token`), so it
+    threads through invoke_tool's requires_auth check identically.
     """
     return EnterpriseLLM(
         RuntimeConfig(provider="local", model="echo-1"),
@@ -73,6 +81,7 @@ def build_client() -> EnterpriseLLM:
             OutputValidationMiddleware(),
         ],
         tool_registry=REGISTRY,
+        identity=IDENTITY,
     )
 
 
