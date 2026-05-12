@@ -31,13 +31,30 @@ class MiddlewarePipeline:
     async def run(self, req: Request, ctx: Context, terminal: Terminal) -> Response:
         ran: list[Middleware] = []
         try:
-            for mw in self._mws:
-                ran.append(mw)
-                req = await mw.on_request(req, ctx)
-            resp = await terminal(req, ctx)
-            for mw in reversed(ran):
-                resp = await mw.on_response(resp, ctx)
-            return resp
+            try:
+                for mw in self._mws:
+                    ran.append(mw)
+                    req = await mw.on_request(req, ctx)
+                resp = await terminal(req, ctx)
+                for mw in reversed(ran):
+                    resp = await mw.on_response(resp, ctx)
+                return resp
+            finally:
+                # ``on_call_end`` runs right-to-left, best-effort, in a
+                # ``finally`` block so it fires on BOTH normal completion AND
+                # failure — mirrors ``on_stream_end`` semantics on the
+                # streaming path. A secondary failure here must not mask the
+                # primary terminal exception (dev-guide §3.2).
+                for mw in reversed(ran):
+                    try:
+                        await mw.on_call_end(ctx)
+                    except Exception as secondary:
+                        mw_name = getattr(mw, "name", type(mw).__name__)
+                        _LOG.warning(
+                            "secondary failure in %s.on_call_end during call finalization",
+                            mw_name,
+                            exc_info=secondary,
+                        )
         except Exception as exc:
             await self._on_error(ran, exc, ctx)
             raise
