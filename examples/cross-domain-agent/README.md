@@ -46,7 +46,7 @@ From the worktree root:
 uv run --with mcp --with duckdb pytest examples/cross-domain-agent/tests -q
 ```
 
-Six adapter unit tests + two integration tests. The integration
+Seven adapter unit tests + two integration tests. The integration
 tests spawn real subprocesses for both MCP servers (~3–5s each
 run); the adapter tests use a stubbed `ClientSession` and run in
 under a second.

@@ -40,7 +40,17 @@ async def connect_servers(
     :class:`McpClientPool` on the caller's stack, and returns the pool's
     handles. The pool's teardown is bound to the stack, so when the
     caller exits the stack every subprocess shuts down cleanly.
+
+    L2 (v1.2): an empty ``server_configs`` list returns ``[]`` rather
+    than constructing a pool. The v1.0 shim signature accepted "no
+    servers configured" as a valid input and returned no handles;
+    v1.1's :class:`McpClientPool` rejects an empty config list with
+    ``ValueError``. Short-circuiting here preserves the v1.0 contract
+    so a caller that has dynamic config (and may legitimately have no
+    servers in some environments) doesn't crash.
     """
+    if not server_configs:
+        return []
     cfgs = [
         McpServerConfig(
             name=d["name"],
@@ -79,14 +89,24 @@ def build_tool_specs(handles: list[ServerHandle]) -> list[ToolSpec]:
             return self._by_name[name].session
 
         async def reconnect(self, name: str) -> None:
-            # Reconnect requires the full pool lifecycle — not
-            # reachable through this loose-handle compat surface. Use
-            # ``McpClientPool`` directly when reconnect is needed.
-            raise RuntimeError(
-                f"reconnect not supported via the loose-handle compat shim; "
-                f"use eap_core.mcp.client.McpClientPool directly to "
-                f"reconnect server {name!r}"
-            )
+            """v1.0 compat shim: no-op reconnect.
+
+            L4 (v1.2): the v1.0 entry points (``connect_servers`` +
+            ``build_tool_specs``) were callable without a pool object,
+            so there was no place to put reconnect logic. The SDK's
+            adapter forwarder wraps every ``call_tool`` in
+            ``try: ... except McpServerDisconnectedError: await
+            pool.reconnect(...); raise``; if we raised ``RuntimeError``
+            here that ``raise`` would never run and the caller would
+            see ``RuntimeError`` instead of the original
+            :class:`McpServerDisconnectedError`.
+
+            By making this a no-op the forwarder's recovery path
+            completes cleanly and the original disconnect error
+            re-raises to the caller — same shape v1.0 callers saw,
+            since v1.0 had no reconnect concept at all.
+            """
+            return None
 
     registry = build_tool_registry(_LooseHandlesPool(handles))
     return list(registry.list_tools())

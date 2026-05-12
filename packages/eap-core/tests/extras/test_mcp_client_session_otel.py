@@ -42,20 +42,28 @@ from eap_core.mcp.client.session import McpClientSession
 
 class FakeSpan:
     """Mirrors the FakeSpan pattern in ``tests/test_observability.py``
-    — records every attribute write, every status change, and the
-    ``end()`` call so the test can assert exactly what production set."""
+    — records every attribute write, every status change, the
+    ``end()`` call, and (added in v1.2 for L1) every exception passed
+    to ``record_exception`` so the test can assert exactly what
+    production set."""
 
     def __init__(self, name: str) -> None:
         self.name = name
         self.attrs: dict[str, Any] = {}
         self.status_set: Any = None
         self.ended = False
+        # L1 (v1.2): accumulator for ``record_exception`` calls so tests
+        # can verify the OTel-symmetry hook the session module now emits.
+        self.recorded_exceptions: list[Exception] = []
 
     def set_attribute(self, key: str, value: Any) -> None:
         self.attrs[key] = value
 
     def set_status(self, status: Any) -> None:
         self.status_set = status
+
+    def record_exception(self, exc: Exception) -> None:
+        self.recorded_exceptions.append(exc)
 
     def end(self) -> None:
         self.ended = True
@@ -194,3 +202,32 @@ async def test_invocation_error_path_sets_error_kind_invocation_error(
     assert span.attrs["mcp.error.kind"] == "invocation_error"
     assert span.attrs["mcp.error.class"] == "RuntimeError"
     assert span.ended
+
+
+async def test_error_path_records_exception_for_otel_symmetry(
+    fake_tracer: FakeTracer,
+) -> None:
+    """L1 (v1.2): ``_record_span_error`` calls ``span.record_exception``
+    on every failure path so client spans carry the same exception event
+    the server-side ``eap_core.middleware.observability`` emits. Without
+    this hook, a tracing UI would show client-side errors with the
+    typed ``mcp.error.kind`` attribute but no associated exception event,
+    making cross-side trace comparison harder than it should be.
+
+    We assert the upstream exception (``RuntimeError`` here) reached the
+    FakeSpan's accumulator — the typed ``McpToolInvocationError`` is what
+    the caller sees, but the raw upstream exception is what production
+    code records on the span (matches the v1.0 server-side convention).
+    """
+    upstream = _StubUpstream(call_tool_exc=RuntimeError("server kaboom"))
+    session = McpClientSession(server_name="bankdw", upstream=upstream, request_timeout_s=1.0)
+    from eap_core.mcp.client import McpToolInvocationError
+
+    with pytest.raises(McpToolInvocationError):
+        await session.call_tool("query_sql", {})
+
+    span = fake_tracer.spans[0]
+    assert len(span.recorded_exceptions) == 1
+    recorded = span.recorded_exceptions[0]
+    assert isinstance(recorded, RuntimeError)
+    assert str(recorded) == "server kaboom"

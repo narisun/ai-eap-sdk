@@ -16,6 +16,140 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.2.0] — 2026-05-11 — first minor adding HTTP transport for the MCP client
+
+**EAP-Core v1.2 — Streamable-HTTP transport for the MCP client.** v1.1
+reserved the API surface via `McpServerConfig.transport: Literal["stdio"]`;
+v1.2 extends it to `Literal["stdio", "http"]` and wires the pool to
+spawn either an stdio subprocess or a Streamable-HTTP session (the
+current MCP HTTP standard, served by `mcp.client.streamable_http`).
+Agents now consume remote MCP servers reachable over HTTP in the same
+shape they consumed local subprocesses — same `McpClientPool`, same
+`build_tool_registry()`, same forwarder semantics.
+
+The release also closes the carried-over Lows from the v1.1.0 and
+v1.1.1 review cycles (M-1, L-1, L1, L2, L4) so the v1.1 review loop
+shuts cleanly within v1.2.
+
+### Added
+
+- **`McpServerConfig.transport: Literal["stdio", "http"]`.** Default
+  `"stdio"`; existing v1.1.x configs that omitted the field keep
+  working. New `"http"` value selects the Streamable-HTTP path.
+  Lives in `packages/eap-core/src/eap_core/mcp/client/config.py`.
+- **`McpServerConfig` HTTP-only fields:** `url: str | None`,
+  `headers: dict[str, str] | None`, `auth: Any` (typed as `Any` to
+  keep `httpx` out of the core import path; the upstream client
+  expects `httpx.Auth | None` and takes the value through). A
+  pydantic `model_validator` enforces transport-specific field
+  requirements:
+  - `stdio`: `command` required; `url` / `headers` / `auth` forbidden.
+  - `http`: `url` required; `command` / `args` / `cwd` / `env` forbidden.
+- **`McpClientPool._spawn_http`** (sibling of the renamed
+  `_spawn_stdio`) opens a Streamable-HTTP session against the
+  configured URL. The shared `_open_session` path handles entering
+  the transport context manager on the pool's `AsyncExitStack`, the
+  3-tuple unpack (`read, write, get_session_id` — v1.2 drops session
+  resumption), and the upstream `ClientSession.initialize()` +
+  `list_tools()` calls.
+- **`packages/eap-core/tests/extras/test_mcp_client_http_integration.py`**
+  end-to-end integration test against an in-process FastMCP server.
+  Spins up uvicorn on an OS-assigned local port, points an
+  `McpClientPool` at it via `transport="http"`, exercises the spawn /
+  list_tools / call_tool / decode round-trip through the real
+  `streamable_http_client`. Three tests (round-trip,
+  multi-tool, health-check).
+
+### Closed v1.1.x review-cycle Lows
+
+- **M-1: coverage for `McpServerHandle.name`.** Added a
+  `[h.name for h in handles]` assertion to
+  `test_handles_returns_in_config_order` in
+  `packages/eap-core/tests/test_mcp_client_pool.py`. Mutation-verified:
+  deleting the property raises `AttributeError` on the new line.
+- **L-1: cross-domain-agent README test count.** Was "Six adapter
+  unit tests + two integration tests"; v1.2 actually runs seven
+  (five v1.0-compat tests including the two new L2/L4 cases, plus
+  two SDK-pattern tests). Updated to "Seven adapter unit tests + two
+  integration tests" in `examples/cross-domain-agent/README.md`.
+- **L1: `_record_span_error` calls `span.record_exception(exc)` for
+  OTel symmetry** with the server-side
+  `eap_core.middleware.observability`. Gated on `getattr` so the
+  FakeSpan helpers in the test suite stay no-op for the method.
+  Closed in `packages/eap-core/src/eap_core/mcp/client/session.py`;
+  asserted by a new test in
+  `packages/eap-core/tests/extras/test_mcp_client_session_otel.py`.
+- **L2: `connect_servers([], stack)` returns `[]`.** v1.0's shim
+  signature accepted an empty config list; v1.1's `McpClientPool`
+  rejected it with `ValueError`. The shim now short-circuits on empty
+  input so legacy callers with environment-gated rollouts (e.g. "no
+  MCP servers configured in this region") keep working. Closed in
+  `examples/cross-domain-agent/mcp_client_adapter.py`; asserted by
+  a new test in `examples/cross-domain-agent/tests/test_adapter.py`.
+- **L4: shim's `_LooseHandlesPool.reconnect` is a no-op.** Previously
+  raised `RuntimeError`, which masked the original
+  `McpServerDisconnectedError` because the adapter forwarder calls
+  `await pool.reconnect(...); raise` — a raised `RuntimeError`
+  prevented the `raise` from ever running. The shim now returns
+  `None`, letting the forwarder's recovery path complete and the
+  original disconnect error propagate to the caller (same shape v1.0
+  callers saw — v1.0 had no reconnect concept). Closed in
+  `examples/cross-domain-agent/mcp_client_adapter.py`; asserted by
+  a new test in `examples/cross-domain-agent/tests/test_adapter.py`.
+
+### Changed
+
+- **Upstream rename absorbed: `streamablehttp_client` →
+  `streamable_http_client`.** Current `mcp` versions emit a
+  `DeprecationWarning` against the old name. The pool now imports the
+  new name (with underscores) and feeds it an `httpx.AsyncClient`
+  built via `create_mcp_http_client(headers=cfg.headers, auth=cfg.auth)`
+  — the new signature replaces the old `headers=`/`auth=` kwargs with
+  a single pre-configured `http_client` argument. The client is
+  entered onto the pool's exit stack so teardown is symmetric with
+  stdio. The local `filterwarnings` ignore that T3's integration test
+  added is no longer needed and has been removed.
+- **mypy: `uvicorn` added to the `[[tool.mypy.overrides]]` block** in
+  the workspace `pyproject.toml`. Removes the inline
+  `# type: ignore[import-not-found]` in
+  `tests/extras/test_mcp_client_http_integration.py`.
+
+### Deferred to v1.3+
+
+- Legacy SSE transport (`sse_client` — separate from
+  `streamablehttp_client`). The Streamable-HTTP protocol is the
+  current MCP HTTP standard; legacy SSE support comes when a real
+  consumer asks for it.
+- Identity-aware HTTP auth (auto-attach `NonHumanIdentity` tokens via
+  a `BearerTokenAuth` adapter). The `auth` field accepts any
+  `httpx.Auth` today, but the auto-attach plumbing is a design
+  follow-up.
+- Deeper JSON-Schema output validation via `jsonschema`. The shallow
+  required-keys check in
+  `eap_core.mcp.client.adapter._maybe_validate` stays the v1.2
+  default.
+- `AsyncExitStack` partial-unwind so `pool.reconnect()` cleanly tears
+  down the OLD session/subprocess on each reconnect rather than
+  deferring teardown to pool exit. Same docstring flag as v1.1.
+- H8: Cedar live engine tests.
+- H18 / H19: cloud live-runtime tests for Bedrock / Vertex.
+
+### Stats
+
+- 650 non-extras tests passing (up from 641 at v1.1.1 — the +9 delta
+  is T1's config tests, T2's pool-dispatch tests, and T4's M-1 line).
+- 23 extras tests passing across `mcp`, OTel, and the new HTTP
+  integration file (15 mcp_server + 5 OTel session including the new
+  L1 test + 3 HTTP integration).
+- 47 example tests passing (19 bankdw + 19 sfcrm + 9 cross-domain;
+  +2 vs v1.1.1 from L2 and L4).
+- Coverage ≥90%.
+- All four primary gauntlets (ruff, ruff format, mypy, pytest) pass
+  cleanly from repo root with a fresh `.mypy_cache` and `__pycache__`
+  sweep.
+
+---
+
 ## [1.1.1] — 2026-05-11 — Patch release
 
 Patch closing the H1 + 3 Medium findings from the v1.1.0 pre-prod

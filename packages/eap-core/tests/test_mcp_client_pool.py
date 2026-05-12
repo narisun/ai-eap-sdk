@@ -145,7 +145,14 @@ async def test_handles_returns_in_config_order(
         McpServerConfig(name="middle", command="x"),
     ]
     async with McpClientPool(cfgs) as pool:
-        assert [h.config.name for h in pool.handles()] == ["zeta", "alpha", "middle"]
+        handles = pool.handles()
+        assert [h.config.name for h in handles] == ["zeta", "alpha", "middle"]
+        # M-1 (v1.2): the convenience ``handle.name`` accessor mirrors
+        # ``handle.config.name``. Asserted here so a future regression that
+        # accidentally drops the property surfaces immediately. Mutation-
+        # verified during the v1.2 polish pass: removing the property made
+        # this line raise AttributeError.
+        assert [h.name for h in handles] == ["zeta", "alpha", "middle"]
 
 
 async def test_aexit_clears_handles(patched_spawn: list[McpServerHandle]) -> None:

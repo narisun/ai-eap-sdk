@@ -47,18 +47,13 @@ pytest.importorskip("mcp")
 pytest.importorskip("fastapi")
 pytest.importorskip("uvicorn")
 
-# Upstream rename: ``mcp.client.streamable_http.streamablehttp_client``
-# emits a ``DeprecationWarning`` pointing at the new
-# ``streamable_http_client`` name. The pool still calls the old name
-# (T2 froze that surface; the rename is a T4 polish item). The repo's
-# global ``filterwarnings = ["error::DeprecationWarning"]`` would turn
-# that warning into a test failure, so we scope a local ignore filter
-# to this integration file. When T4 swaps the pool to the new name,
-# this filter can drop.
-pytestmark = [
-    pytest.mark.extras,
-    pytest.mark.filterwarnings("ignore:Use `streamable_http_client` instead.:DeprecationWarning"),
-]
+# T4 (v1.2): the pool now calls the upstream's renamed
+# ``streamable_http_client`` (with underscores), so the
+# ``DeprecationWarning`` that escaped under the old ``streamablehttp_client``
+# import no longer fires. The local ``filterwarnings`` ignore that T3 added
+# has been removed — the repo's global ``error::DeprecationWarning`` policy
+# now applies here as everywhere else.
+pytestmark = pytest.mark.extras
 
 from eap_core.mcp.client import McpClientPool, McpServerConfig
 
@@ -86,7 +81,7 @@ async def in_process_mcp_server() -> AsyncIterator[str]:
     race where the fixture yields before the port is actually
     accepting connections.
     """
-    import uvicorn  # type: ignore[import-not-found]
+    import uvicorn
     from mcp.server.fastmcp import FastMCP
 
     mcp_server = FastMCP(name="hello-server")

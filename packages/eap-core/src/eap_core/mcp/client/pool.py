@@ -200,18 +200,33 @@ class McpClientPool:
     async def _spawn_http(self, cfg: McpServerConfig) -> McpServerHandle:
         """Open a Streamable-HTTP session against a remote MCP server.
 
-        ``streamablehttp_client(...)`` yields a 3-tuple
+        ``streamable_http_client(...)`` yields a 3-tuple
         ``(read, write, get_session_id)``; v1.2 does not use Streamable-HTTP
         session resumption so the third element is discarded by
         :meth:`_open_session` when ``arity=3``.
 
+        Upstream rename (T4 v1.2): the original ``streamablehttp_client``
+        was renamed to ``streamable_http_client`` (with underscores) and
+        its signature tightened — it no longer accepts ``headers`` /
+        ``auth`` / ``timeout`` kwargs. Callers now configure those by
+        constructing an ``httpx.AsyncClient`` (the upstream helper
+        :func:`mcp.shared._httpx_utils.create_mcp_http_client`, re-exported
+        from :mod:`mcp.client.streamable_http`, applies the MCP-recommended
+        defaults). We enter the client onto the pool's exit stack so
+        teardown is symmetric with the stdio path.
+
         ``cfg.auth`` is typed as ``Any`` to keep ``httpx`` out of the core
-        import path; the upstream client expects ``httpx.Auth | None`` and
+        import path; the upstream helper expects ``httpx.Auth | None`` and
         accepts our value as-is. A non-``Auth`` runtime value will fail
         loudly on the first HTTP request — that's the right contract.
         """
         try:
-            from mcp.client.streamable_http import streamablehttp_client
+            from mcp.client.streamable_http import (
+                create_mcp_http_client,
+            )
+            from mcp.client.streamable_http import (
+                streamable_http_client as _streamable_http_client,
+            )
         except ImportError as e:
             raise McpServerSpawnError(
                 "MCP client requires the [mcp] extra: pip install eap-core[mcp]"
@@ -219,11 +234,13 @@ class McpClientPool:
 
         assert self._stack is not None, "pool not entered"
         assert cfg.url is not None  # enforced by McpServerConfig validator
-        transport_cm = streamablehttp_client(
-            url=cfg.url,
-            headers=cfg.headers,
-            auth=cfg.auth,
+        # Build an MCP-defaulted httpx client carrying the per-config
+        # headers/auth, and enter it onto the pool's exit stack so it
+        # closes cleanly on pool teardown.
+        http_client = await self._stack.enter_async_context(
+            create_mcp_http_client(headers=cfg.headers, auth=cfg.auth)
         )
+        transport_cm = _streamable_http_client(cfg.url, http_client=http_client)
         return await self._open_session(cfg, transport_cm, arity=3)
 
     async def _open_session(

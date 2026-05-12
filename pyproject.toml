@@ -100,6 +100,8 @@ module = [
     "fastapi.*",
     "opentelemetry",
     "opentelemetry.*",
+    "uvicorn",
+    "uvicorn.*",
 ]
 ignore_missing_imports = true
 

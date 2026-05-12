@@ -183,3 +183,12 @@ def _record_span_error(span: Any | None, exc: Exception, kind: str) -> None:
         pass
     span.set_attribute("mcp.error.kind", kind)
     span.set_attribute("mcp.error.class", type(exc).__name__)
+    # L1 (v1.2): attach the exception event for OTel symmetry with the
+    # server-side observability middleware (``eap_core.middleware.observability``
+    # calls ``span.record_exception`` on the same error path). Real OTel spans
+    # expose ``record_exception``; the FakeSpan helpers in our test suite may
+    # not, so we gate on ``getattr`` rather than a try/except — a missing
+    # method is the no-op case, not an error.
+    record_exception = getattr(span, "record_exception", None)
+    if record_exception is not None:
+        record_exception(exc)

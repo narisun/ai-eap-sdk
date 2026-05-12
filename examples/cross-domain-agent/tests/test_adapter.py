@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import AsyncExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -38,9 +39,13 @@ import pytest
 AGENT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AGENT_DIR))
 
-from mcp_client_adapter import ServerHandle, build_tool_specs
+from mcp_client_adapter import ServerHandle, build_tool_specs, connect_servers
 
-from eap_core.mcp.client import McpServerConfig, McpServerHandle
+from eap_core.mcp.client import (
+    McpServerConfig,
+    McpServerDisconnectedError,
+    McpServerHandle,
+)
 from eap_core.mcp.client.adapter import build_tool_registry
 from eap_core.mcp.client.session import McpClientSession
 
@@ -135,6 +140,54 @@ async def test_v1_compat_serverhandle_is_alias_for_mcp_server_handle() -> None:
     """
     h = _make_compat_handle(server_name="x", tool_names=["t"], session=AsyncMock())
     assert isinstance(h, McpServerHandle)
+
+
+@pytest.mark.asyncio
+async def test_v1_compat_connect_servers_returns_empty_on_empty_input() -> None:
+    """L2 (v1.2): an empty server-config list returns ``[]`` rather
+    than constructing a pool (which would raise ``ValueError`` because
+    :class:`McpClientPool` rejects empty config lists). The v1.0 shim
+    signature accepted "no servers" as valid; preserving that contract
+    keeps callers that may legitimately have no servers configured
+    (e.g. environment-gated rollouts) from crashing at startup.
+    """
+    async with AsyncExitStack() as stack:
+        handles = await connect_servers([], stack)
+        assert handles == []
+
+
+@pytest.mark.asyncio
+async def test_v1_compat_shim_pool_reconnect_is_noop_and_lets_disconnect_propagate() -> None:
+    """L4 (v1.2): the shim's ``_LooseHandlesPool.reconnect`` is a no-op
+    so the SDK adapter's forwarder
+
+        except McpServerDisconnectedError:
+            await pool.reconnect(server_name)
+            raise
+
+    can complete without crashing, and the original
+    :class:`McpServerDisconnectedError` then propagates to the caller —
+    the same shape v1.0 callers saw (v1.0 had no reconnect concept).
+
+    Previously the shim raised ``RuntimeError`` here, which would have
+    masked the disconnect error and broken any caller relying on the
+    typed error to detect "server went away".
+    """
+    session = AsyncMock()
+    session.call_tool = AsyncMock(side_effect=McpServerDisconnectedError("server went away"))
+    h = _make_compat_handle(
+        server_name="bankdw",
+        tool_names=["query_sql"],
+        session=session,
+    )
+    specs = build_tool_specs([h])
+    spec = next(s for s in specs if s.name == "bankdw__query_sql")
+
+    # The forwarder catches the disconnect, calls the shim pool's
+    # ``reconnect`` (which is now a no-op rather than raising
+    # RuntimeError), and re-raises the original disconnect error.
+    with pytest.raises(McpServerDisconnectedError, match="server went away"):
+        await spec.fn(sql="SELECT 1")
 
 
 # ---------------------------------------------------------------------------
