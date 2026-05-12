@@ -16,6 +16,87 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.5.1] — 2026-05-12 — Patch release
+
+Closes the three Medium + two Low + one Nit findings from the
+v1.5.0 pre-prod review. No SDK behavior changes; test-only +
+documentation fixes.
+
+### Fixed
+
+- **M-1: `EAP_ENABLE_REAL_RUNTIMES=1` no longer leaks past the
+  cloud-live test session.** `tests/cloud_live/conftest.py`'s
+  `live_aws_enabled` / `live_gcp_enabled` session-scoped fixtures
+  previously set the env var via raw `os.environ[]` with no
+  teardown — a pytest invocation that mixed cloud_live and
+  non-cloud_live tests would unexpectedly see the SDK's
+  real-runtime gate open. Refactored to yield-style fixtures via a
+  shared `_open_real_runtimes_gate()` helper that restores the
+  prior env-var value on teardown (or unsets if not previously set).
+- **M-2: cleanup `delete_registry_record` API-name assumption
+  documented.** The cloud-live registry tests call
+  `client.delete_registry_record(...)` directly through boto3 /
+  google clients during teardown; we believe that's the upstream
+  operation name but haven't verified against a live AWS / GCP
+  account. The `try/except: pass` cleanup would silently swallow
+  an `AttributeError` if the operation is named differently —
+  orphaned test records could accumulate in long-running shared
+  registries. Added explicit comments in both
+  `test_agentcore_registry_live.py` and `test_vertex_registry_live.py`
+  flagging the assumption and pointing at the v1.6 follow-up: once
+  the first user runs these against real cloud and confirms the
+  operation name, promote it to an SDK helper
+  (`RegistryClient.delete_record` / `VertexAgentRegistry.delete`)
+  so the contract is statically pinned.
+- **M-3: CHANGELOG numeric drift corrected.** v1.5.0's `[1.5.0]`
+  entry claimed "688 non-extras tests passing" and "153 source
+  files type-checked"; reality at v1.5.0 HEAD is **695 non-extras
+  tests** and **155 source files**. Both deltas positive (more
+  tests pass, more files checked — no regression hidden). The
+  v1.5.0 historical entry stays as written (CHANGELOGs are
+  immutable history); v1.5.1's stats below reflect reality.
+- **L-4: Cred-probe shallowness documented.** Added a docstring
+  paragraph to `conftest.py` acknowledging that
+  `sts.get_caller_identity()` / `google.auth.default()` only verify
+  any-creds-present, NOT service-specific IAM grants. A user with
+  valid creds but missing `bedrock-agentcore:*` / `aiplatform.user`
+  will see tests fail at the first SDK call rather than skip.
+  Acceptable trade-off (deep IAM probing is expensive + brittle);
+  future maintainers know the limitation now.
+- **L-5: Vertex registry round-trip no longer accepts None.**
+  `test_vertex_registry_publish_and_get_roundtrip` previously
+  asserted `record is None or isinstance(record, dict)` — eventual
+  consistency lag let `get()` returning nothing pass the test,
+  defeating the round-trip property. Replaced with a 2s retry +
+  strict `assert record is not None` so real-world lag is
+  tolerated up to 2s but unbounded misses surface as failures.
+- **N-6: Registry test asserts record content, not just dictness.**
+  Both AgentCore and Vertex registry round-trip tests now assert
+  the returned record is non-empty (`assert record`) in addition to
+  the type check, so an empty `{}` response doesn't pass.
+
+### Stats (v1.5.1 reality, fresh `.mypy_cache` + `__pycache__`)
+
+- **695 non-extras tests passing** (unchanged from v1.5.0; the
+  CHANGELOG numbers above just correct the v1.5.0 reporting drift).
+- 19 Cedar extras tests passing (unchanged).
+- 16 cloud-live tests collected, all skipping cleanly without
+  creds (unchanged; the env-var teardown is the v1.5.1 fix).
+- 155 source files type-checked, no mypy issues (corrected from
+  v1.5.0's "153" claim).
+- All four primary gauntlets green from repo root with fresh caches:
+  ruff, ruff format, mypy, pytest non-extras-non-cloud-non-cloud_live.
+
+### Process note
+
+This is the sixth release-cycle where a pre-prod review surfaced
+findings that closed in a same-day patch (v0.7.1, v0.7.2, v0.7.3,
+v1.1.1, v1.2.1, v1.5.1). The pattern is stable: ship → review →
+patch the findings → ship. Zero outstanding review findings remain
+across the v0.x and v1.x lines.
+
+---
+
 ## [1.5.0] — 2026-05-12 — Cloud live-runtime test scaffolding + Cedar depth
 
 Closes the last three deferred test-depth items from the v0.7-v1.4

@@ -14,6 +14,7 @@ and confirm it appears in ``list_records``.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -52,6 +53,19 @@ def _delete_record_best_effort(
     ``VertexAgentRegistry`` doesn't expose a ``delete_record`` method at
     this layer, so we go through the underlying client directly. Any
     exception is swallowed — cleanup must never fail a test.
+
+    **API-name assumption.** ``delete_registry_record`` is the upstream
+    operation name we *believe* `AgentRegistryServiceClient` exposes; we
+    haven't verified it against a live GCP project during plan drafting.
+    If Google named it differently (``delete_record`` / ``unregister`` /
+    etc.), the call raises ``AttributeError`` and the broad
+    ``except Exception: pass`` swallows it — orphaned test records would
+    then accumulate in long-running shared registries. When v1.5's
+    first user runs these tests against real Vertex and confirms the
+    operation name, swap the literal here for the verified one (and
+    consider promoting it to a ``VertexAgentRegistry.delete`` helper
+    so the contract gets pinned by static typing rather than runtime
+    swallowing).
     """
     try:
         from google.cloud import aiplatform_v1beta1
@@ -92,12 +106,18 @@ async def test_vertex_registry_publish_and_get_roundtrip(
         )
         assert isinstance(record_id, str)
 
+        # Brief eventual-consistency retry — Vertex registries can lag
+        # a second or two between publish-200 and get-finds-record.
         record = await registry.get(record_name)
-        # The Vertex API returns either the full record or its metadata;
-        # both shapes are normalized to dict by VertexAgentRegistry.get.
-        # We accept None if the API has eventual-consistency lag, but in
-        # the typical case we should get a dict back.
-        assert record is None or isinstance(record, dict)
+        if record is None:
+            await asyncio.sleep(2.0)
+            record = await registry.get(record_name)
+        assert record is not None, (
+            f"Vertex registry get({record_name!r}) still None after retry — "
+            "either eventual-consistency lag > 2s or publish didn't materialize"
+        )
+        assert isinstance(record, dict)
+        assert record  # non-empty
     finally:
         _delete_record_best_effort(
             gcp_project_id, vertex_location, vertex_agent_registry_id, record_name

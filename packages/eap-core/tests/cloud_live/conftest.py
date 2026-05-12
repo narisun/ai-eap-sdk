@@ -11,6 +11,18 @@ Two-level gating per cloud (AWS / GCP):
 
 When both gates pass, the fixture flips ``EAP_ENABLE_REAL_RUNTIMES=1`` for
 the duration of the test session so the SDK's real-runtime gate opens.
+**The fixture restores the prior env-var state on teardown** so a
+subsequent pytest run that doesn't go through this fixture (e.g. a
+single invocation collecting both cloud_live tests and non-cloud_live
+tests that assert the gate is closed) doesn't leak the flag.
+
+**Cred-probe depth caveat.** The probe calls ``sts.get_caller_identity``
+(AWS) / ``google.auth.default`` (GCP), which any non-empty cred passes.
+Service-specific IAM permissions (e.g. ``bedrock-agentcore:*``,
+``aiplatform.user``) are NOT verified — a test using creds without the
+right service grants will fail at the first SDK call rather than skip.
+Acceptable trade-off; deep IAM probing would be both expensive and
+brittle.
 
 The default gauntlet (``pytest -m "not extras and not cloud and not
 cloud_live"``) deselects this directory entirely. The cloud-live gauntlet
@@ -23,17 +35,35 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Iterator
 
 import pytest
 
 
+def _open_real_runtimes_gate() -> Iterator[None]:
+    """Set EAP_ENABLE_REAL_RUNTIMES=1 for the fixture lifetime; restore
+    the prior state on teardown. Avoids leaking the flag into a follow-on
+    pytest run that mixes cloud_live and non-cloud_live tests.
+    """
+    prior = os.environ.get("EAP_ENABLE_REAL_RUNTIMES")
+    os.environ["EAP_ENABLE_REAL_RUNTIMES"] = "1"
+    try:
+        yield
+    finally:
+        if prior is None:
+            os.environ.pop("EAP_ENABLE_REAL_RUNTIMES", None)
+        else:
+            os.environ["EAP_ENABLE_REAL_RUNTIMES"] = prior
+
+
 @pytest.fixture(scope="session")
-def live_aws_enabled() -> None:
+def live_aws_enabled() -> Iterator[None]:
     """Gate AWS live tests on env flag + STS cred probe.
 
     Skips with a clear setup message if ``EAP_LIVE_AWS=1`` is unset, or
     if boto3's default cred chain can't reach STS. On success, sets
-    ``EAP_ENABLE_REAL_RUNTIMES=1`` so the SDK's real-runtime guard opens.
+    ``EAP_ENABLE_REAL_RUNTIMES=1`` for the session and restores the
+    prior state on teardown.
     """
     if os.environ.get("EAP_LIVE_AWS") != "1":
         pytest.skip(
@@ -55,18 +85,17 @@ def live_aws_enabled() -> None:
             f"AWS credentials invalid or unreachable ({type(e).__name__}: {e}). "
             "Verify AWS_PROFILE / AWS_ACCESS_KEY_ID / IAM role can call sts:GetCallerIdentity."
         )
-    # Open the SDK's real-runtime gate for the test session duration.
-    os.environ["EAP_ENABLE_REAL_RUNTIMES"] = "1"
+    yield from _open_real_runtimes_gate()
 
 
 @pytest.fixture(scope="session")
-def live_gcp_enabled() -> None:
+def live_gcp_enabled() -> Iterator[None]:
     """Gate GCP live tests on env flag + ADC cred probe.
 
     Skips with a clear setup message if ``EAP_LIVE_GCP=1`` is unset, or
     if ``google.auth.default`` can't resolve a credential. On success,
-    sets ``EAP_ENABLE_REAL_RUNTIMES=1`` so the SDK's real-runtime guard
-    opens.
+    sets ``EAP_ENABLE_REAL_RUNTIMES=1`` for the session and restores
+    the prior state on teardown.
     """
     if os.environ.get("EAP_LIVE_GCP") != "1":
         pytest.skip(
@@ -86,7 +115,7 @@ def live_gcp_enabled() -> None:
             "Verify GOOGLE_APPLICATION_CREDENTIALS or run "
             "`gcloud auth application-default login`."
         )
-    os.environ["EAP_ENABLE_REAL_RUNTIMES"] = "1"
+    yield from _open_real_runtimes_gate()
 
 
 @pytest.fixture(scope="session")

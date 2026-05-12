@@ -41,6 +41,20 @@ def _delete_record_best_effort(registry_name: str, region: str, record_name: str
     The SDK's ``RegistryClient`` doesn't expose a ``delete_record`` method
     at this layer, so we go through boto3 directly. Any exception is
     swallowed — cleanup must never fail a test.
+
+    **API-name assumption.** ``delete_registry_record`` is the upstream
+    operation name we *believe* AWS Bedrock AgentCore Control exposes for
+    this purpose; we haven't verified it against a live account during
+    plan drafting. If AWS named it differently (``delete_record`` /
+    ``deregister_record`` / ``remove_registry_entry``), the call below
+    raises ``AttributeError`` and the broad ``except Exception: pass``
+    swallows it — orphaned test records would then accumulate in
+    long-running shared registries. When v1.5's first user runs these
+    tests against real AWS and confirms (or refutes) the operation
+    name, swap the literal here for the verified one (and consider
+    promoting it to an ``SDK RegistryClient.delete_record`` helper so
+    the contract gets pinned by static typing rather than runtime
+    swallowing).
     """
     try:
         import boto3
@@ -75,7 +89,10 @@ async def test_publish_and_get_record_roundtrip(
         assert record is not None
         # The API returns either the full record or its metadata; both
         # shapes are normalized to dict by RegistryClient.get_record.
+        # Verify content (not just dictness) — an empty {} would pass
+        # the isinstance check but fail the round-trip property.
         assert isinstance(record, dict)
+        assert record  # not empty
     finally:
         _delete_record_best_effort(agentcore_registry_name, aws_region, record_name)
 
