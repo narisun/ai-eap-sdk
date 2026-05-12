@@ -55,10 +55,28 @@ class MiddlewarePipeline:
                 # the very middleware that failed.
                 ran.append(mw)
                 req = await mw.on_request(req, ctx)
-            async for chunk in terminal(req, ctx):
-                for mw in self._mws:
-                    chunk = await mw.on_stream_chunk(chunk, ctx)
-                yield chunk
+            try:
+                async for chunk in terminal(req, ctx):
+                    for mw in self._mws:
+                        chunk = await mw.on_stream_chunk(chunk, ctx)
+                    yield chunk
+            finally:
+                # ``on_stream_end`` runs right-to-left to mirror ``on_response``
+                # semantics. It fires whether the stream completes normally OR
+                # the terminal/chunk pipeline raises — audit close, span close,
+                # PII vault flush, trajectory write all need a final hook.
+                # Errors from ``on_stream_end`` are best-effort: a secondary
+                # failure here should not mask a primary terminal exception.
+                for mw in reversed(ran):
+                    try:
+                        await mw.on_stream_end(ctx)
+                    except Exception as secondary:
+                        mw_name = getattr(mw, "name", type(mw).__name__)
+                        _LOG.warning(
+                            "secondary failure in %s.on_stream_end during streaming finalization",
+                            mw_name,
+                            exc_info=secondary,
+                        )
         except Exception as exc:
             await self._on_error(ran, exc, ctx)
             raise

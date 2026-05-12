@@ -22,6 +22,9 @@ class RecordingMiddleware:
     async def on_stream_chunk(self, chunk: Chunk, ctx: Context) -> Chunk:
         return chunk
 
+    async def on_stream_end(self, ctx: Context) -> None:
+        return None
+
     async def on_error(self, exc: Exception, ctx: Context) -> None:
         self._log.append(f"err:{self.name}")
 
@@ -81,6 +84,9 @@ async def test_pipeline_streams_chunks_through_each_middleware_in_order():
                 index=chunk.index, text=chunk.text + "!", finish_reason=chunk.finish_reason
             )
 
+        async def on_stream_end(self, ctx: Context) -> None:
+            return None
+
         async def on_error(self, exc: Exception, ctx: Context) -> None:
             pass
 
@@ -113,6 +119,9 @@ async def test_pipeline_run_stream_calls_on_error_on_exception():
 
         async def on_stream_chunk(self, chunk: Chunk, ctx: Context) -> Chunk:
             raise RuntimeError("stream boom")
+
+        async def on_stream_end(self, ctx: Context) -> None:
+            return None
 
         async def on_error(self, exc: Exception, ctx: Context) -> None:
             log.append(f"err:boomstream:{type(exc).__name__}")

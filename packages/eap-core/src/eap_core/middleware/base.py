@@ -19,6 +19,7 @@ class Middleware(Protocol):
     async def on_request(self, req: Request, ctx: Context) -> Request: ...
     async def on_response(self, resp: Response, ctx: Context) -> Response: ...
     async def on_stream_chunk(self, chunk: Chunk, ctx: Context) -> Chunk: ...
+    async def on_stream_end(self, ctx: Context) -> None: ...
     async def on_error(self, exc: Exception, ctx: Context) -> None: ...
 
 
@@ -35,6 +36,9 @@ class PassthroughMiddleware:
 
     async def on_stream_chunk(self, chunk: Chunk, ctx: Context) -> Chunk:
         return chunk
+
+    async def on_stream_end(self, ctx: Context) -> None:
+        return None
 
     async def on_error(self, exc: Exception, ctx: Context) -> None:
         return None
