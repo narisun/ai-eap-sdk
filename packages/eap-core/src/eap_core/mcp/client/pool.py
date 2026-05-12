@@ -58,13 +58,15 @@ def _unpack_transport_streams(result: Any, arity: int, cfg_name: str) -> tuple[A
     """Unpack ``(read, write)`` from a transport context-manager's yielded value.
 
     ``stdio_client(...)`` yields a 2-tuple ``(read, write)``.
+    ``sse_client(...)`` (legacy SSE, v1.3) also yields a 2-tuple.
     ``streamable_http_client(...)`` yields a 3-tuple
     ``(read, write, get_session_id)``; v1.2 doesn't use Streamable-HTTP
     session resumption so the third element is discarded.
 
     Extracted as a pure module-level helper so the arity-dispatch is
-    unit-testable without ``mcp`` installed — the integration test in
-    ``tests/extras/test_mcp_client_http_integration.py`` exercises it
+    unit-testable without ``mcp`` installed — the integration tests in
+    ``tests/extras/test_mcp_client_http_integration.py`` and
+    ``tests/extras/test_mcp_client_sse_integration.py`` exercise it
     end-to-end against a real upstream, but the unit tests in
     ``tests/test_mcp_client_pool.py`` catch arity regressions even when
     the integration suite isn't run (or is broken by an upstream
@@ -185,22 +187,39 @@ class McpClientPool:
     async def _spawn(self, cfg: McpServerConfig) -> McpServerHandle:
         """Dispatch to the transport-specific spawn helper.
 
-        Both helpers must return a fully-initialised :class:`McpServerHandle`:
+        Each helper must return a fully-initialised :class:`McpServerHandle`:
         the upstream ``mcp.ClientSession`` has been entered into the pool's
         :class:`AsyncExitStack` and its ``initialize`` + ``list_tools`` calls
         have completed.
 
-        Pydantic's ``Literal["stdio", "http"]`` discriminator already rejects
-        unknown transport strings at config construction time, so the
-        ``else`` branch here is purely defensive — it documents the contract
-        a future v1.3+ transport must satisfy (add a new ``_spawn_<name>``
-        helper and route to it here).
+        Pydantic's ``Literal["stdio", "http", "sse", "websocket"]``
+        discriminator already rejects unknown transport strings at config
+        construction time, so the final ``raise`` is purely defensive — it
+        documents the contract a future transport must satisfy (add a new
+        ``_spawn_<name>`` helper and route to it here).
+
+        The ``websocket`` branch raises explicitly with a "added in T2"
+        marker so the Literal value is recognised even before the
+        WebSocket spawn body lands — without the branch the dispatcher
+        would fall through to the generic "unsupported transport" error,
+        which would be confusing because the Literal accepts the value.
         """
         assert self._stack is not None, "pool not entered"
         if cfg.transport == "stdio":
             return await self._spawn_stdio(cfg)
         if cfg.transport == "http":
             return await self._spawn_http(cfg)
+        if cfg.transport == "sse":
+            return await self._spawn_sse(cfg)
+        if cfg.transport == "websocket":
+            # Placeholder: T2 will replace this with a real
+            # ``_spawn_websocket`` helper. Until then the Literal still
+            # accepts ``"websocket"`` (config validation enforces URL +
+            # forbids headers/auth) but spawning is not wired up.
+            raise McpServerSpawnError(
+                "websocket transport added in T2 — configuration accepted but "
+                "spawn helper not yet implemented in this build"
+            )
         raise McpServerSpawnError(
             f"unsupported transport {cfg.transport!r} for server {cfg.name!r}"
         )
@@ -284,6 +303,46 @@ class McpClientPool:
         )
         transport_cm = _streamable_http_client(cfg.url, http_client=http_client)
         return await self._open_session(cfg, transport_cm, arity=3)
+
+    async def _spawn_sse(self, cfg: McpServerConfig) -> McpServerHandle:
+        """Open a legacy SSE session against a remote MCP server.
+
+        Unlike ``streamable_http_client``, ``sse_client`` keeps the
+        original keyword API: ``headers``, ``timeout``, ``auth`` are
+        passed directly — there is no ``httpx.AsyncClient`` intermediate
+        to construct. Returns a 2-tuple ``(read, write)`` (no session-id
+        callback), so the shared :meth:`_open_session` path consumes it
+        with ``arity=2``, same as stdio.
+
+        The ``timeout=min(cfg.request_timeout_s, 30.0)`` clamp targets
+        ``sse_client``'s **connection** timeout (defaults to 5s
+        upstream). ``cfg.request_timeout_s`` is the per-call timeout
+        used by :class:`McpClientSession.call_tool`; the two are
+        different concepts. Clamping at 30s avoids hanging
+        indefinitely if a caller raised ``request_timeout_s`` very
+        high, while still respecting an aggressively-low per-call
+        setting.
+
+        ``cfg.auth`` is typed as ``Any`` to keep ``httpx`` out of the
+        core import path; the upstream helper expects
+        ``httpx.Auth | None`` and accepts our value as-is.
+        """
+        try:
+            from mcp.client.sse import sse_client
+        except ImportError as e:
+            raise McpServerSpawnError(
+                "MCP client requires the [mcp] extra: pip install eap-core[mcp]"
+            ) from e
+
+        assert self._stack is not None, "pool not entered"
+        assert cfg.url is not None  # enforced by McpServerConfig validator
+        transport_cm = sse_client(
+            cfg.url,
+            headers=cfg.headers,
+            auth=cfg.auth,
+            timeout=min(cfg.request_timeout_s, 30.0),
+        )
+        return await self._open_session(cfg, transport_cm, arity=2)
 
     async def _open_session(
         self,

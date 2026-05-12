@@ -53,14 +53,27 @@ def test_request_timeout_zero_is_rejected():
         McpServerConfig(name="x", command="python", request_timeout_s=-1.0)
 
 
-def test_transport_only_accepts_stdio_or_http_in_v1_2():
-    """Forward-compat pin: v1.2 accepts 'stdio' and 'http'. When a future
-    minor adds 'websocket' (or similar), this test should be updated to
-    assert the new value is accepted. If a future commit silently
-    broadens the Literal without bumping the minor version, this test
-    catches it."""
+def test_transport_accepts_all_four_v1_3_values():
+    """Forward-compat pin: v1.3 accepts 'stdio', 'http', 'sse',
+    'websocket'. If a future commit silently broadens the Literal
+    without bumping the minor version, this test catches it via the
+    obviously-fake rejection sample.
+
+    All four transports construct cleanly with their minimum
+    transport-specific fields; a clearly-fake value (``"named-pipe"``)
+    is rejected at Literal validation. When a future v1.4+ adds a new
+    transport, update both halves of this test together.
+    """
+    # All four valid transports — minimum fields each.
+    assert McpServerConfig(name="a", command="python").transport == "stdio"
+    assert McpServerConfig(name="b", transport="http", url="https://x").transport == "http"
+    assert McpServerConfig(name="c", transport="sse", url="https://x").transport == "sse"
+    assert McpServerConfig(name="d", transport="websocket", url="wss://x").transport == "websocket"
+    # Obviously-fake transport is rejected at Literal validation.
     with pytest.raises(ValidationError, match="literal"):
-        McpServerConfig.model_validate({"name": "x", "command": "python", "transport": "websocket"})
+        McpServerConfig.model_validate(
+            {"name": "x", "command": "python", "transport": "named-pipe"}
+        )
 
 
 def test_dict_roundtrip():
@@ -140,6 +153,97 @@ def test_http_config_requires_url():
 def test_stdio_config_requires_command():
     with pytest.raises(ValidationError, match="requires command"):
         McpServerConfig(name="x", transport="stdio")
+
+
+# v1.3: sse transport variant tests (parallel to http above)
+
+
+def test_sse_config_minimal():
+    cfg = McpServerConfig(
+        name="legacy",
+        transport="sse",
+        url="https://legacy.example.com/sse",
+    )
+    assert cfg.transport == "sse"
+    assert cfg.url == "https://legacy.example.com/sse"
+    assert cfg.command is None
+    assert cfg.headers is None
+    assert cfg.auth is None
+
+
+def test_sse_config_with_headers():
+    cfg = McpServerConfig(
+        name="r",
+        transport="sse",
+        url="https://x",
+        headers={"X-API-Key": "secret"},
+    )
+    assert cfg.headers == {"X-API-Key": "secret"}
+
+
+def test_sse_config_with_auth():
+    """SSE accepts ``auth`` just like http — both share the same shape."""
+
+    class FakeHttpxAuth:
+        """Stand-in for httpx.Auth so we don't import httpx here."""
+
+    sentinel = FakeHttpxAuth()
+    cfg = McpServerConfig(
+        name="r",
+        transport="sse",
+        url="https://x",
+        auth=sentinel,
+    )
+    assert cfg.auth is sentinel
+
+
+def test_sse_config_rejects_command():
+    with pytest.raises(ValidationError, match="forbids 'command'"):
+        McpServerConfig(name="x", transport="sse", url="https://x", command="python")
+
+
+def test_sse_config_rejects_args():
+    with pytest.raises(ValidationError, match="forbids 'args'"):
+        McpServerConfig(name="x", transport="sse", url="https://x", args=["a"])
+
+
+def test_sse_config_rejects_cwd():
+    with pytest.raises(ValidationError, match="forbids 'cwd'"):
+        McpServerConfig(name="x", transport="sse", url="https://x", cwd=Path("/tmp"))
+
+
+def test_sse_config_rejects_env():
+    with pytest.raises(ValidationError, match="forbids 'env'"):
+        McpServerConfig(name="x", transport="sse", url="https://x", env={"FOO": "bar"})
+
+
+def test_sse_config_requires_url():
+    with pytest.raises(ValidationError, match="requires url"):
+        McpServerConfig(name="x", transport="sse")
+
+
+def test_sse_dict_roundtrip_excludes_auth():
+    """L2 pin: ``auth`` is declared with ``exclude=True``. Mirrors the
+    http roundtrip test for the SSE variant — same shape, same exclusion
+    contract."""
+
+    class FakeHttpxAuth:
+        """Stand-in for httpx.Auth so we don't import httpx here."""
+
+    cfg = McpServerConfig(
+        name="legacy",
+        transport="sse",
+        url="https://legacy.example.com/sse",
+        headers={"X-API-Key": "secret"},
+        auth=FakeHttpxAuth(),
+    )
+    d = cfg.model_dump()
+    assert "auth" not in d
+    back = McpServerConfig.model_validate(d)
+    assert back.transport == "sse"
+    assert back.url == "https://legacy.example.com/sse"
+    assert back.headers == {"X-API-Key": "secret"}
+    assert back.auth is None
 
 
 def test_http_dict_roundtrip_excludes_auth():
