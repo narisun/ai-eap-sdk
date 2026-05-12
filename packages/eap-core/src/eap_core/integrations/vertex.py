@@ -287,9 +287,7 @@ class VertexCodeSandbox:
             raise ImportError(
                 "VertexCodeSandbox requires the [gcp] extra: pip install eap-core[gcp]"
             ) from e
-        # SandboxServiceClient exists at runtime but isn't in the
-        # type stubs google-cloud-aiplatform ships with.
-        return aiplatform_v1beta1.SandboxServiceClient()  # type: ignore[attr-defined]
+        return aiplatform_v1beta1.SandboxServiceClient()
 
     async def execute(self, language: str, code: str) -> Any:
         from eap_core.sandbox import SandboxResult
@@ -387,7 +385,7 @@ class VertexBrowserSandbox:
             raise ImportError(
                 "VertexBrowserSandbox requires the [gcp] extra: pip install eap-core[gcp]"
             ) from e
-        return aiplatform_v1beta1.SandboxServiceClient()  # type: ignore[attr-defined]
+        return aiplatform_v1beta1.SandboxServiceClient()
 
     def _parent(self) -> str:
         return f"projects/{self._project_id}/locations/{self._location}"
@@ -625,7 +623,7 @@ class VertexAgentRegistry:
             raise ImportError(
                 "VertexAgentRegistry requires the [gcp] extra: pip install eap-core[gcp]"
             ) from e
-        return aiplatform_v1beta1.AgentRegistryServiceClient()  # type: ignore[attr-defined]
+        return aiplatform_v1beta1.AgentRegistryServiceClient()
 
     def _parent(self) -> str:
         return (
@@ -730,7 +728,7 @@ class AP2PaymentClient:
             raise ImportError(
                 "AP2PaymentClient requires the [gcp] extra: pip install eap-core[gcp]"
             ) from e
-        return aiplatform_v1beta1.PaymentServiceClient()  # type: ignore[attr-defined]
+        return aiplatform_v1beta1.PaymentServiceClient()
 
     def _parent(self) -> str:
         return f"projects/{self._project_id}/locations/{self._location}"
