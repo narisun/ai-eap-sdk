@@ -33,6 +33,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 # Make tracing.py importable when server.py is run as a script *or*
 # imported through ``sys.path.insert(0, '.../playground')``. The
@@ -101,7 +102,7 @@ def _purge_sibling_modules(agent_dir: Path) -> None:
     new agent is loaded. Names like ``eap_core`` (loaded from
     ``site-packages``) are left untouched.
     """
-    sdk_root = _EXAMPLES_ROOT.resolve()
+    examples_root = _EXAMPLES_ROOT.resolve()
     target_dir = agent_dir.resolve()
     for mod_name in list(sys.modules):
         if mod_name.startswith("_playground_agents."):
@@ -112,23 +113,25 @@ def _purge_sibling_modules(agent_dir: Path) -> None:
         # first entry. Namespace packages expose ``_NamespacePath``
         # which is iterable but NOT a ``list``; coerce defensively and
         # bail out if nothing string-like comes out the other side.
-        if mod_file is not None and not isinstance(mod_file, (str, bytes)):
+        if mod_file is not None and not isinstance(mod_file, str):
             try:
                 mod_file = next(iter(mod_file), None)
             except TypeError:
                 mod_file = None
-        if not isinstance(mod_file, (str, bytes)):
+        # ``Path()`` doesn't accept ``bytes`` — narrow to ``str`` only
+        # here so mypy sees the same precondition the runtime enforces.
+        if not isinstance(mod_file, str):
             continue
         try:
             mod_path = Path(mod_file).resolve()
         except (OSError, ValueError, TypeError):
             continue
         try:
-            rel = mod_path.relative_to(sdk_root)
+            rel = mod_path.relative_to(examples_root)
         except ValueError:
             continue  # not under examples/ — leave it alone
         # First path component is the example project name.
-        owning_example = sdk_root / rel.parts[0]
+        owning_example = examples_root / rel.parts[0]
         if owning_example != target_dir:
             del sys.modules[mod_name]
 
@@ -238,6 +241,25 @@ class ToolResult(BaseModel):
 
 app = FastAPI(title="EAP-Core Playground")
 
+# Block DNS-rebind attacks. The playground binds to 127.0.0.1 by
+# design, but a malicious page on ``evil.example.com`` whose A record
+# resolves to 127.0.0.1 can still drive cross-site requests against
+# this server unless the ``Host`` header is validated. Reject any
+# request whose ``Host`` is not one of the localhost spellings (with
+# or without the playground's default port). ``TestClient`` defaults
+# the host to ``testserver``; tests therefore override the ``Host``
+# header explicitly rather than embed the test-only sentinel into the
+# production allow-list.
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=[
+        "127.0.0.1",
+        "127.0.0.1:8765",
+        "localhost",
+        "localhost:8765",
+    ],
+)
+
 
 @app.get("/api/agents", response_model=list[AgentInfo])
 async def list_agents() -> list[AgentInfo]:
@@ -311,6 +333,15 @@ async def invoke_tool(name: str, tool: str, body: ToolInvocation) -> ToolResult:
     registry = getattr(client, "_tool_registry", None)
     if registry is None:
         raise HTTPException(400, f"agent {name!r} has no tool registry")
+    # Pre-check that the tool is known to this agent's registry before
+    # dispatching. Without this, ``client.invoke_tool`` raises
+    # ``MCPError("tool not found in registry")`` which the broad
+    # ``except`` below would map to a 500 — symmetric with the agent-
+    # not-found path which correctly returns 404. ``McpToolRegistry.get``
+    # returns ``ToolSpec | None`` so a ``None`` here means the tool is
+    # genuinely absent.
+    if registry.get(tool) is None:
+        raise HTTPException(404, f"tool {tool!r} not found on agent {name!r}")
     try:
         result = await client.invoke_tool(tool, body.arguments)
     except Exception as exc:

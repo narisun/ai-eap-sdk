@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "EAP-Core SDK playground — browser-based UI for testing example agents"
 requires-python = ">=3.11"
 dependencies = [
-    "eap-core",
+    "eap-core>=1.6.1",
     "fastapi>=0.110",
     "uvicorn>=0.29",
 ]
@@ -18,6 +18,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
+
+# Resolve ``eap-core`` against the in-tree workspace member rather
+# than PyPI. Without this, ``cd examples/playground && uv sync`` would
+# pull whatever ``eap-core`` happens to be on PyPI; with it, the
+# playground always tests against the source tree it ships with.
+[tool.uv.sources]
+eap-core = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

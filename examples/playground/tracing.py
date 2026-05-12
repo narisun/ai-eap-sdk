@@ -122,6 +122,20 @@ def install_trace(client: Any) -> None:
     Best-effort: if the client's internals don't match what we expect
     we silently skip — the playground still works, the trace panel is
     just empty for that agent.
+
+    Idempotency caveat:
+        Assumes each client owns its own ``_tool_registry`` instance.
+        If a future agent shares a registry across clients, this
+        function will only attach the registry-level trace wrapper
+        once — the second client's tool calls will still be recorded
+        via the shared wrapper, but its per-client middleware
+        installation runs independently (the
+        ``PlaygroundTraceMiddleware`` is inserted into each client's
+        own pipeline regardless). Today every example agent
+        constructs its own ``McpToolRegistry()``, so this caveat is
+        latent rather than active — but the contract is fragile and
+        documented here so a future refactor that introduces shared
+        registries notices.
     """
     pipeline = getattr(client, "_pipeline", None)
     mws = getattr(pipeline, "_mws", None) if pipeline is not None else None

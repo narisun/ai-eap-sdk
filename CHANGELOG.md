@@ -16,6 +16,144 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.6.1] — 2026-05-12 — Patch release closing v1.6.0 pre-prod review findings
+
+Same-day patch release addressing all ten findings from the v1.6.0
+pre-prod review of `examples/playground/` (1 HIGH, 3 MEDIUM, 4 LOW,
+2 NIT). No SDK source changes — the SDK packages get a version bump
+only; every behavioral fix lives inside the playground example
+project, the workspace root `pyproject.toml` (mypy scope), and this
+changelog.
+
+### Fixed
+
+- **H1: Unknown tool name returns 404 instead of 500.**
+  `POST /api/agents/{name}/tools/{tool}` for a tool not on the
+  agent's registry previously surfaced
+  `MCPError("tool not found in registry")` from `client.py:174`
+  through the handler's broad `except Exception` and emitted a 500.
+  This was asymmetric with the agent-not-found path (correctly 404).
+  The handler now pre-checks `registry.get(tool) is None` and raises
+  `HTTPException(404, ...)` with the tool name in the detail.
+  Regression test:
+  `tests_playground/test_api.py::test_unknown_tool_returns_404`.
+- **M1: Playground source files type-checked by mypy.**
+  The workspace `[tool.mypy] files=` list now includes
+  `examples/playground/server.py` and
+  `examples/playground/tracing.py` so `uv run mypy` from the repo
+  root catches regressions in the playground server/tracing helpers
+  automatically. The playground *test* directory is deliberately
+  omitted — those tests need FastAPI + the example agents'
+  transitive deps on `sys.path` which the default mypy run shouldn't
+  have to install. The actual latent bug surfaced by enabling type
+  checking — `_purge_sibling_modules` declared `mod_file` could be
+  `str | bytes` but `Path()` doesn't accept `bytes` — was fixed by
+  tightening the `isinstance` narrowing to `str` only. `starlette`
+  was added to the third-party ignore list (the new
+  `TrustedHostMiddleware` import would otherwise trip
+  `ignore_missing_imports`).
+- **M2: `install_trace` idempotency caveat documented.**
+  Added a docstring section to `tracing.install_trace` explaining
+  the contract assumption that each client owns its own
+  `_tool_registry`. Today every example agent constructs its own
+  `McpToolRegistry()`, so this caveat is latent — but a future
+  refactor introducing a shared registry would silently skip the
+  registry-level trace wrapper on the second client. No code
+  change; documentation only, on review's recommendation not to
+  over-engineer.
+- **M3: DNS-rebind protection via `TrustedHostMiddleware`.**
+  The live probe in the v1.6.0 review confirmed that a request to
+  the playground with `Host: evil.example.com` returned 200 — a
+  malicious page on `evil.example.com` whose A record resolves to
+  `127.0.0.1` could therefore exfiltrate tool data via DNS rebind.
+  Added `starlette.middleware.trustedhost.TrustedHostMiddleware`
+  with an allow-list of `127.0.0.1`, `127.0.0.1:8765`, `localhost`,
+  `localhost:8765`. The `testserver` sentinel that `TestClient`
+  defaults to is deliberately NOT in the allow-list — tests
+  override `Host: 127.0.0.1` explicitly so the production defense
+  isn't weakened. Regression test:
+  `tests_playground/test_api.py::test_dns_rebind_blocked` asserts a
+  request with `Host: evil.example.com` returns 400 and the same
+  client with `Host: 127.0.0.1` returns 200.
+- **L1: Frontend now URL-encodes agent and tool names.**
+  `examples/playground/static/app.js` wraps both fetch URL
+  interpolations (`/api/agents/{agentName}/chat` and
+  `/api/agents/{agentName}/tools/{tool}`) in `encodeURIComponent`.
+  Names with reserved URL characters (`/`, `?`, `#`, spaces) no
+  longer corrupt the route.
+- **L2: Trace panel label renamed to "Pipeline trace".**
+  `PlaygroundTraceMiddleware` emits `request_start` and `response`
+  markers in addition to tool-call entries — counting all entries
+  under a label that says "Tool-call trace" was confusing. The
+  summary label and the initial HTML placeholder now both say
+  "Pipeline trace (N entries)", which honestly describes what the
+  panel shows without filtering away pipeline markers (debug value
+  retained). Picked the minimum-churn approach per the review's
+  guidance — kept all entries visible, only the label and HTML
+  changed.
+- **L3: `examples/playground/pyproject.toml` `eap-core` floored + workspace-sourced.**
+  The dependency line now pins `eap-core>=1.6.1` so users can't
+  accidentally downgrade, and a new `[tool.uv.sources]` block
+  declares `eap-core = { workspace = true }` so
+  `cd examples/playground && uv sync` resolves against the in-tree
+  workspace member rather than PyPI. The workspace `uv.lock` rebuild
+  produced only the two expected workspace version-line changes
+  (eap-core 1.6.0→1.6.1, eap-cli 1.6.0→1.6.1).
+- **L4: Mobile/narrow-viewport CSS breakpoint.**
+  `examples/playground/static/style.css` now ships a
+  `@media (max-width: 48rem)` rule that collapses the chat + sidebar
+  grid into a single column and reorders the tool sidebar below the
+  chat pane. The full-width view above 48rem is unchanged.
+
+### Internal cleanup
+
+- **NIT-1: `sdk_root` variable renamed to `examples_root`.**
+  Only affects `_purge_sibling_modules` in `server.py` — the
+  variable holds the resolved path of `examples/`, not the SDK
+  root. The local rename is purely cosmetic, no behavioral change.
+- **NIT-2: Test coverage expanded from 4 to 8 in `test_api.py`.**
+  Four new tests:
+  - `test_unknown_tool_returns_404` (covers H1 regression).
+  - `test_cross_agent_isolation` (load
+    `transactional-agent` → `research-agent` → `transactional-agent`;
+    asserts the sibling-purge machinery still works across the v1.6.1
+    patches).
+  - `test_trace_contains_pipeline_markers` (asserts the chat trace
+    surfaces the `request_start` + `response` markers — chosen as
+    fallback per the spec because neither example agent's local
+    `responses.yaml` triggers a `tool_call` instruction today, and
+    the local runtime contract for multi-step tool-call dispatch
+    isn't defined).
+  - `test_dns_rebind_blocked` (covers M3 regression).
+
+### Stats (v1.6.1 reality, fresh `.mypy_cache` + `__pycache__`)
+
+- **695 non-extras tests passing** (unchanged from v1.6.0 — playground
+  tests live in their own directory).
+- **8 playground integration tests** in
+  `examples/playground/tests_playground/test_api.py` (up from 4) —
+  runs via the same `uv run --with eap-core --with fastapi
+  --with uvicorn --with httpx pytest examples/playground/tests_playground -q`
+  command.
+- **157 source files type-checked, no mypy issues** (up from 155 in
+  v1.6.0; +2 = `examples/playground/server.py` and `tracing.py`).
+- 15 extras MCP tests still passing.
+- 47 cross-domain + bankdw + sfcrm example tests still passing.
+- All primary gauntlets green with fresh caches: ruff, ruff format,
+  mypy, pytest non-extras-non-cloud-non-cloud_live.
+- Live smoke: H1 reproducer (POST tools/no_such_tool) → 404;
+  M3 reproducer (Host: evil.example.com) → 400.
+
+### Backward compat
+
+Strict additive + bug-fix only. Zero SDK source changes —
+`packages/eap-core/` and `packages/eap-cli/` source trees only see
+the version bump. Every behavioral change lives in
+`examples/playground/`. Users on v1.6.0 can upgrade by bumping the
+workspace pin; nothing in the public SDK surface moved.
+
+---
+
 ## [1.6.0] — 2026-05-11 — Playground web UI for example agents
 
 Ships `examples/playground/` — a browser-based UI for interacting

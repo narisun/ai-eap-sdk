@@ -71,8 +71,13 @@ function renderTrace(trace) {
     li.textContent = `[${ts}ms] ${entry.kind}: ${entry.name || ""} ${argsStr}`;
     traceList.appendChild(li);
   }
+  // "Pipeline trace" rather than "Tool-call trace" because the panel
+  // also surfaces pipeline markers (request_start, response, error)
+  // emitted by ``PlaygroundTraceMiddleware`` in addition to actual
+  // tool invocations. The count therefore reflects every recorded
+  // entry, not just tool calls.
   tracePanel.querySelector("summary").textContent =
-    `Tool-call trace (${trace.length} entries)`;
+    `Pipeline trace (${trace.length} entries)`;
 }
 
 chatForm.addEventListener("submit", async (e) => {
@@ -88,7 +93,7 @@ chatForm.addEventListener("submit", async (e) => {
   chatInput.value = "";
   chatInput.disabled = true;
   try {
-    const resp = await fetch(`/api/agents/${agentName}/chat`, {
+    const resp = await fetch(`/api/agents/${encodeURIComponent(agentName)}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: msg }),
@@ -123,11 +128,14 @@ toolForm.addEventListener("submit", async (e) => {
   }
   toolResult.textContent = "(invoking…)";
   try {
-    const resp = await fetch(`/api/agents/${agentName}/tools/${tool}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ arguments: args }),
-    });
+    const resp = await fetch(
+      `/api/agents/${encodeURIComponent(agentName)}/tools/${encodeURIComponent(tool)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ arguments: args }),
+      },
+    );
     const data = await resp.json();
     toolResult.textContent = JSON.stringify(data, null, 2);
   } catch (err) {

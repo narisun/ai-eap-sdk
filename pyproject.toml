@@ -67,11 +67,21 @@ ignore = [
 [tool.mypy]
 strict = true
 python_version = "3.11"
+# Playground source files are included so ``uv run mypy`` catches
+# regressions in the playground server/tracing helpers automatically.
+# The playground *tests* directory is deliberately omitted — those
+# tests need FastAPI + the example agents' transitive deps on
+# ``sys.path`` (transactional-agent, research-agent, …) which the
+# default mypy run shouldn't have to install. The L3 fix that added a
+# floor of ``eap-core>=1.6.1`` keeps playground source aligned with
+# the SDK version mypy actually checks.
 files = [
     "packages/eap-core/src",
     "packages/eap-cli/src",
     "packages/eap-core/tests",
     "packages/eap-cli/tests",
+    "examples/playground/server.py",
+    "examples/playground/tracing.py",
 ]
 
 # Third-party libraries that don't ship `py.typed` markers or whose type
@@ -105,6 +115,8 @@ module = [
     "opentelemetry.*",
     "uvicorn",
     "uvicorn.*",
+    "starlette",
+    "starlette.*",
 ]
 ignore_missing_imports = true
 
