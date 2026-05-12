@@ -1,4 +1,5 @@
 from eap_core.mcp.client import (
+    BearerTokenAuth,
     McpClientError,
     McpClientPool,
     McpServerConfig,
@@ -16,6 +17,7 @@ from eap_core.mcp.registry import default_registry as default_registry
 from eap_core.mcp.types import MCPError, ToolSpec
 
 __all__ = [
+    "BearerTokenAuth",
     "MCPError",
     "McpClientError",
     "McpClientPool",

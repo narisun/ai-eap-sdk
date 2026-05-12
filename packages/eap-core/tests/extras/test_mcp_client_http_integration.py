@@ -68,7 +68,17 @@ pytestmark = [
     pytest.mark.filterwarnings("ignore::DeprecationWarning"),
 ]
 
-from eap_core.mcp.client import McpClientPool, McpServerConfig
+# ``Context`` is imported at module scope (not inside the fixture) so
+# the stringified annotations on the ``echo_authorization`` tool below
+# can be evaluated by FastMCP's ``inspect.signature(..., eval_str=True)``
+# pass — otherwise FastMCP raises ``InvalidSignature: Unable to
+# evaluate type annotations``. ``from __future__ import annotations``
+# above turns the parameter annotation into the string ``"Context"``,
+# and FastMCP resolves that string in the function's enclosing module
+# globals at tool-registration time.
+from mcp.server.fastmcp import Context
+
+from eap_core.mcp.client import BearerTokenAuth, McpClientPool, McpServerConfig
 
 
 @pytest.fixture
@@ -106,6 +116,24 @@ async def in_process_mcp_server() -> AsyncIterator[str]:
     @mcp_server.tool(description="Echo back the sum of two integers.")
     async def add(a: int, b: int) -> dict[str, int]:
         return {"sum": a + b}
+
+    @mcp_server.tool(
+        description=(
+            "Return the incoming request's Authorization header. Used by the "
+            "BearerTokenAuth integration test to assert the header is "
+            "attached on the wire by the httpx.Auth flow."
+        )
+    )
+    async def echo_authorization(ctx: Context) -> dict[str, str]:
+        # FastMCP's ``Context`` exposes the underlying Starlette
+        # ``Request`` (and therefore its ``headers``) via
+        # ``ctx.request_context.request`` when the transport is HTTP.
+        # That's the v1.3 BearerTokenAuth seam: the client's
+        # ``httpx.Auth`` flow writes ``Authorization``; the server
+        # reads it back so the test can assert the header survived the
+        # full transport round-trip.
+        request = ctx.request_context.request
+        return {"authorization": request.headers.get("authorization", "<missing>")}
 
     app = mcp_server.streamable_http_app()
     config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error")
@@ -168,7 +196,11 @@ async def test_pool_round_trip_against_in_process_http_server(
         handle = handles[0]
         assert handle.config.transport == "http"
         assert handle.config.url == in_process_mcp_server
-        assert set(handle.tool_names) == {"hello", "add"}
+        # v1.3: ``echo_authorization`` was added to the fixture for the
+        # ``BearerTokenAuth`` round-trip test below; it ships alongside the
+        # original ``hello`` + ``add`` tools, so this assertion checks for
+        # superset rather than exact equality.
+        assert {"hello", "add"} <= set(handle.tool_names)
 
         # Round-trip via the agent-layer tool registry: namespaced
         # ``<server>__<tool>`` lookup → forwarder → ``call_tool`` →
@@ -216,3 +248,45 @@ async def test_pool_health_check_against_http_server(
     async with McpClientPool([cfg]) as pool:
         health = await pool.health_check()
         assert health == {"local-http": True}
+
+
+async def test_bearer_token_auth_attaches_header_end_to_end(
+    in_process_mcp_server: str,
+) -> None:
+    """End-to-end: ``BearerTokenAuth`` attaches ``Authorization:
+    Bearer <token>`` and the server receives it.
+
+    This is the v1.3 BearerTokenAuth seam validated through the full
+    stack — the ``httpx.Auth`` flow runs inside the upstream
+    ``streamable_http_client``'s ``httpx.AsyncClient``, the header
+    crosses the wire, and the FastMCP server's
+    ``echo_authorization`` tool reads it back off the Starlette
+    request.
+
+    A stub identity (sync ``get_token``) stands in for any concrete
+    ``IdentityToken`` implementation — the assertion is on the
+    transport plumbing, not the identity layer.
+    """
+
+    class _StubIdentity:
+        def get_token(self, *, audience: str | None = None, scope: str = "") -> str:
+            return "fake-token"
+
+    auth = BearerTokenAuth(
+        _StubIdentity(),
+        audience="mcp.example.com",
+        scope="read",
+    )
+    cfg = McpServerConfig(
+        name="local-http",
+        transport="http",
+        url=in_process_mcp_server,
+        auth=auth,
+    )
+    async with McpClientPool([cfg]) as pool:
+        registry = pool.build_tool_registry()
+        result = await registry.invoke("local-http__echo_authorization", {})
+        # The server saw the header exactly as the httpx.Auth flow
+        # wrote it. Header names are case-insensitive on the Starlette
+        # side; we compare on the lowercased key.
+        assert result == {"authorization": "Bearer fake-token"}

@@ -26,6 +26,7 @@ Typical use:
         await registry.invoke("server-a__list_tables", {})
 """
 
+from eap_core.mcp.client.auth import BearerTokenAuth
 from eap_core.mcp.client.config import McpServerConfig
 from eap_core.mcp.client.errors import (
     McpClientError,
@@ -38,6 +39,7 @@ from eap_core.mcp.client.errors import (
 from eap_core.mcp.client.pool import McpClientPool, McpServerHandle
 
 __all__ = [
+    "BearerTokenAuth",
     "McpClientError",
     "McpClientPool",
     "McpOutputSchemaError",
