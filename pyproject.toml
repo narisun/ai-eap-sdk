@@ -51,7 +51,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/**/*.py" = [
+# Match both the workspace `tests/` dirs and the per-example `tests_<name>/`
+# dirs (renamed in v1.4.0 to dodge the bare-`tests` package collision that
+# blocked pytest co-collection across all three MCP examples).
+"**/tests*/**/*.py" = [
     "S",     # bandit (test code can hardcode secrets, run subprocesses, etc.)
     "B",     # bugbear (test fixtures often use mutable defaults)
     "E501",  # long lines OK in tests

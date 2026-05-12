@@ -43,7 +43,7 @@ Of those, parties also in bankdw: ['AT&T', 'AmerisourceBergen', 'Costco Wholesal
 From the worktree root:
 
 ```bash
-uv run --with mcp --with duckdb pytest examples/cross-domain-agent/tests -q
+uv run --with mcp --with duckdb pytest examples/cross-domain-agent/tests_cross_domain -q
 ```
 
 Seven adapter unit tests + two integration tests. The integration
@@ -101,5 +101,5 @@ from the workspace's editable install:
 
 ```bash
 uv run --with mcp --with duckdb python examples/cross-domain-agent/agent.py
-uv run --with mcp --with duckdb pytest examples/cross-domain-agent/tests -q
+uv run --with mcp --with duckdb pytest examples/cross-domain-agent/tests_cross_domain -q
 ```

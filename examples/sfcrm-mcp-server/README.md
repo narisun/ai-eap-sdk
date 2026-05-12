@@ -91,10 +91,10 @@ cd examples/sfcrm-mcp-server
 uv run --with mcp --with duckdb --with pytest --with pytest-asyncio pytest -q
 ```
 
-Two test files - `tests/test_tools.py` covers tool logic
+Two test files - `tests_sfcrm/test_tools.py` covers tool logic
 (list/describe/query, Account <-> Opportunity JOIN via `AccountId`,
 truncation against `OpportunityLineItem`, error paths);
-`tests/test_query_safety.py` covers the read-only guard's reject paths
+`tests_sfcrm/test_query_safety.py` covers the read-only guard's reject paths
 for writes and DDL. Tests call each tool's underlying `.fn` directly -
 no stdio session is exercised here. The stdio path is tested at the
 `cross-domain-agent` layer.
