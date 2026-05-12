@@ -8,16 +8,17 @@ from eap_core.security import INJECTION_PATTERNS, RegexThreatDetector
 
 def test_middleware_and_detector_share_canonical_patterns():
     # The default-constructed ThreatDetectionMiddleware delegates to
-    # RegexThreatDetector, which is constructed from the same canonical
-    # INJECTION_PATTERNS table. Verify both endpoints reference the same
-    # compiled-pattern set (no parallel duplication).
+    # RegexThreatDetector, which walks the canonical INJECTION_PATTERNS
+    # table directly (no duplicated alias). Both endpoints select the
+    # canonical-table path by leaving _patterns as None at construction.
     mw = ThreatDetectionMiddleware()
     detector = RegexThreatDetector()
 
-    canonical = tuple(p for _, p, _ in INJECTION_PATTERNS)
     assert isinstance(mw._detector, RegexThreatDetector)
-    assert mw._detector._patterns == canonical
-    assert detector._patterns == canonical
+    assert mw._detector._patterns is None
+    assert detector._patterns is None
+    # Sanity: the canonical table is non-empty and contains compiled patterns.
+    assert len(INJECTION_PATTERNS) > 0
 
 
 async def test_detector_flags_the_same_inputs_as_middleware():

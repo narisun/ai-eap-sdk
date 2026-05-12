@@ -9,10 +9,16 @@ from jinja2 import Environment, StrictUndefined
 
 
 def _env() -> Environment:
+    # nosec B701 — autoescape=False is intentional. The scaffolder renders
+    # Python source, YAML, TOML, and Dockerfile templates (NOT HTML), where
+    # HTML entity escaping (e.g. ``&`` → ``&amp;``) would corrupt the
+    # generated code. The template inputs come from the developer running
+    # the CLI on their own machine, not from untrusted network input, so
+    # the XSS threat model B701 targets does not apply here.
     return Environment(
         keep_trailing_newline=True,
         undefined=StrictUndefined,
-        autoescape=False,
+        autoescape=False,  # nosec B701 - generating code, not HTML; see comment above
     )
 
 

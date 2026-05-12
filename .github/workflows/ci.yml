@@ -53,3 +53,41 @@ jobs:
       - name: Run extras tests
         if: matrix.extra != 'pii'
         run: uv run pytest packages/eap-core/tests/extras -v -m extras
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --group dev
+      # pip-audit cannot resolve editable workspace packages (eap-core,
+      # eap-cli) on PyPI, so we export the locked third-party deps to a
+      # requirements file first and audit that. --no-emit-workspace drops
+      # the workspace members; --strict turns warnings (e.g. skipped
+      # packages) into failures.
+      - name: Export locked third-party deps
+        run: uv export --all-packages --no-emit-workspace --format requirements-txt --no-header --quiet > /tmp/audit-reqs.txt
+      - name: pip-audit (workspace deps, strict)
+        run: uv run --with pip-audit pip-audit --strict -r /tmp/audit-reqs.txt
+      - name: bandit (SDK source, Medium+High)
+        # `-ll` filters out Low severity (the regex patterns in security.py
+        # trip B105 hardcoded-password as a false positive). Inline
+        # ``# nosec B701`` annotations document the one intentional
+        # autoescape=False in eap_cli/scaffolders/render.py (codegen, not
+        # HTML rendering).
+        run: uv run --with bandit bandit -r packages/eap-core/src packages/eap-cli/src -ll
+
+  package-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --group dev
+      - name: Build wheels + sdists
+        run: uv build --all-packages
+      - name: twine check
+        run: uv run --with twine twine check dist/*

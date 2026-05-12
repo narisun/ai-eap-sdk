@@ -134,13 +134,6 @@ INJECTION_PATTERNS: tuple[tuple[str, re.Pattern[str], Severity], ...] = (
 )
 
 
-# Backwards-compatible alias retained for any external import that may have
-# referenced the previous private name. New code should use ``INJECTION_PATTERNS``.
-_DEFAULT_INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
-    p for _, p, _ in INJECTION_PATTERNS
-)
-
-
 #: Ordering for max-severity selection. Index = severity rank.
 _SEVERITY_ORDER: tuple[Severity, ...] = ("low", "medium", "high", "critical")
 
@@ -167,13 +160,16 @@ class RegexThreatDetector:
     name: str = "regex"
 
     def __init__(self, patterns: tuple[re.Pattern[str], ...] | None = None) -> None:
-        self._patterns = patterns or _DEFAULT_INJECTION_PATTERNS
+        # ``patterns is None`` selects the canonical-table path in ``assess``
+        # (full category + severity metadata). A non-None tuple selects the
+        # bare-pattern fallback path (default severity, single category).
+        self._patterns: tuple[re.Pattern[str], ...] | None = patterns
 
     async def assess(self, text: str) -> ThreatAssessment:
         # Walk the canonical pattern table so we get category + severity.
         # If the caller passed a custom ``patterns`` tuple at construction
         # time, fall back to bare-pattern matching with default severity.
-        if self._patterns is _DEFAULT_INJECTION_PATTERNS:
+        if self._patterns is None:
             matched_categories: list[str] = []
             matched_severities: list[Severity] = []
             for category, pattern, severity in INJECTION_PATTERNS:

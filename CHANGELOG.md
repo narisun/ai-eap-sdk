@@ -88,6 +88,16 @@ findings (Luhn PII, policy/threat hardening, ergonomic improvements).
   `ThreatDetectionMiddleware`. Behavioral parity preserved through an
   internal `_ClassifierThreatDetector` adapter. (Closes P1-5.)
 
+- **Note on deprecation warning emission timing** (LOW-1, v1.7 review,
+  documented in v1.8.0):
+  `JsonPolicyEvaluator` emits its `DeprecationWarning` on module
+  attribute lookup (PEP 562 `__getattr__`), so a fresh
+  `from eap_core.middleware.policy import JsonPolicyEvaluator` triggers
+  the warning each time. `PromptInjectionMiddleware` emits its
+  `DeprecationWarning` on instantiation. Both are intentional; migrate
+  to `SimpleJsonPolicyEvaluator` / `ThreatDetectionMiddleware` to
+  silence.
+
 - **`EnterpriseLLM` — `_prepare_call_context()` extracted.** Centralizes
   the `policy.action` / `policy.resource` ctx setup formerly duplicated
   across `generate_text`, `stream_text`, `invoke_tool`. No behavior
@@ -192,10 +202,13 @@ Strict additive on the public Protocol:
   affected by the T5 rename; it remained `CedarPolicyEvaluator`).
 - **15** MCP extras tests (unchanged).
 - **47** MCP-examples tests (unchanged).
-- **20** runtime-error extras tests (new in T4): 11 Bedrock +
-  9 Vertex under `[aws]` + `[gcp]` markers via the shared
-  `test_runtime_errors.py`. (The hierarchy smoke test is unmarked
-  and rolls into the 760 bare-gauntlet count.)
+- **20** runtime-error extras tests (new in T4) under
+  `@pytest.mark.extras` (11 Bedrock + 9 Vertex) via the shared
+  `test_runtime_errors.py`. The standalone `test_hierarchy_smoke` is
+  unmarked and rolls into the 760 bare-gauntlet count — so
+  `pytest packages/eap-core/tests/test_runtime_errors.py -q` shows
+  21 collected without an `-m` filter (NIT-2 clarification, v1.7
+  review).
 - **172** source files mypy-checked, no issues (was 161 in v1.6.3;
   +11 across the new lifecycle/PII/observability/runtime-errors/policy
   modules + Pydantic schema files).

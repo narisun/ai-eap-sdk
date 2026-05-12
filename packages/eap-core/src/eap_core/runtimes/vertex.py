@@ -31,8 +31,9 @@ def _real_runtimes_enabled() -> bool:
 def _map_google_error(exc: Exception) -> RuntimeAdapterError:
     """Map ``google.api_core.exceptions`` failures to canonical EAP-Core errors.
 
-    Callers MUST chain the original vendor exception via ``raise ... from exc``
-    so ``__cause__`` preserves the underlying payload for audit inspection.
+    Private helper for this module — not part of the public API. The gated
+    call site below chains via ``raise _map_google_error(exc) from exc`` so
+    ``__cause__`` preserves the underlying payload for audit inspection.
     """
     try:
         from google.api_core.exceptions import (

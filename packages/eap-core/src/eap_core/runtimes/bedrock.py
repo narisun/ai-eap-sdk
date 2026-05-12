@@ -36,10 +36,11 @@ def _real_runtimes_enabled() -> bool:
 def _map_botocore_error(exc: Exception) -> RuntimeAdapterError:
     """Map ``botocore.exceptions`` failures to canonical EAP-Core runtime errors.
 
-    Callers MUST chain the original vendor exception via ``raise ... from exc``
-    so ``__cause__`` preserves the underlying payload for audit inspection.
-    Returns a plain :class:`RuntimeAdapterError` (no chaining done here) so
-    the call-site keeps full control over the cause chain.
+    Private helper for this module — not part of the public API. The gated
+    call site below chains via ``raise _map_botocore_error(exc) from exc`` so
+    ``__cause__`` preserves the underlying payload for audit inspection. This
+    function returns a plain :class:`RuntimeAdapterError` with no chaining of
+    its own, leaving full control over the cause chain to that one call site.
     """
     try:
         from botocore.exceptions import (
