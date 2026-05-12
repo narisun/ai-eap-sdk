@@ -359,18 +359,19 @@ async def test_pool_dispatches_to_correct_spawn_helper_per_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The dispatcher in :meth:`McpClientPool._spawn` must route each
-    config to the transport-matched helper. Stub all three helpers and
-    verify that, given a pool mixing stdio, http and sse configs, each
-    config goes through its own path with no crossover.
+    config to the transport-matched helper. Stub all four helpers and
+    verify that, given a pool mixing stdio, http, sse and websocket
+    configs, each config goes through its own path with no crossover.
 
     This is the load-bearing test for the dispatcher refactor. The
-    asymmetry between the three recorded lists is what guarantees a
+    asymmetry between the four recorded lists is what guarantees a
     mutation that always calls ``_spawn_stdio`` (regardless of transport)
     would fail this test with a clear diagnostic.
     """
     stdio_called: list[str] = []
     http_called: list[str] = []
     sse_called: list[str] = []
+    websocket_called: list[str] = []
 
     async def _fake_stdio(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
         stdio_called.append(cfg.name)
@@ -384,20 +385,27 @@ async def test_pool_dispatches_to_correct_spawn_helper_per_transport(
         sse_called.append(cfg.name)
         return _make_handle(cfg)
 
+    async def _fake_websocket(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+        websocket_called.append(cfg.name)
+        return _make_handle(cfg)
+
     monkeypatch.setattr(McpClientPool, "_spawn_stdio", _fake_stdio)
     monkeypatch.setattr(McpClientPool, "_spawn_http", _fake_http)
     monkeypatch.setattr(McpClientPool, "_spawn_sse", _fake_sse)
+    monkeypatch.setattr(McpClientPool, "_spawn_websocket", _fake_websocket)
 
     cfgs = [
         McpServerConfig(name="local", command="python"),
         McpServerConfig(name="remote", transport="http", url="https://example.invalid/mcp"),
         McpServerConfig(name="legacy", transport="sse", url="https://example.invalid/sse"),
+        McpServerConfig(name="ws", transport="websocket", url="wss://example.invalid/ws"),
     ]
     async with McpClientPool(cfgs) as pool:
         assert stdio_called == ["local"]
         assert http_called == ["remote"]
         assert sse_called == ["legacy"]
-        assert {h.config.name for h in pool.handles()} == {"local", "remote", "legacy"}
+        assert websocket_called == ["ws"]
+        assert {h.config.name for h in pool.handles()} == {"local", "remote", "legacy", "ws"}
 
 
 async def test_pool_sse_handle_carries_transport_and_url_metadata(
@@ -449,18 +457,51 @@ async def test_pool_sse_spawn_import_error_translated_to_spawn_error(
             pass
 
 
-async def test_pool_websocket_dispatch_raises_placeholder_spawn_error() -> None:
-    """T1 ships ``"websocket"`` as a valid Literal but no spawn helper
-    yet — T2 will add it. The dispatcher recognises the value and
-    raises a clear placeholder :class:`McpServerSpawnError` so callers
-    that try to use it pre-T2 get a loud, descriptive failure rather
-    than the generic "unsupported transport" message (which would be
-    confusing because the Literal accepts it).
+async def test_pool_websocket_handle_carries_transport_and_url_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A websocket-spawned handle preserves ``cfg.transport`` and
+    ``cfg.url`` on the handle's ``config``. Mirrors the http/sse
+    metadata tests — observability tagging that branches on transport
+    relies on this metadata being intact across all four transports.
     """
-    from eap_core.mcp.client.errors import McpServerSpawnError
+
+    async def _fake_websocket(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+        return _make_handle(cfg, tool_names=["list_things"])
+
+    monkeypatch.setattr(McpClientPool, "_spawn_websocket", _fake_websocket)
+    cfg = McpServerConfig(name="ws", transport="websocket", url="wss://ws.example.com/mcp")
+    async with McpClientPool([cfg]) as pool:
+        handle = pool.handles()[0]
+        assert handle.config.transport == "websocket"
+        assert handle.config.url == "wss://ws.example.com/mcp"
+        assert handle.name == "ws"
+        assert handle.tool_names == ["list_things"]
+
+
+async def test_pool_websocket_spawn_import_error_translated_to_spawn_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Symmetry with the stdio/http/sse paths: when the ``[mcp]`` extra
+    is missing, the websocket spawn path must raise
+    :class:`McpServerSpawnError` (not bare :class:`ImportError`). We
+    simulate the missing extra by patching the import name to raise.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _raise_on_websocket(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "mcp.client.websocket":
+            raise ImportError("simulated missing extra")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _raise_on_websocket)
 
     cfg = McpServerConfig(name="ws", transport="websocket", url="wss://example.invalid/ws")
-    with pytest.raises(McpServerSpawnError, match="websocket transport added in T2"):
+    from eap_core.mcp.client.errors import McpServerSpawnError
+
+    with pytest.raises(McpServerSpawnError, match=r"\[mcp\] extra"):
         async with McpClientPool([cfg]):
             pass
 

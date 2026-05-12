@@ -197,12 +197,6 @@ class McpClientPool:
         construction time, so the final ``raise`` is purely defensive — it
         documents the contract a future transport must satisfy (add a new
         ``_spawn_<name>`` helper and route to it here).
-
-        The ``websocket`` branch raises explicitly with a "added in T2"
-        marker so the Literal value is recognised even before the
-        WebSocket spawn body lands — without the branch the dispatcher
-        would fall through to the generic "unsupported transport" error,
-        which would be confusing because the Literal accepts the value.
         """
         assert self._stack is not None, "pool not entered"
         if cfg.transport == "stdio":
@@ -212,14 +206,7 @@ class McpClientPool:
         if cfg.transport == "sse":
             return await self._spawn_sse(cfg)
         if cfg.transport == "websocket":
-            # Placeholder: T2 will replace this with a real
-            # ``_spawn_websocket`` helper. Until then the Literal still
-            # accepts ``"websocket"`` (config validation enforces URL +
-            # forbids headers/auth) but spawning is not wired up.
-            raise McpServerSpawnError(
-                "websocket transport added in T2 — configuration accepted but "
-                "spawn helper not yet implemented in this build"
-            )
+            return await self._spawn_websocket(cfg)
         raise McpServerSpawnError(
             f"unsupported transport {cfg.transport!r} for server {cfg.name!r}"
         )
@@ -342,6 +329,36 @@ class McpClientPool:
             auth=cfg.auth,
             timeout=min(cfg.request_timeout_s, 30.0),
         )
+        return await self._open_session(cfg, transport_cm, arity=2)
+
+    async def _spawn_websocket(self, cfg: McpServerConfig) -> McpServerHandle:
+        """Open an MCP-over-WebSocket session against a remote MCP server.
+
+        Upstream ``websocket_client`` is URL-only — it takes no
+        ``headers`` or ``auth`` parameters. WebSocket MCP servers
+        requiring authentication must encode credentials in the URL
+        (query string or path segment) until upstream gains
+        parameters. The v1.3 config validator forbids
+        ``headers``/``auth`` for ``transport="websocket"`` configs so the
+        limitation surfaces loudly at config construction time rather
+        than silently dropping the values. When upstream extends
+        ``websocket_client``'s signature, this method will be extended
+        in lockstep and the validator relaxed.
+
+        Returns a 2-tuple ``(read, write)`` — no session-id callback —
+        so the shared :meth:`_open_session` path consumes it with
+        ``arity=2``, same as stdio and SSE.
+        """
+        try:
+            from mcp.client.websocket import websocket_client
+        except ImportError as e:
+            raise McpServerSpawnError(
+                "MCP client requires the [mcp] extra: pip install eap-core[mcp]"
+            ) from e
+
+        assert self._stack is not None, "pool not entered"
+        assert cfg.url is not None  # enforced by McpServerConfig validator
+        transport_cm = websocket_client(cfg.url)
         return await self._open_session(cfg, transport_cm, arity=2)
 
     async def _open_session(
