@@ -15,6 +15,7 @@ its stub instance rather than threading mocks through fixtures.
 
 from __future__ import annotations
 
+from contextlib import AsyncExitStack
 from types import SimpleNamespace
 from typing import Any
 
@@ -72,11 +73,21 @@ def patched_spawn(monkeypatch: pytest.MonkeyPatch) -> list[McpServerHandle]:
     synthetic handle per call. Returns the list of every handle the stub
     has produced so tests can assert on reconnect's "fresh handle"
     invariant via identity comparison.
+
+    Mirrors the v1.4 spawn shape: each synthetic handle gets its own
+    nested :class:`AsyncExitStack`, entered onto the pool's outer
+    stack. This means the cleanup invariant (close-old-handle-before-
+    spawning-replacement) is observable in tests via monkeypatching
+    ``aclose`` on the stack.
     """
     spawned: list[McpServerHandle] = []
 
     async def _fake_spawn(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+        assert self._stack is not None, "pool not entered"
+        handle_stack = AsyncExitStack()
+        await self._stack.enter_async_context(handle_stack)
         handle = _make_handle(cfg)
+        handle._stack = handle_stack
         spawned.append(handle)
         return handle
 
@@ -204,9 +215,9 @@ async def test_reconnect_replaces_handle_with_fresh_session(
 ) -> None:
     """After ``reconnect``, the handle stored under the server name is a
     NEW instance (the old one is discarded). Identity comparison on the
-    handle is the load-bearing assertion — the OLD subprocess's teardown
-    is deferred to pool exit (v1.2 follow-up), so we deliberately don't
-    assert anything about it here.
+    handle is the load-bearing assertion. The v1.4 cleanup invariant
+    (the old handle's per-handle ``AsyncExitStack`` is closed) lives in
+    its own dedicated test below.
     """
     cfgs = [McpServerConfig(name="a", command="x")]
     async with McpClientPool(cfgs) as pool:
@@ -239,6 +250,162 @@ async def test_reconnect_preserves_handle_position_in_handles_list(
     async with McpClientPool(cfgs) as pool:
         await pool.reconnect("middle")
         assert [h.config.name for h in pool.handles()] == ["first", "middle", "last"]
+
+
+# ---------------------------------------------------------------------------
+# v1.4: per-handle nested AsyncExitStack — clean reconnect teardown
+# ---------------------------------------------------------------------------
+
+
+class _TrackingHandleStack(AsyncExitStack):
+    """An :class:`AsyncExitStack` subclass that records every teardown
+    via a caller-supplied callback.
+
+    Patching ``aclose`` directly doesn't work for the pool-exit case
+    because the OUTER stack tears down nested context managers via
+    their ``__aexit__`` (not ``aclose``). Subclassing and overriding
+    ``__aexit__`` catches both paths: :meth:`McpClientPool.reconnect`
+    invokes ``aclose()`` (which itself calls ``__aexit__``) and the
+    pool's outer stack invokes ``__aexit__`` directly on pool exit.
+    """
+
+    def __init__(self, on_close: Any) -> None:
+        super().__init__()
+        self._on_close = on_close
+        self._closed = False
+
+    async def __aexit__(self, *args: Any, **kwargs: Any) -> Any:
+        # Only record the first teardown; the outer stack still has a
+        # reference to a stack that ``reconnect`` already aclosed, so
+        # pool exit re-enters here as a no-op.
+        if not self._closed:
+            self._closed = True
+            self._on_close()
+        return await super().__aexit__(*args, **kwargs)
+
+
+async def test_reconnect_closes_old_handles_stack_before_spawning_replacement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """v1.4 fix: :meth:`reconnect` must close the OLD handle's per-handle
+    :class:`AsyncExitStack` before spawning the replacement. This is the
+    load-bearing assertion for the v1.1+ leak fix — before v1.4 the
+    old subprocess stayed alive until pool exit.
+
+    We track stack closure by recording every ``__aexit__`` on the
+    handle stack and verifying that the OLD stack's teardown fired
+    during ``reconnect``, BEFORE the replacement was spawned.
+    """
+    events: list[str] = []
+    counter = {"n": 0}
+
+    async def _fake_spawn(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+        assert self._stack is not None, "pool not entered"
+        counter["n"] += 1
+        idx = counter["n"]
+        handle_stack = _TrackingHandleStack(
+            on_close=lambda _idx=idx: events.append(f"close_handle_{_idx}")
+        )
+        await self._stack.enter_async_context(handle_stack)
+        events.append(f"spawn_handle_{idx}")
+        handle = _make_handle(cfg)
+        handle._stack = handle_stack
+        return handle
+
+    monkeypatch.setattr(McpClientPool, "_spawn", _fake_spawn)
+
+    cfgs = [McpServerConfig(name="a", command="x")]
+    async with McpClientPool(cfgs) as pool:
+        events.append("entered_pool")
+        await pool.reconnect("a")
+        events.append("after_reconnect")
+    events.append("exited_pool")
+
+    # Sequence verifies the load-bearing invariants:
+    #   1. The first spawn happened during pool enter.
+    #   2. Reconnect closed the OLD (handle_1) stack BEFORE spawning
+    #      the replacement (handle_2). That is the v1.4 cleanup
+    #      ordering guarantee.
+    #   3. Pool exit closed the surviving (handle_2) stack.
+    assert events == [
+        "spawn_handle_1",
+        "entered_pool",
+        "close_handle_1",
+        "spawn_handle_2",
+        "after_reconnect",
+        "close_handle_2",
+        "exited_pool",
+    ]
+
+
+async def test_pool_exit_closes_every_live_handle_stack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pool's outer stack owns the per-handle nested stacks; pool
+    exit must therefore close every live handle's stack. After
+    ``async with pool:`` returns, every handle that was spawned (and
+    not subsequently closed by reconnect) has had its ``_stack``
+    closed exactly once.
+    """
+    closed: set[str] = set()
+
+    async def _fake_spawn(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+        assert self._stack is not None, "pool not entered"
+        handle_stack = _TrackingHandleStack(on_close=lambda _name=cfg.name: closed.add(_name))
+        await self._stack.enter_async_context(handle_stack)
+        handle = _make_handle(cfg)
+        handle._stack = handle_stack
+        return handle
+
+    monkeypatch.setattr(McpClientPool, "_spawn", _fake_spawn)
+
+    cfgs = [
+        McpServerConfig(name="a", command="x"),
+        McpServerConfig(name="b", command="x"),
+        McpServerConfig(name="c", command="x"),
+    ]
+    async with McpClientPool(cfgs):
+        # No reconnects: every live handle's stack should fire its
+        # recorder during pool exit.
+        pass
+
+    assert closed == {"a", "b", "c"}
+
+
+async def test_spawn_attaches_per_handle_stack_to_returned_handle() -> None:
+    """The contract for the v1.4 spawn path: every handle returned by
+    :meth:`_spawn` carries a non-``None`` ``_stack`` so that
+    :meth:`reconnect` can unwind it without a ``None`` check. The
+    field type is ``AsyncExitStack | None`` only for the synthetic
+    handles built by tests that bypass ``_spawn`` entirely.
+
+    We can't go through the real ``_spawn`` here (no ``mcp`` in the
+    non-extras path) so we exercise the wiring directly: drive
+    ``_spawn`` via a stub ``_dispatch_spawn`` and observe that the
+    returned handle's ``_stack`` is the same instance we passed in.
+    """
+    captured_stack: dict[str, AsyncExitStack] = {}
+
+    async def _fake_dispatch(
+        self: McpClientPool,
+        cfg: McpServerConfig,
+        handle_stack: AsyncExitStack,
+    ) -> McpServerHandle:
+        captured_stack["s"] = handle_stack
+        return _make_handle(cfg)
+
+    monkeypatch_target = "_dispatch_spawn"
+    real = getattr(McpClientPool, monkeypatch_target)
+    try:
+        setattr(McpClientPool, monkeypatch_target, _fake_dispatch)
+        pool = McpClientPool([McpServerConfig(name="a", command="x")])
+        async with pool:
+            handle = pool.handles()[0]
+            # Spawn returned a handle whose ``_stack`` is exactly the
+            # one ``_spawn`` allocated and passed into the dispatcher.
+            assert handle._stack is captured_stack["s"]
+    finally:
+        setattr(McpClientPool, monkeypatch_target, real)
 
 
 # ---------------------------------------------------------------------------
@@ -373,19 +540,35 @@ async def test_pool_dispatches_to_correct_spawn_helper_per_transport(
     sse_called: list[str] = []
     websocket_called: list[str] = []
 
-    async def _fake_stdio(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+    async def _fake_stdio(
+        self: McpClientPool,
+        cfg: McpServerConfig,
+        handle_stack: AsyncExitStack,
+    ) -> McpServerHandle:
         stdio_called.append(cfg.name)
         return _make_handle(cfg)
 
-    async def _fake_http(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+    async def _fake_http(
+        self: McpClientPool,
+        cfg: McpServerConfig,
+        handle_stack: AsyncExitStack,
+    ) -> McpServerHandle:
         http_called.append(cfg.name)
         return _make_handle(cfg)
 
-    async def _fake_sse(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+    async def _fake_sse(
+        self: McpClientPool,
+        cfg: McpServerConfig,
+        handle_stack: AsyncExitStack,
+    ) -> McpServerHandle:
         sse_called.append(cfg.name)
         return _make_handle(cfg)
 
-    async def _fake_websocket(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+    async def _fake_websocket(
+        self: McpClientPool,
+        cfg: McpServerConfig,
+        handle_stack: AsyncExitStack,
+    ) -> McpServerHandle:
         websocket_called.append(cfg.name)
         return _make_handle(cfg)
 
@@ -417,7 +600,11 @@ async def test_pool_sse_handle_carries_transport_and_url_metadata(
     metadata being intact for all transports.
     """
 
-    async def _fake_sse(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+    async def _fake_sse(
+        self: McpClientPool,
+        cfg: McpServerConfig,
+        handle_stack: AsyncExitStack,
+    ) -> McpServerHandle:
         return _make_handle(cfg, tool_names=["list_things"])
 
     monkeypatch.setattr(McpClientPool, "_spawn_sse", _fake_sse)
@@ -466,7 +653,11 @@ async def test_pool_websocket_handle_carries_transport_and_url_metadata(
     relies on this metadata being intact across all four transports.
     """
 
-    async def _fake_websocket(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+    async def _fake_websocket(
+        self: McpClientPool,
+        cfg: McpServerConfig,
+        handle_stack: AsyncExitStack,
+    ) -> McpServerHandle:
         return _make_handle(cfg, tool_names=["list_things"])
 
     monkeypatch.setattr(McpClientPool, "_spawn_websocket", _fake_websocket)
@@ -515,7 +706,11 @@ async def test_pool_http_handle_carries_transport_and_url_metadata(
     consume from ``pool.handles()`` — the dispatcher must not lose it.
     """
 
-    async def _fake_http(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+    async def _fake_http(
+        self: McpClientPool,
+        cfg: McpServerConfig,
+        handle_stack: AsyncExitStack,
+    ) -> McpServerHandle:
         return _make_handle(cfg, tool_names=["list_things"])
 
     monkeypatch.setattr(McpClientPool, "_spawn_http", _fake_http)
