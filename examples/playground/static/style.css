@@ -1,0 +1,28 @@
+* { box-sizing: border-box; }
+body { font: 14px/1.4 system-ui, sans-serif; margin: 0; color: #222; background: #fafafa; }
+header { padding: 1rem; background: #fff; border-bottom: 1px solid #ddd; display: flex; gap: 1rem; align-items: center; }
+header h1 { margin: 0; font-size: 1.2rem; }
+header select { padding: .4rem; min-width: 18rem; }
+main { display: grid; grid-template-columns: 1fr 20rem; height: calc(100vh - 4rem); }
+#chat-pane { padding: 1rem; display: flex; flex-direction: column; min-height: 0; }
+#messages { flex: 1; overflow-y: auto; background: #fff; border: 1px solid #ddd; padding: .5rem; margin-bottom: .5rem; }
+.msg { padding: .4rem .6rem; margin: .2rem 0; border-radius: 4px; white-space: pre-wrap; }
+.msg-user { background: #e3f2fd; }
+.msg-agent { background: #f1f8e9; }
+.msg-error { background: #ffebee; color: #b71c1c; }
+#chat-form { display: flex; gap: .5rem; }
+#chat-input { flex: 1; padding: .5rem; }
+#chat-form button { padding: .5rem 1rem; cursor: pointer; }
+#trace-panel { margin-top: .5rem; background: #fff; border: 1px solid #ddd; padding: .5rem; max-height: 12rem; overflow-y: auto; }
+#trace-panel summary { cursor: pointer; font-weight: bold; }
+#trace-list { font-family: ui-monospace, monospace; font-size: 12px; margin: .5rem 0 0; padding-left: 1.5rem; }
+aside { padding: 1rem; background: #fff; border-left: 1px solid #ddd; overflow-y: auto; }
+aside h2 { font-size: .9rem; margin-top: 0; text-transform: uppercase; color: #666; }
+#tool-list { list-style: none; padding: 0; margin: 0 0 1rem; }
+#tool-list li { padding: .3rem .5rem; background: #f5f5f5; margin: .2rem 0; border-radius: 3px; font-family: ui-monospace, monospace; font-size: 12px; }
+#tool-list li.tool-empty { color: #888; font-style: italic; background: transparent; }
+#tool-form { display: flex; flex-direction: column; gap: .4rem; }
+#tool-form select, #tool-form textarea, #tool-form button { padding: .4rem; font-family: inherit; }
+#tool-form textarea { font-family: ui-monospace, monospace; font-size: 12px; }
+#tool-form button { cursor: pointer; }
+#tool-result { background: #f5f5f5; padding: .5rem; border-radius: 3px; font-size: 12px; max-height: 12rem; overflow-y: auto; margin-top: .5rem; white-space: pre-wrap; }

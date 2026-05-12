@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>EAP-Core Playground</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>EAP-Core Playground</h1>
+      <select id="agent-select">
+        <option value="">(loading…)</option>
+      </select>
+    </header>
+    <main>
+      <section id="chat-pane">
+        <div id="messages"></div>
+        <form id="chat-form">
+          <input type="text" id="chat-input" placeholder="Send a message…" autocomplete="off" />
+          <button type="submit">Send</button>
+        </form>
+        <details id="trace-panel">
+          <summary>Tool-call trace (0 entries)</summary>
+          <ol id="trace-list"></ol>
+        </details>
+      </section>
+      <aside id="sidebar">
+        <h2>Tools</h2>
+        <ul id="tool-list"></ul>
+        <h2>Invoke a tool directly</h2>
+        <form id="tool-form">
+          <select id="tool-select"></select>
+          <textarea id="tool-args" rows="4" placeholder='{"key": "value"}'></textarea>
+          <button type="submit">Invoke</button>
+        </form>
+        <pre id="tool-result"></pre>
+      </aside>
+    </main>
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>
