@@ -16,6 +16,57 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.7.3] — 2026-05-11 — v1 BaseModel nested datetime + mutation-pin
+
+Patch closing the two Medium-severity findings from the v0.7.2
+pre-prod review. No public API or wire-format breaking changes for
+v2 BaseModel users; existing v0.7.2 installs upgrade cleanly. **One
+wire-format consistency fix** flagged at the bottom.
+
+### Fixed
+
+- **M-2: Pydantic v1 BaseModel nested in `dict`/`list` now serializes
+  datetimes (and other non-JSON-native types) with the same format as
+  the top-level path.** Previously v1 nested models went through
+  `o.dict()` (returns native ``datetime``) → `json.dumps`'s
+  `default=str` fallback → `"2026-05-11 12:00:00"` (Python's
+  space-separator format). External MCP clients trying to parse the
+  timestamp as RFC 3339 would fail. v0.7.3 routes the v1 branch
+  through `json.loads(o.json())` instead — v1's own JSON-mode
+  serialization emits ISO 8601 (`"2026-05-11T12:00:00"`), consistent
+  with v2's `model_dump(mode="json")` and v1's top-level `.json()`.
+  Affects the narrow intersection of users on the `pydantic.v1`
+  compat shim with non-JSON-native fields in models returned nested
+  inside a `dict`/`list`. One-line fix in `_json_default`.
+- **M-1: Mutation-pin for the v0.7.2 H1 fix.** The three nested-
+  BaseModel regression tests added in v0.7.2 used `BaseModel(name: str,
+  count: int)` — both fields are JSON-native, so `model_dump()` and
+  `model_dump(mode="json")` produce identical output. A future
+  refactor could silently regress to `model_dump()` without breaking
+  the tests. v0.7.3 adds a regression test using a `datetime` field
+  that pins the `mode="json"` contract: dropping the argument
+  produces the wrong wire format and the test fails. Plus a parallel
+  test for the v1 nested datetime case (the M-2 fix above).
+
+### Stats
+
+- 586 non-extras tests passing (unchanged from v0.7.2).
+- Extras tests grow by +2 (13 → 15 in `test_mcp_server.py` — the two
+  new datetime mutation-pin tests).
+- All gauntlets fully green; coverage stays ≥90%.
+
+### Behavior change for upgraders
+
+- v1 BaseModels with non-JSON-native fields (datetime, UUID, Decimal,
+  etc.) nested inside `dict`/`list` returns now emit RFC 3339 / ISO
+  8601 formats where v0.7.2 emitted Python's `str()` formats. v1
+  BaseModels at the top level were already using ISO 8601 in v0.7.2 —
+  this just makes the nested path consistent. If your downstream
+  parsing was tolerating the inconsistency by parsing both formats,
+  you can simplify to a single ISO 8601 parser.
+
+---
+
 ## [0.7.2] — 2026-05-11 — Nested-BaseModel serialization + decorator constraint preservation
 
 Patch closing three findings from the v0.7.1 pre-prod review (H1, M1, M2),

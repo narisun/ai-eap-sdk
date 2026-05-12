@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,15 @@ from eap_core.mcp.server import _serialize_for_text_content, build_mcp_server
 class _Sample(BaseModel):
     name: str
     count: int
+
+
+class _Timestamped(BaseModel):
+    """Has a datetime field — exercises the difference between
+    ``model_dump()`` (returns native ``datetime``) and
+    ``model_dump(mode="json")`` (returns ISO 8601 string)."""
+
+    label: str
+    when: datetime
 
 
 async def test_build_mcp_server_registers_tools():
@@ -151,3 +161,53 @@ def test_serialize_pydantic_v1_basemodel_nested_in_dict_returns_json():
     out = _serialize_for_text_content({"item": V1Sample(name="alice", count=5)})
     parsed = json.loads(out)
     assert parsed == {"item": {"name": "alice", "count": 5}}
+
+
+def test_serialize_nested_basemodel_with_datetime_field_uses_iso_8601():
+    """Mutation-pin for the v0.7.2 H1 fix: locks the ``mode="json"``
+    requirement on ``model_dump``. Without ``mode="json"``,
+    ``model_dump()`` returns a native ``datetime`` that ``json.dumps``
+    can't serialize natively — falls through to ``str()`` and emits
+    ``"2026-05-11 12:00:00"`` (space-separator) instead of ISO 8601
+    ``"2026-05-11T12:00:00"``. External MCP clients parsing the result
+    as RFC 3339 timestamps would fail.
+
+    Original v0.7.2 tests used only string/int fields where
+    ``model_dump()`` and ``model_dump(mode="json")`` produce identical
+    output — a future regression dropping ``mode="json"`` would have
+    been undetected. This test catches it.
+    """
+    out = _serialize_for_text_content(
+        {"event": _Timestamped(label="release", when=datetime(2026, 5, 11, 12, 0, 0))}
+    )
+    parsed = json.loads(out)
+    assert parsed == {"event": {"label": "release", "when": "2026-05-11T12:00:00"}}
+    # The datetime must be ISO 8601 ("T" separator), not the Python str()
+    # default (space separator). This is the mutation-test pin.
+    assert "T" in parsed["event"]["when"]
+    assert " " not in parsed["event"]["when"]
+
+
+def test_serialize_v1_basemodel_with_datetime_field_nested_uses_iso_8601():
+    """v0.7.3 M-2 fix: v1 BaseModel nested in dict/list serializes
+    datetime via ``json.loads(o.json())`` (ISO 8601), not ``o.dict()``
+    (which returned native datetime → str() → space-separator format).
+    Locks the v1/nested path to the same wire format as the v1/top-level
+    path and the v2 paths.
+    """
+    pytest.importorskip("pydantic.v1")
+    from pydantic.v1 import BaseModel as V1Base
+
+    class V1Timestamped(V1Base):
+        label: str
+        when: datetime
+
+    out = _serialize_for_text_content(
+        {"event": V1Timestamped(label="release", when=datetime(2026, 5, 11, 12, 0, 0))}
+    )
+    parsed = json.loads(out)
+    when = parsed["event"]["when"]
+    # ISO 8601 — "T" separator, no space.
+    assert "T" in when
+    assert " " not in when
+    assert parsed["event"]["label"] == "release"

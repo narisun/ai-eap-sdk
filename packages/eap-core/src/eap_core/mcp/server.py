@@ -26,11 +26,20 @@ def _json_default(o: Any) -> Any:
     ``{"item": Inner(a=1)}`` would silently flatten the nested model
     to its Python repr string — the exact bug v0.7.1 closed at the
     top level but missed at one level of depth.
+
+    For v1 BaseModels we round-trip through ``json.loads(o.json())``
+    instead of ``o.dict()``. v1's ``.dict()`` returns raw Python types
+    (``datetime``, ``UUID``, ``Decimal``) which then fall through to
+    the ``str()`` branch below — producing the wrong format on the
+    wire (e.g. ``"2026-05-11 12:00:00"`` instead of ISO 8601
+    ``"2026-05-11T12:00:00"``). Round-tripping through v1's own
+    JSON-mode serialization keeps nested v1 BaseModels consistent
+    with the top-level path in ``_serialize_for_text_content``.
     """
     if isinstance(o, BaseModel):
         return o.model_dump(mode="json")
     if _V1BaseModel is not None and isinstance(o, _V1BaseModel):
-        return o.dict()
+        return json.loads(o.json())
     return str(o)
 
 
