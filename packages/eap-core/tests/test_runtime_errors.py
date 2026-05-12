@@ -293,7 +293,7 @@ def test_vertex_maps_unknown_google_error_to_base_error() -> None:
 
     from eap_core.runtimes.vertex import _map_google_error
 
-    class _NovelError(GoogleAPICallError):
+    class _NovelError(GoogleAPICallError):  # type: ignore[misc,unused-ignore]
         pass
 
     mapped = _map_google_error(_NovelError("dunno"))

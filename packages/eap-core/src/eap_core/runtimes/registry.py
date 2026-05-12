@@ -25,7 +25,7 @@ _RegisteredFactory = AdapterFactory | EntryPoint
 # single ``isinstance`` call in the hot path.
 _ENTRY_POINT_TYPES: tuple[type, ...]
 try:
-    import importlib_metadata as _importlib_metadata_backport
+    import importlib_metadata as _importlib_metadata_backport  # type: ignore[import-not-found,unused-ignore]
 
     _ENTRY_POINT_TYPES = (EntryPoint, _importlib_metadata_backport.EntryPoint)
 except ImportError:  # pragma: no cover — backport not installed

@@ -261,7 +261,7 @@ app.add_middleware(
 )
 
 
-@app.get("/api/agents", response_model=list[AgentInfo])
+@app.get("/api/agents", response_model=list[AgentInfo])  # type: ignore[misc,untyped-decorator,unused-ignore]
 async def list_agents() -> list[AgentInfo]:
     """List every example agent the playground discovered.
 
@@ -298,7 +298,7 @@ async def list_agents() -> list[AgentInfo]:
     return result
 
 
-@app.post("/api/agents/{name}/chat", response_model=ChatResponse)
+@app.post("/api/agents/{name}/chat", response_model=ChatResponse)  # type: ignore[misc,untyped-decorator,unused-ignore]
 async def chat(name: str, body: ChatRequest) -> ChatResponse:
     """Send a single message to the agent. Returns the response text
     plus the per-request tool-call trace captured by the playground's
@@ -320,7 +320,7 @@ async def chat(name: str, body: ChatRequest) -> ChatResponse:
     return ChatResponse(text=text, trace=get_current_trace())
 
 
-@app.post("/api/agents/{name}/tools/{tool}", response_model=ToolResult)
+@app.post("/api/agents/{name}/tools/{tool}", response_model=ToolResult)  # type: ignore[misc,untyped-decorator,unused-ignore]
 async def invoke_tool(name: str, tool: str, body: ToolInvocation) -> ToolResult:
     """Invoke a tool on the agent directly, bypassing the LLM. Useful
     for testing tool wiring without burning LLM tokens.
@@ -356,7 +356,7 @@ if _STATIC.is_dir():
     app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 
 
-@app.get("/")
+@app.get("/")  # type: ignore[misc,untyped-decorator,unused-ignore]
 async def index() -> FileResponse:
     """Serve the SPA shell. Returns a 503 until T2 ships the frontend."""
     index_html = _STATIC / "index.html"
