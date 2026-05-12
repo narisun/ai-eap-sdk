@@ -194,37 +194,30 @@ class EnterpriseLLM:
         if spec is None:
             raise MCPError(tool_name=tool_name, message="tool not found in registry")
 
-        # Build the request with policy-relevant fields derived inside the SDK.
         # ``action`` and ``resource`` are authorization inputs — they MUST come
         # from a trusted source (the tool name we just resolved), never from
-        # caller-controlled ``Request.metadata``. Allowing a caller to set
-        # ``metadata['action']='tool:lookup_account'`` would let them bypass a
-        # ``deny tool:transfer_funds`` rule. See ``_prepare_call_context``
-        # for the centralized policy-input setup shared with the chat path.
+        # caller-controlled ``Request.metadata``. ``_prepare_call_context``
+        # stamps the initial values; the pipeline's ``run_tool`` re-stamps
+        # them in Phase 3 (after ``on_tool_call``, before
+        # ``on_tool_call_post_mutation``) so a Phase-2 middleware can't
+        # launder the policy inputs.
         ctx = self._prepare_call_context(
             action=f"tool:{tool_name}",
             resource=tool_name,
         )
-        req = Request(
-            model=self._config.model,
-            messages=[],
-            metadata={
-                "operation_name": "invoke_tool",
-                "tool_name": tool_name,
-            },
-        )
 
-        async def terminal(r: Request, c: Context) -> Response:
-            # Use the original ``args`` captured in the closure rather than
-            # ``r.metadata`` so middleware cannot swap the tool's input
-            # silently. Pass ``ctx.identity`` to the registry so the
-            # ``requires_auth`` gate sees the same identity the policy
-            # middleware just authorized against.
-            result = await registry.invoke(tool_name, args, identity=c.identity)
-            return Response(text=str(result), payload=result)
+        async def terminal(name: str, current_args: dict[str, Any], c: Context) -> Any:
+            # Use the POST-MUTATION ``current_args`` from the pipeline,
+            # NOT a closure-captured original. Middleware that wants to
+            # mutate declares so via ``on_tool_call``; PolicyMiddleware's
+            # ``on_tool_call_post_mutation`` re-authorizes against the
+            # SDK-controlled ``ctx.metadata`` after any mutation. The
+            # v1.7 dev-guide §3.9 closure-capture rationale section
+            # describes the historical concern; v1.8's hook is the
+            # documented forward path.
+            return await registry.invoke(name, current_args, identity=c.identity)
 
-        resp = await self._pipeline.run(req, ctx, terminal)
-        return resp.payload
+        return await self._pipeline.run_tool(tool_name, args, ctx, terminal)
 
     async def aclose(self) -> None:
         """Close the runtime adapter + every owned component.

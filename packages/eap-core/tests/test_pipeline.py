@@ -25,6 +25,12 @@ class RecordingMiddleware:
     async def on_stream_end(self, ctx: Context) -> None:
         return None
 
+    async def on_tool_call(self, tool_name, args, ctx):
+        return args
+
+    async def on_tool_call_post_mutation(self, tool_name, args, ctx):
+        return None
+
     async def on_call_end(self, ctx: Context) -> None:
         return None
 
@@ -90,6 +96,12 @@ async def test_pipeline_streams_chunks_through_each_middleware_in_order():
         async def on_stream_end(self, ctx: Context) -> None:
             return None
 
+        async def on_tool_call(self, tool_name, args, ctx):
+            return args
+
+        async def on_tool_call_post_mutation(self, tool_name, args, ctx):
+            return None
+
         async def on_call_end(self, ctx: Context) -> None:
             return None
 
@@ -127,6 +139,12 @@ async def test_pipeline_run_stream_calls_on_error_on_exception():
             raise RuntimeError("stream boom")
 
         async def on_stream_end(self, ctx: Context) -> None:
+            return None
+
+        async def on_tool_call(self, tool_name, args, ctx):
+            return args
+
+        async def on_tool_call_post_mutation(self, tool_name, args, ctx):
             return None
 
         async def on_call_end(self, ctx: Context) -> None:

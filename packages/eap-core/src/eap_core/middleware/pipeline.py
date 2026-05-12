@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from eap_core.types import Chunk, Context, Request, Response
 
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 Terminal = Callable[[Request, Context], Awaitable[Response]]
 StreamTerminal = Callable[[Request, Context], AsyncIterator[Chunk]]
+ToolTerminal = Callable[[str, dict[str, Any], Context], Awaitable[Any]]
 
 _LOG = logging.getLogger(__name__)
 
@@ -97,6 +98,114 @@ class MiddlewarePipeline:
         except Exception as exc:
             await self._on_error(ran, exc, ctx)
             raise
+
+    async def run_tool(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        ctx: Context,
+        terminal: ToolTerminal,
+    ) -> Any:
+        """Tool-invocation pipeline orchestrator.
+
+        Six phases:
+
+        1. ``on_request`` L→R — existing audit / threat-detection / policy hooks.
+        2. ``on_tool_call`` L→R — NEW mutation phase. Middlewares may
+           transform ``args``; the result of each call becomes the input
+           to the next middleware.
+        3. SDK re-stamps ``ctx.metadata['policy.action']`` /
+           ``['policy.resource']`` from the current ``tool_name``.
+           Pipeline-level, not middleware-level: a Phase-2 middleware
+           that tried to launder the policy inputs by writing to
+           ``ctx.metadata`` finds those writes overwritten BEFORE
+           Phase-4 runs, so re-authorization sees the SDK-controlled
+           values.
+        4. ``on_tool_call_post_mutation`` L→R — NEW. ``PolicyMiddleware``
+           overrides this hook to re-authorize against the trusted
+           ``ctx.metadata`` keys re-stamped in Phase 3.
+        5. terminal(tool_name, args, ctx) — invoked with the FINAL
+           post-mutation ``args``.
+        6. ``on_response`` R→L — mirrors ``run()``.
+
+        Plus ``on_call_end`` R→L in ``finally`` (mirrors v1.7 ``run()``)
+        and ``on_error`` R→L on exception.
+
+        A ``Request`` is constructed in Phase 1 so existing audit /
+        threat-detection middleware works unchanged. The ``Request.metadata``
+        is observability-only; the canonical ``args`` travel as a
+        separate parameter through Phases 2-5.
+        """
+        ran: list[Middleware] = []
+        try:
+            try:
+                # Phase 1: standard request hooks.
+                req = self._build_tool_request(tool_name, args)
+                for mw in self._mws:
+                    ran.append(mw)
+                    req = await mw.on_request(req, ctx)
+
+                # Phase 2: mutation phase, L→R.
+                for mw in self._mws:
+                    args = await mw.on_tool_call(tool_name, args, ctx)
+
+                # Phase 3: SDK re-stamps trusted policy inputs. The
+                # ``tool_name`` doesn't change here (it's the registered
+                # tool we're invoking) — but a future enhancement could
+                # derive ``policy.resource`` from a named args field if a
+                # documented contract emerges. For v1.8 we just re-stamp
+                # the same values that ``_prepare_call_context`` set
+                # initially. The point: any middleware that mutated
+                # ``ctx.metadata['policy.*']`` during Phase 2 sees its
+                # mutation OVERWRITTEN here, so the re-authorization in
+                # Phase 4 evaluates against the SDK-controlled inputs.
+                ctx.metadata["policy.action"] = f"tool:{tool_name}"
+                ctx.metadata["policy.resource"] = tool_name
+
+                # Phase 4: post-mutation hooks — PolicyMiddleware re-authorizes.
+                for mw in self._mws:
+                    await mw.on_tool_call_post_mutation(tool_name, args, ctx)
+
+                # Phase 5: terminal.
+                result = await terminal(tool_name, args, ctx)
+
+                # Phase 6: response hooks, R→L.
+                resp = Response(text=str(result), payload=result)
+                for mw in reversed(ran):
+                    resp = await mw.on_response(resp, ctx)
+                return resp.payload
+            finally:
+                for mw in reversed(ran):
+                    try:
+                        await mw.on_call_end(ctx)
+                    except Exception as secondary:
+                        mw_name = getattr(mw, "name", type(mw).__name__)
+                        _LOG.warning(
+                            "secondary failure in %s.on_call_end during tool call finalization",
+                            mw_name,
+                            exc_info=secondary,
+                        )
+        except Exception as exc:
+            await self._on_error(ran, exc, ctx)
+            raise
+
+    def _build_tool_request(self, tool_name: str, args: dict[str, Any]) -> Request:
+        """Construct an audit-observable Request for the tool invocation.
+
+        The ``args`` carried here are for observability / audit only;
+        the canonical ``args`` flow through Phases 2-5 as a separate
+        parameter so middleware mutation of ``Request.metadata`` cannot
+        bypass authorization (see dev-guide §3.9).
+        """
+        return Request(
+            model="(tool)",
+            messages=[],
+            metadata={
+                "operation_name": "invoke_tool",
+                "tool_name": tool_name,
+                "tool_args": args,
+            },
+        )
 
     async def _on_error(self, ran: list[Middleware], exc: Exception, ctx: Context) -> None:
         """Run on_error in reverse order, surfacing any secondary failures.

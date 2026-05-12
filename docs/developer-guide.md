@@ -492,6 +492,25 @@ re-runs against the post-mutation args. For now, the closure capture
 is the conservative path: middleware can observe via metadata but
 not influence terminal args.
 
+**v1.8+ update.** The forward path described above has landed. The new
+`on_tool_call(tool_name, args, ctx)` Protocol method lets middleware
+transform args explicitly; the SDK then re-stamps trusted policy
+inputs (`ctx.metadata["policy.action"]` / `["policy.resource"]`) from
+the current `tool_name` and calls `on_tool_call_post_mutation` on
+every middleware, giving `PolicyMiddleware` the chance to re-authorize
+against the post-mutation state. Silent metadata mutation can no
+longer bypass the policy decision — a Phase-2 middleware that
+attempts to launder the policy inputs finds its writes overwritten
+by the Phase-3 re-stamp before Phase-4 fires.
+
+Use `on_tool_call` for legitimate sanitization (e.g., redacting PII
+from tool args before they hit a third-party tool registry). The
+closure-capture-in-the-pipeline detail described above is now an
+implementation detail of `MiddlewarePipeline.run_tool` (the
+post-mutation `args` flow through the pipeline as an explicit
+parameter, not via a closure-captured original) rather than a
+user-facing security boundary.
+
 ---
 
 ## Part 4 — Extension cookbook

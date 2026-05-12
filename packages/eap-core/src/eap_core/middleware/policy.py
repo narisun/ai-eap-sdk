@@ -274,7 +274,17 @@ class PolicyMiddleware(PassthroughMiddleware):
     def __init__(self, evaluator: PolicyEvaluator) -> None:
         self._eval = evaluator
 
-    async def on_request(self, req: Request, ctx: Context) -> Request:
+    def _authorize_or_raise(self, ctx: Context) -> None:
+        """Read trusted policy inputs from ``ctx.metadata`` and evaluate.
+
+        Centralized so ``on_request`` (initial authorization) and
+        ``on_tool_call_post_mutation`` (re-authorization after the v1.8
+        ``on_tool_call`` mutation phase) share one source of truth.
+
+        Raises :class:`PolicyConfigurationError` if the trusted slots
+        are unset (programming error in pipeline wiring) and
+        :class:`PolicyDeniedError` if the evaluator denies.
+        """
         # ``action``/``resource`` are authorization inputs and MUST come from
         # a trusted source. ``EnterpriseLLM.generate_text``/``stream_text``/
         # ``invoke_tool`` populate ``ctx.metadata['policy.action']`` and
@@ -308,4 +318,24 @@ class PolicyMiddleware(PassthroughMiddleware):
         if not decision.allow:
             raise PolicyDeniedError(rule_id=decision.rule_id, reason=decision.reason)
         ctx.metadata["policy.matched_rule"] = decision.rule_id
+
+    async def on_request(self, req: Request, ctx: Context) -> Request:
+        self._authorize_or_raise(ctx)
         return req
+
+    async def on_tool_call_post_mutation(
+        self, tool_name: str, args: dict[str, Any], ctx: Context
+    ) -> None:
+        """Re-authorize after the ``on_tool_call`` mutation phase.
+
+        The SDK re-stamps ``ctx.metadata['policy.action']`` /
+        ``['policy.resource']`` from the current ``tool_name`` before
+        this hook fires (``MiddlewarePipeline.run_tool`` Phase 3), so a
+        Phase-2 middleware that tried to launder the policy inputs by
+        writing to ``ctx.metadata`` finds those writes overwritten — we
+        evaluate against the SDK-controlled state and silent mutation
+        can't bypass the authorization decision.
+
+        Closes Finding 1 follow-up from the v1.6.2 external review.
+        """
+        self._authorize_or_raise(ctx)
