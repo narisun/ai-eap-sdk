@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
 
@@ -124,7 +125,7 @@ async def in_process_mcp_server() -> AsyncIterator[str]:
             "attached on the wire by the httpx.Auth flow."
         )
     )
-    async def echo_authorization(ctx: Context) -> dict[str, str]:
+    async def echo_authorization(ctx: Context[Any, Any, Any]) -> dict[str, str]:
         # FastMCP's ``Context`` exposes the underlying Starlette
         # ``Request`` (and therefore its ``headers``) via
         # ``ctx.request_context.request`` when the transport is HTTP.
@@ -133,6 +134,7 @@ async def in_process_mcp_server() -> AsyncIterator[str]:
         # reads it back so the test can assert the header survived the
         # full transport round-trip.
         request = ctx.request_context.request
+        assert request is not None  # transport is http; request is always set
         return {"authorization": request.headers.get("authorization", "<missing>")}
 
     app = mcp_server.streamable_http_app()

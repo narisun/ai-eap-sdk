@@ -16,6 +16,85 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.4.0] — 2026-05-12 — Quality / correctness pass
+
+Closes three quality items the v1.x reviews documented as future-minor
+work. No new transports or public APIs — internal correctness only.
+Existing v1.3.x installs upgrade cleanly.
+
+### Fixed
+
+- **`pool.reconnect()` no longer leaks the old subprocess/connection
+  until pool exit.** v1.1 documented and v1.2-v1.3 carried forward:
+  `AsyncExitStack` doesn't support partial unwind, so each reconnect
+  spawned a fresh handle but the old resources hung around until the
+  pool itself exited. v1.4 gives each handle its own nested
+  `AsyncExitStack` attached to the pool's outer stack via
+  `enter_async_context`. `reconnect()` now calls
+  `old_handle._stack.aclose()` before spawning the replacement,
+  which unwinds the upstream `ClientSession` + transport in LIFO
+  order and (for http) closes the per-handle httpx client. Two new
+  tests (`test_reconnect_closes_old_handles_stack_before_spawning_replacement`,
+  `test_pool_exit_closes_every_live_handle_stack`) lock the
+  cleanup invariant.
+- **`_maybe_validate` now uses `jsonschema` for full JSON Schema
+  validation.** v1.1's shallow required-keys check missed type
+  mismatches, enum violations, format errors, and nested-property
+  type drift. v1.4 routes through `jsonschema.validate()` when the
+  library is available (it's pulled in via `jsonschema>=4.0` in the
+  `[mcp]` extra; `eap-core`'s core deps already include it for
+  input-schema generation in `mcp/registry.py`, so most users have
+  it). Falls back to the v1.1 shallow check on `ImportError` —
+  backward-compat for stripped-down installs. Six new tests cover
+  type-mismatch / enum-violation / nested-type / valid-payload paths
+  plus the fallback when jsonschema is unavailable.
+
+### Changed
+
+- **Example test directories renamed for unique discovery.** All
+  three example projects (`bankdw-mcp-server`, `sfcrm-mcp-server`,
+  `cross-domain-agent`) had `tests/__init__.py` — pytest treats them
+  as packages named `tests` and the second one shadows the first
+  when co-collecting. Renamed via `git mv` to `tests_bankdw/`,
+  `tests_sfcrm/`, `tests_cross_domain/`. Workaround documented
+  since v1.1 ("run one example's tests at a time") is no longer
+  needed:
+
+      pytest examples/bankdw-mcp-server/tests_bankdw \
+             examples/sfcrm-mcp-server/tests_sfcrm \
+             examples/cross-domain-agent/tests_cross_domain
+
+  collects 47 tests in a single invocation. Example READMEs and
+  `pyproject.toml` `testpaths` entries updated. Workspace root's
+  ruff per-file-ignore glob broadened from `**/tests/**/*.py` to
+  `**/tests*/**/*.py` to match the new directory names.
+
+### Fixed (housekeeping)
+
+- **Persistent mypy errors in `test_mcp_client_http_integration.py`
+  resolved.** Two errors that had been pre-existing across the v1.3
+  cycle (`Missing type arguments for generic type "Context"` at line
+  127; `Item "None" of "Any | None" has no attribute "headers"` at
+  line 136) cleaned up: the `Context` annotation now uses
+  `Context[Any, Any, Any]` per FastMCP's generic signature, and the
+  request access has an explicit `assert request is not None`
+  documenting that the transport guarantees non-None.
+
+### Stats (verified with fresh `.mypy_cache` + `__pycache__`)
+
+- **695 non-extras tests passing** (+16 vs v1.3.0's 679 — three new
+  pool-cleanup tests + six new validation tests + four+ from
+  v1.3.0's BearerTokenAuth gauntlet, mainly).
+- **47 example tests passing** in a single co-collected invocation
+  (was three per-directory invocations).
+- All four primary gauntlets green from repo root with fresh caches:
+  ruff, ruff format, mypy (149 source files, no issues), pytest.
+- The full extras matrix (15 mcp_server + 5 OTel session + 5 HTTP
+  integration + 3 SSE + 3 WebSocket + 9 Cedar + 8 auth) all pass on
+  their respective extras gauntlets.
+
+---
+
 ## [1.3.0] — 2026-05-12 — Transport completeness for the MCP client
 
 **EAP-Core v1.3 — the four-transport MCP client.** v1.2 added
