@@ -30,8 +30,8 @@ from eap_core import EnterpriseLLM, RuntimeConfig
 from eap_core.mcp import McpToolRegistry
 from eap_core.middleware.observability import ObservabilityMiddleware
 from eap_core.middleware.pii import PiiMaskingMiddleware
-from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
-from eap_core.middleware.sanitize import PromptInjectionMiddleware
+from eap_core.middleware.policy import PolicyMiddleware, SimpleJsonPolicyEvaluator
+from eap_core.middleware.sanitize import ThreatDetectionMiddleware
 from eap_core.middleware.validate import OutputValidationMiddleware
 from eap_core.payments import PaymentRequired
 
@@ -70,10 +70,10 @@ def build_client() -> EnterpriseLLM:
     return EnterpriseLLM(
         RuntimeConfig(provider="local", model="echo-1"),
         middlewares=[
-            PromptInjectionMiddleware(),
+            ThreatDetectionMiddleware(),
             PiiMaskingMiddleware(),
             ObservabilityMiddleware(),
-            PolicyMiddleware(JsonPolicyEvaluator(_load_policy())),
+            PolicyMiddleware(SimpleJsonPolicyEvaluator(_load_policy())),
             OutputValidationMiddleware(),
         ],
         tool_registry=REGISTRY,

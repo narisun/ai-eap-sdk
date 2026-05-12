@@ -6,8 +6,8 @@ import asyncio
 from eap_core import EnterpriseLLM, RuntimeConfig
 from eap_core.middleware.observability import ObservabilityMiddleware
 from eap_core.middleware.pii import PiiMaskingMiddleware
-from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
-from eap_core.middleware.sanitize import PromptInjectionMiddleware
+from eap_core.middleware.policy import PolicyMiddleware, SimpleJsonPolicyEvaluator
+from eap_core.middleware.sanitize import ThreatDetectionMiddleware
 from eap_core.middleware.validate import OutputValidationMiddleware
 import json
 from pathlib import Path
@@ -21,10 +21,10 @@ def build_client() -> EnterpriseLLM:
     return EnterpriseLLM(
         RuntimeConfig(provider="{{ runtime }}", model="echo-1"),
         middlewares=[
-            PromptInjectionMiddleware(),
+            ThreatDetectionMiddleware(),
             PiiMaskingMiddleware(),
             ObservabilityMiddleware(),
-            PolicyMiddleware(JsonPolicyEvaluator(_load_policy())),
+            PolicyMiddleware(SimpleJsonPolicyEvaluator(_load_policy())),
             OutputValidationMiddleware(),
         ],
     )

@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-from eap_core.middleware.sanitize import PromptInjectionMiddleware
+from eap_core.middleware.sanitize import ThreatDetectionMiddleware
 from eap_core.security import INJECTION_PATTERNS, RegexThreatDetector
 
 
 def test_middleware_and_detector_share_canonical_patterns():
-    mw = PromptInjectionMiddleware()
+    # The default-constructed ThreatDetectionMiddleware delegates to
+    # RegexThreatDetector, which is constructed from the same canonical
+    # INJECTION_PATTERNS table. Verify both endpoints reference the same
+    # compiled-pattern set (no parallel duplication).
+    mw = ThreatDetectionMiddleware()
     detector = RegexThreatDetector()
 
-    # PromptInjectionMiddleware stores (label, pattern) tuples; the
-    # underlying compiled patterns must match the canonical set.
-    mw_compiled = tuple(p for _, p in mw._patterns)
-    canonical = tuple(p for _, p in INJECTION_PATTERNS)
-    assert mw_compiled == canonical
-
-    # RegexThreatDetector stores bare compiled patterns derived from the
-    # same canonical tuple.
+    canonical = tuple(p for _, p, _ in INJECTION_PATTERNS)
+    assert isinstance(mw._detector, RegexThreatDetector)
+    assert mw._detector._patterns == canonical
     assert detector._patterns == canonical
 
 

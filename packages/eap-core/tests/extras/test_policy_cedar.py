@@ -1,4 +1,4 @@
-"""Cedar engine adapter — decision parity with JsonPolicyEvaluator
+"""Cedar engine adapter — decision parity with SimpleJsonPolicyEvaluator
 for representative scenarios + Cedar-only feature coverage.
 """
 
@@ -14,7 +14,7 @@ pytestmark = pytest.mark.extras
 
 from eap_core.middleware.policy import (
     CedarPolicyEvaluator,
-    JsonPolicyEvaluator,
+    SimpleJsonPolicyEvaluator,
 )
 
 
@@ -141,7 +141,7 @@ def test_cedar_parity_with_json_evaluator(
     resource: str,
     expected_allow: bool,
 ) -> None:
-    json_eval = JsonPolicyEvaluator(json_doc)
+    json_eval = SimpleJsonPolicyEvaluator(json_doc)
     cedar_eval = CedarPolicyEvaluator(cedar_doc)
     json_decision = json_eval.evaluate(principal, action, resource)
     cedar_decision = cedar_eval.evaluate(principal, action, resource)

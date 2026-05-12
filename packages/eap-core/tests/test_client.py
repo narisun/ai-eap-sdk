@@ -6,18 +6,18 @@ from eap_core.config import RuntimeConfig
 from eap_core.exceptions import PolicyDeniedError, PromptInjectionError
 from eap_core.middleware.observability import ObservabilityMiddleware
 from eap_core.middleware.pii import PiiMaskingMiddleware
-from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
-from eap_core.middleware.sanitize import PromptInjectionMiddleware
+from eap_core.middleware.policy import PolicyMiddleware, SimpleJsonPolicyEvaluator
+from eap_core.middleware.sanitize import ThreatDetectionMiddleware
 from eap_core.middleware.validate import OutputValidationMiddleware
 
 
 def _default_chain():
     return [
-        PromptInjectionMiddleware(),
+        ThreatDetectionMiddleware(),
         PiiMaskingMiddleware(),
         ObservabilityMiddleware(),
         PolicyMiddleware(
-            JsonPolicyEvaluator(
+            SimpleJsonPolicyEvaluator(
                 {
                     "version": "1",
                     "rules": [
@@ -61,7 +61,7 @@ async def test_client_blocks_prompt_injection():
 
 
 async def test_client_blocks_via_policy():
-    deny_all = PolicyMiddleware(JsonPolicyEvaluator({"version": "1", "rules": []}))
+    deny_all = PolicyMiddleware(SimpleJsonPolicyEvaluator({"version": "1", "rules": []}))
     client = EnterpriseLLM(
         RuntimeConfig(provider="local", model="echo-1"),
         middlewares=[deny_all],

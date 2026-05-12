@@ -11,8 +11,8 @@ from eap_core.config import RuntimeConfig
 from eap_core.middleware.base import Middleware
 from eap_core.middleware.observability import ObservabilityMiddleware
 from eap_core.middleware.pii import PiiMaskingMiddleware
-from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
-from eap_core.middleware.sanitize import PromptInjectionMiddleware
+from eap_core.middleware.policy import PolicyMiddleware, SimpleJsonPolicyEvaluator
+from eap_core.middleware.sanitize import ThreatDetectionMiddleware
 from eap_core.middleware.validate import OutputValidationMiddleware
 from eap_core.types import Context, Response
 
@@ -37,10 +37,10 @@ def make_test_client(
 ) -> EnterpriseLLM:
     """A pre-wired EnterpriseLLM with LocalRuntimeAdapter and a permissive policy."""
     chain: list[Middleware] = [
-        PromptInjectionMiddleware(),
+        ThreatDetectionMiddleware(),
         PiiMaskingMiddleware(),
         ObservabilityMiddleware(),
-        PolicyMiddleware(JsonPolicyEvaluator(_PERMIT_ALL)),
+        PolicyMiddleware(SimpleJsonPolicyEvaluator(_PERMIT_ALL)),
         OutputValidationMiddleware(),
     ]
     if extra_middlewares:

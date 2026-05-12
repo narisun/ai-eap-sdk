@@ -4,7 +4,7 @@ from eap_core.client import EnterpriseLLM
 from eap_core.config import RuntimeConfig
 from eap_core.eval.trajectory import Step, Trajectory, TrajectoryRecorder
 from eap_core.middleware.observability import ObservabilityMiddleware
-from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
+from eap_core.middleware.policy import PolicyMiddleware, SimpleJsonPolicyEvaluator
 
 PERMIT_ALL = {
     "version": "1",
@@ -39,7 +39,7 @@ async def test_recorder_writes_jsonl_per_request(tmp_path):
         RuntimeConfig(provider="local", model="echo-1"),
         middlewares=[
             ObservabilityMiddleware(),
-            PolicyMiddleware(JsonPolicyEvaluator(PERMIT_ALL)),
+            PolicyMiddleware(SimpleJsonPolicyEvaluator(PERMIT_ALL)),
             recorder,
         ],
     )
@@ -72,7 +72,7 @@ async def test_recorder_collects_retrieved_contexts_from_ctx(tmp_path):
         middlewares=[
             CtxStuffer(),
             ObservabilityMiddleware(),
-            PolicyMiddleware(JsonPolicyEvaluator(PERMIT_ALL)),
+            PolicyMiddleware(SimpleJsonPolicyEvaluator(PERMIT_ALL)),
             recorder,
         ],
     )

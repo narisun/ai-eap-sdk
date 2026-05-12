@@ -1,21 +1,37 @@
 """Policy enforcement middleware.
 
-Default evaluator is a small JSON-based engine modeled on Cedar's
-principal/action/resource/condition shape. Optional cedarpy adapter
-swaps in real Cedar semantics when the [policy-cedar] extra is
-installed.
+Default evaluator is :class:`SimpleJsonPolicyEvaluator` — a small,
+in-house JSON-shaped engine. **It is NOT Cedar-compatible**:
+
+- matches are exact-string-or-wildcard (no Cedar ``like`` / ``in`` /
+  attribute access);
+- decision algorithm is forbid-before-permit with an optional one-shot
+  ``unless`` clause keyed on ``principal.roles``;
+- default action is deny.
+
+For full Cedar semantics use :class:`CedarPolicyEvaluator` (requires
+the ``[policy-cedar]`` extra).
 
 Decision algorithm:
+
 - Iterate rules in order; collect matching forbids and permits.
-- If any forbid matches and its `unless` is not satisfied → DENY.
+- If any forbid matches and its ``unless`` is not satisfied → DENY.
 - Else if any permit matches → ALLOW.
 - Else → DENY (default deny).
+
+The legacy class name ``JsonPolicyEvaluator`` is kept as a module-level
+attribute that emits a :class:`DeprecationWarning` on first lookup
+(PEP 562 ``__getattr__``). Switch to :class:`SimpleJsonPolicyEvaluator`
+to silence the warning.
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
+
+from pydantic import BaseModel, ConfigDict
 
 from eap_core.exceptions import PolicyConfigurationError, PolicyDeniedError
 from eap_core.middleware.base import PassthroughMiddleware
@@ -33,6 +49,46 @@ class PolicyEvaluator(Protocol):
     def evaluate(self, principal: Any, action: str, resource: str) -> PolicyDecision: ...
 
 
+# ---------------------------------------------------------------------------
+# Pydantic models — load-time validation for the JSON document shape
+# ---------------------------------------------------------------------------
+
+
+class PolicyRule(BaseModel):
+    """Validated shape of a single :class:`SimpleJsonPolicyEvaluator` rule.
+
+    ``extra="forbid"`` catches typos (``"rsource"`` instead of
+    ``"resource"``) at load time instead of silently passing the
+    typo'd rule through to evaluation where it would never match.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    effect: Literal["permit", "forbid"]
+    principal: str | list[str] = "*"
+    action: str | list[str] = "*"
+    resource: str | list[str] = "*"
+    unless: dict[str, Any] | None = None
+
+
+class PolicyDocument(BaseModel):
+    """Validated :class:`SimpleJsonPolicyEvaluator` policy document.
+
+    Accepts the legacy ``{"version": "1", "rules": [...]}`` shape (the
+    ``version`` field is currently ignored but tolerated for forward
+    compatibility — explicitly opted out of ``extra="forbid"`` at this
+    level).
+    """
+
+    rules: list[PolicyRule]
+
+    # NOTE: deliberately NO ``model_config = ConfigDict(extra="forbid")``
+    # at the document level — callers ship documents with a top-level
+    # ``"version"`` key (and may extend with metadata) and we don't want
+    # to break those. Strict validation is at the per-rule level.
+
+
 def _matches(value: str, pattern: str | list[str]) -> bool:
     if isinstance(pattern, list):
         return any(_matches(value, p) for p in pattern)
@@ -47,9 +103,34 @@ def _condition_holds(condition: dict[str, Any], principal: Any) -> bool:
     return True
 
 
-class JsonPolicyEvaluator:
+class SimpleJsonPolicyEvaluator:
+    """Minimal default-deny policy evaluator for development and small deployments.
+
+    **NOT Cedar-compatible.** Semantics:
+
+    - Per-rule fields ``principal``/``action``/``resource`` are matched
+      as exact strings or the wildcard ``"*"`` (lists are OR'd).
+    - ``forbid`` rules win over ``permit`` rules (forbid-before-permit).
+    - A ``forbid`` rule may carry ``unless`` with a single
+      ``principal_has_role`` key to suppress the forbid for a privileged
+      role.
+    - Default is DENY when no rule matches.
+
+    The document is validated by :class:`PolicyDocument` at construction
+    time, so malformed rules (unknown ``effect``, missing ``id``,
+    misspelled fields) raise :class:`pydantic.ValidationError` here
+    rather than failing silently at evaluation time.
+    """
+
     def __init__(self, document: dict[str, Any]) -> None:
-        self._rules = document.get("rules", [])
+        # Fail-fast: validate the document shape before keeping any
+        # state. Raises ``pydantic.ValidationError`` for malformed rules.
+        validated = PolicyDocument.model_validate(document)
+        # Convert back to plain dicts so the matcher's
+        # ``r.get("principal", "*")`` style keeps working unchanged.
+        self._rules: list[dict[str, Any]] = [
+            r.model_dump(exclude_none=False) for r in validated.rules
+        ]
 
     def evaluate(self, principal: Any, action: str, resource: str) -> PolicyDecision:
         principal_id = getattr(principal, "client_id", "*") if principal else "*"
@@ -78,15 +159,34 @@ class JsonPolicyEvaluator:
         return PolicyDecision(False, "default-deny", "no rule matched")
 
 
+def __getattr__(name: str) -> Any:
+    """Module-level deprecation shim (PEP 562).
+
+    ``JsonPolicyEvaluator`` is the legacy v1.x name for
+    :class:`SimpleJsonPolicyEvaluator`. Imports continue to work, but
+    every reference emits a :class:`DeprecationWarning` so callers see
+    the rename.
+    """
+    if name == "JsonPolicyEvaluator":
+        warnings.warn(
+            "JsonPolicyEvaluator is deprecated and will be removed in v2.0. "
+            "Use SimpleJsonPolicyEvaluator instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return SimpleJsonPolicyEvaluator
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 class CedarPolicyEvaluator:
     """Real Cedar engine adapter. Requires the ``[policy-cedar]`` extra.
 
-    Unlike :class:`JsonPolicyEvaluator` (which takes a JSON document and
-    runs an in-house matcher), this evaluator takes a Cedar DSL policy
-    text and delegates to :func:`cedarpy.is_authorized` for the decision.
-    Use this when you need Cedar's full semantics (entity hierarchies,
-    ABAC context, ``like`` / ``in`` operators, ``when`` / ``unless``
-    clauses with attribute access).
+    Unlike :class:`SimpleJsonPolicyEvaluator` (which takes a JSON
+    document and runs an in-house matcher), this evaluator takes a
+    Cedar DSL policy text and delegates to :func:`cedarpy.is_authorized`
+    for the decision. Use this when you need Cedar's full semantics
+    (entity hierarchies, ABAC context, ``like`` / ``in`` operators,
+    ``when`` / ``unless`` clauses with attribute access).
 
     The evaluator maps EAP-Core's ``(principal, action, resource)``
     triple onto Cedar's request shape:

@@ -1,12 +1,17 @@
+import warnings
+
 import pytest
 
 from eap_core.exceptions import PromptInjectionError
-from eap_core.middleware.sanitize import PromptInjectionMiddleware
+from eap_core.middleware.sanitize import (
+    PromptInjectionMiddleware,
+    ThreatDetectionMiddleware,
+)
 from eap_core.types import Context, Message, Request
 
 
 async def test_passes_through_clean_prompt():
-    mw = PromptInjectionMiddleware()
+    mw = ThreatDetectionMiddleware()
     req = Request(
         model="m", messages=[Message(role="user", content="What is the capital of France?")]
     )
@@ -25,7 +30,7 @@ async def test_passes_through_clean_prompt():
     ],
 )
 async def test_blocks_known_injection_patterns(payload: str):
-    mw = PromptInjectionMiddleware()
+    mw = ThreatDetectionMiddleware()
     req = Request(model="m", messages=[Message(role="user", content=payload)])
     ctx = Context()
     with pytest.raises(PromptInjectionError) as ei:
@@ -37,10 +42,14 @@ async def test_blocks_known_injection_patterns(payload: str):
 
 
 async def test_custom_classifier_can_override_decision():
+    """Legacy ``extra_classifier`` keyword on the deprecated alias keeps working."""
+
     async def classifier(text: str) -> bool:
         return "BANNED" in text
 
-    mw = PromptInjectionMiddleware(extra_classifier=classifier)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        mw = PromptInjectionMiddleware(extra_classifier=classifier)
     ctx = Context()
     req = Request(model="m", messages=[Message(role="user", content="totally clean BANNED text")])
     with pytest.raises(PromptInjectionError):

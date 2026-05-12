@@ -6,7 +6,7 @@ from eap_core.exceptions import PolicyDeniedError
 from eap_core.mcp.decorator import mcp_tool
 from eap_core.mcp.registry import McpToolRegistry
 from eap_core.mcp.types import MCPError
-from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
+from eap_core.middleware.policy import PolicyMiddleware, SimpleJsonPolicyEvaluator
 
 PERMIT_ALL = {
     "version": "1",
@@ -27,7 +27,7 @@ async def test_invoke_tool_dispatches_via_registry():
 
     client = EnterpriseLLM(
         RuntimeConfig(provider="local", model="echo-1"),
-        middlewares=[PolicyMiddleware(JsonPolicyEvaluator(PERMIT_ALL))],
+        middlewares=[PolicyMiddleware(SimpleJsonPolicyEvaluator(PERMIT_ALL))],
         tool_registry=reg,
     )
     result = await client.invoke_tool("double", {"n": 21})
@@ -37,7 +37,7 @@ async def test_invoke_tool_dispatches_via_registry():
 async def test_invoke_tool_unknown_raises_mcp_error():
     client = EnterpriseLLM(
         RuntimeConfig(provider="local", model="echo-1"),
-        middlewares=[PolicyMiddleware(JsonPolicyEvaluator(PERMIT_ALL))],
+        middlewares=[PolicyMiddleware(SimpleJsonPolicyEvaluator(PERMIT_ALL))],
         tool_registry=McpToolRegistry(),
     )
     with pytest.raises(MCPError):
@@ -75,7 +75,7 @@ async def test_invoke_tool_runs_through_policy_middleware():
 
     client = EnterpriseLLM(
         RuntimeConfig(provider="local", model="echo-1"),
-        middlewares=[PolicyMiddleware(JsonPolicyEvaluator(deny_writes))],
+        middlewares=[PolicyMiddleware(SimpleJsonPolicyEvaluator(deny_writes))],
         tool_registry=reg,
     )
     with pytest.raises(PolicyDeniedError):

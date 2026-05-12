@@ -43,8 +43,7 @@ async def test_pii_clears_stream_buffer_on_stream_end() -> None:
 
     await mw.on_stream_end(ctx)
     assert _STREAM_BUFFER_KEY not in ctx.metadata, (
-        "stream buffer must be cleared at on_stream_end to prevent "
-        "cross-request leak"
+        "stream buffer must be cleared at on_stream_end to prevent cross-request leak"
     )
 
 

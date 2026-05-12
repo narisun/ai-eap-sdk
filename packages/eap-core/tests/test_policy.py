@@ -1,7 +1,7 @@
 import pytest
 
 from eap_core.exceptions import PolicyConfigurationError, PolicyDeniedError
-from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
+from eap_core.middleware.policy import PolicyMiddleware, SimpleJsonPolicyEvaluator
 from eap_core.types import Context, Message, Request
 
 PERMIT_READS = {
@@ -26,7 +26,7 @@ PERMIT_READS = {
 
 
 async def test_permits_when_action_matches_permit_rule():
-    mw = PolicyMiddleware(JsonPolicyEvaluator(PERMIT_READS))
+    mw = PolicyMiddleware(SimpleJsonPolicyEvaluator(PERMIT_READS))
     ctx = Context()
     ctx.metadata["policy.action"] = "read"
     ctx.metadata["policy.resource"] = "doc:1"
@@ -39,7 +39,7 @@ async def test_permits_when_action_matches_permit_rule():
 
 
 async def test_forbids_when_forbid_rule_matches():
-    mw = PolicyMiddleware(JsonPolicyEvaluator(PERMIT_READS))
+    mw = PolicyMiddleware(SimpleJsonPolicyEvaluator(PERMIT_READS))
     ctx = Context()
     ctx.metadata["policy.action"] = "transfer"
     ctx.metadata["policy.resource"] = "acct:1"
@@ -53,7 +53,7 @@ async def test_forbids_when_forbid_rule_matches():
 
 
 async def test_default_deny_when_no_rule_matches():
-    mw = PolicyMiddleware(JsonPolicyEvaluator({"version": "1", "rules": []}))
+    mw = PolicyMiddleware(SimpleJsonPolicyEvaluator({"version": "1", "rules": []}))
     ctx = Context()
     ctx.metadata["policy.action"] = "x"
     ctx.metadata["policy.resource"] = "y"
@@ -86,7 +86,7 @@ async def test_unless_clause_with_principal_role():
             },
         ],
     }
-    mw = PolicyMiddleware(JsonPolicyEvaluator(rules))
+    mw = PolicyMiddleware(SimpleJsonPolicyEvaluator(rules))
     ctx_op = Context()
     ctx_op.identity = type("I", (), {"roles": ["operator"]})()
     ctx_op.metadata["policy.action"] = "write"
@@ -152,7 +152,7 @@ async def test_policy_action_is_derived_inside_sdk_not_from_caller_metadata():
     )
     client = EnterpriseLLM(
         RuntimeConfig(provider="local", model="echo-1"),
-        middlewares=[PolicyMiddleware(JsonPolicyEvaluator(policy))],
+        middlewares=[PolicyMiddleware(SimpleJsonPolicyEvaluator(policy))],
         tool_registry=reg,
     )
     # Even if a caller tried to spoof, action is derived from tool_name.
@@ -220,7 +220,7 @@ async def test_policy_action_cannot_be_spoofed_via_upstream_middleware():
         RuntimeConfig(provider="local", model="echo-1"),
         middlewares=[
             SpoofingMiddleware(),
-            PolicyMiddleware(JsonPolicyEvaluator(policy)),
+            PolicyMiddleware(SimpleJsonPolicyEvaluator(policy)),
         ],
         tool_registry=reg,
     )
@@ -248,7 +248,7 @@ async def test_policy_action_membership_not_truthiness():
             },
         ],
     }
-    mw = PolicyMiddleware(JsonPolicyEvaluator(rules))
+    mw = PolicyMiddleware(SimpleJsonPolicyEvaluator(rules))
     ctx = Context()
     # Trusted slot is present but empty — a stand-in for any falsy value.
     # ``or`` would treat this as missing and fall through to ``req.metadata``,
@@ -271,10 +271,10 @@ async def test_policy_middleware_refuses_without_trusted_action():
     """PolicyMiddleware must NOT fall back to caller-mutable req.metadata.
     A request reaching the middleware without ctx.metadata['policy.action']
     set is a programming error — fail loudly."""
-    from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
+    from eap_core.middleware.policy import PolicyMiddleware, SimpleJsonPolicyEvaluator
     from eap_core.types import Context, Request
 
-    mw = PolicyMiddleware(JsonPolicyEvaluator({"rules": []}))
+    mw = PolicyMiddleware(SimpleJsonPolicyEvaluator({"rules": []}))
     req = Request(model="m", messages=[], metadata={"action": "tool:transfer"})  # spoof attempt
     ctx = Context()  # no policy.* metadata set
     with pytest.raises(PolicyConfigurationError, match=r"policy\.action"):
@@ -312,7 +312,7 @@ def test_forbid_with_empty_unless_clause_is_always_suppressed():
             }
         ]
     }
-    e = JsonPolicyEvaluator(doc)
+    e = SimpleJsonPolicyEvaluator(doc)
     decision = e.evaluate(_PrincipalLike("alice"), "read", "doc:1")
     # _condition_holds({}, ...) → True → forbid suppressed → default deny.
     assert decision.allow is False
@@ -344,7 +344,7 @@ def test_forbid_with_empty_unless_is_suppressed_letting_permit_match():
             },
         ]
     }
-    e = JsonPolicyEvaluator(doc)
+    e = SimpleJsonPolicyEvaluator(doc)
     decision = e.evaluate(_PrincipalLike("alice"), "read", "doc:1")
     assert decision.allow is True
     assert decision.rule_id == "permit-all"
@@ -373,7 +373,7 @@ def test_forbid_principal_mismatch_continues_to_permit():
             },
         ]
     }
-    e = JsonPolicyEvaluator(doc)
+    e = SimpleJsonPolicyEvaluator(doc)
     decision = e.evaluate(_PrincipalLike("alice"), "read", "doc:1")
     assert decision.allow is True
     assert decision.rule_id == "permit-all"
@@ -400,7 +400,7 @@ def test_forbid_resource_mismatch_continues_to_permit():
             },
         ]
     }
-    e = JsonPolicyEvaluator(doc)
+    e = SimpleJsonPolicyEvaluator(doc)
     decision = e.evaluate(_PrincipalLike("alice"), "read", "public-doc")
     assert decision.allow is True
     assert decision.rule_id == "permit-all"
@@ -420,7 +420,7 @@ def test_permit_principal_mismatch_falls_through_to_default_deny():
             },
         ]
     }
-    e = JsonPolicyEvaluator(doc)
+    e = SimpleJsonPolicyEvaluator(doc)
     decision = e.evaluate(_PrincipalLike("bob"), "read", "doc:1")
     assert decision.allow is False
     assert decision.rule_id == "default-deny"
@@ -440,7 +440,7 @@ def test_permit_resource_mismatch_falls_through_to_default_deny():
             },
         ]
     }
-    e = JsonPolicyEvaluator(doc)
+    e = SimpleJsonPolicyEvaluator(doc)
     decision = e.evaluate(_PrincipalLike("alice"), "read", "private-doc")
     assert decision.allow is False
     assert decision.rule_id == "default-deny"
@@ -450,10 +450,10 @@ def test_permit_resource_mismatch_falls_through_to_default_deny():
 async def test_policy_middleware_refuses_without_trusted_resource():
     """Even when policy.action is set, missing policy.resource must
     still refuse rather than fall back to caller-mutable req.metadata."""
-    from eap_core.middleware.policy import JsonPolicyEvaluator, PolicyMiddleware
+    from eap_core.middleware.policy import PolicyMiddleware, SimpleJsonPolicyEvaluator
     from eap_core.types import Context, Request
 
-    mw = PolicyMiddleware(JsonPolicyEvaluator({"rules": []}))
+    mw = PolicyMiddleware(SimpleJsonPolicyEvaluator({"rules": []}))
     req = Request(model="m", messages=[], metadata={"resource": "acct:1"})
     ctx = Context()
     ctx.metadata["policy.action"] = "read"
