@@ -150,15 +150,37 @@ class McpClientPool:
         self._handles.clear()
 
     async def _spawn(self, cfg: McpServerConfig) -> McpServerHandle:
-        """Spawn one server subprocess and open an MCP stdio session against it.
+        """Dispatch to the transport-specific spawn helper.
 
-        The ``stdio_client`` and ``ClientSession`` contexts are entered on
-        the pool's :class:`AsyncExitStack` so they get torn down when the
-        pool exits. The upstream imports are lazy so the non-extras test
-        path (which never enters the pool) doesn't need ``mcp`` installed.
+        Both helpers must return a fully-initialised :class:`McpServerHandle`:
+        the upstream ``mcp.ClientSession`` has been entered into the pool's
+        :class:`AsyncExitStack` and its ``initialize`` + ``list_tools`` calls
+        have completed.
+
+        Pydantic's ``Literal["stdio", "http"]`` discriminator already rejects
+        unknown transport strings at config construction time, so the
+        ``else`` branch here is purely defensive — it documents the contract
+        a future v1.3+ transport must satisfy (add a new ``_spawn_<name>``
+        helper and route to it here).
+        """
+        assert self._stack is not None, "pool not entered"
+        if cfg.transport == "stdio":
+            return await self._spawn_stdio(cfg)
+        if cfg.transport == "http":
+            return await self._spawn_http(cfg)
+        raise McpServerSpawnError(
+            f"unsupported transport {cfg.transport!r} for server {cfg.name!r}"
+        )
+
+    async def _spawn_stdio(self, cfg: McpServerConfig) -> McpServerHandle:
+        """Spawn a subprocess and open an MCP stdio session against it.
+
+        ``stdio_client(...)`` yields a 2-tuple ``(read, write)``; the shared
+        :meth:`_open_session` path handles entering the transport context
+        manager on the pool's stack and unpacking that pair.
         """
         try:
-            from mcp import ClientSession, StdioServerParameters
+            from mcp import StdioServerParameters
             from mcp.client.stdio import stdio_client
         except ImportError as e:
             raise McpServerSpawnError(
@@ -166,19 +188,90 @@ class McpClientPool:
             ) from e
 
         assert self._stack is not None, "pool not entered"
+        assert cfg.command is not None  # enforced by McpServerConfig validator
         params = StdioServerParameters(
             command=cfg.command,
             args=cfg.args,
             cwd=str(cfg.cwd) if cfg.cwd else None,
             env=cfg.env,
         )
+        return await self._open_session(cfg, stdio_client(params), arity=2)
+
+    async def _spawn_http(self, cfg: McpServerConfig) -> McpServerHandle:
+        """Open a Streamable-HTTP session against a remote MCP server.
+
+        ``streamablehttp_client(...)`` yields a 3-tuple
+        ``(read, write, get_session_id)``; v1.2 does not use Streamable-HTTP
+        session resumption so the third element is discarded by
+        :meth:`_open_session` when ``arity=3``.
+
+        ``cfg.auth`` is typed as ``Any`` to keep ``httpx`` out of the core
+        import path; the upstream client expects ``httpx.Auth | None`` and
+        accepts our value as-is. A non-``Auth`` runtime value will fail
+        loudly on the first HTTP request — that's the right contract.
+        """
         try:
-            read, write = await self._stack.enter_async_context(stdio_client(params))
+            from mcp.client.streamable_http import streamablehttp_client
+        except ImportError as e:
+            raise McpServerSpawnError(
+                "MCP client requires the [mcp] extra: pip install eap-core[mcp]"
+            ) from e
+
+        assert self._stack is not None, "pool not entered"
+        assert cfg.url is not None  # enforced by McpServerConfig validator
+        transport_cm = streamablehttp_client(
+            url=cfg.url,
+            headers=cfg.headers,
+            auth=cfg.auth,
+        )
+        return await self._open_session(cfg, transport_cm, arity=3)
+
+    async def _open_session(
+        self,
+        cfg: McpServerConfig,
+        transport_cm: Any,
+        *,
+        arity: int,
+    ) -> McpServerHandle:
+        """Shared session-initialisation path for both transports.
+
+        ``transport_cm`` is the async context manager returned by either
+        ``stdio_client`` (2-tuple read/write) or ``streamablehttp_client``
+        (3-tuple read/write/get_session_id). ``arity`` tells us which shape
+        to unpack; the third element (Streamable-HTTP's
+        ``get_session_id`` callback) is dropped because v1.2 doesn't use
+        session resumption.
+
+        The transport context and the wrapping ``ClientSession`` are both
+        entered on the pool's :class:`AsyncExitStack` so teardown is
+        symmetric across transports.
+        """
+        try:
+            from mcp import ClientSession
+        except ImportError as e:
+            raise McpServerSpawnError(
+                "MCP client requires the [mcp] extra: pip install eap-core[mcp]"
+            ) from e
+
+        assert self._stack is not None, "pool not entered"
+        try:
+            result = await self._stack.enter_async_context(transport_cm)
+            if arity == 2:
+                read, write = result
+            elif arity == 3:
+                # The third element is ``get_session_id``; v1.2 does not
+                # use Streamable-HTTP session resumption so it's dropped.
+                read, write, _get_session_id = result
+            else:
+                raise McpServerSpawnError(
+                    f"unexpected transport arity {arity} for server {cfg.name!r}"
+                )
             upstream = await self._stack.enter_async_context(ClientSession(read, write))
             await upstream.initialize()
             tools_response = await upstream.list_tools()
         except Exception as e:
             raise McpServerSpawnError(f"failed to spawn MCP server {cfg.name!r}: {e}") from e
+
         session = McpClientSession(
             server_name=cfg.name,
             upstream=upstream,

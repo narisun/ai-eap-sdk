@@ -341,3 +341,114 @@ async def test_build_tool_registry_delegates_to_adapter(
         registry = pool.build_tool_registry()
         tool_names = {spec.name for spec in registry.list_tools()}
         assert tool_names == {"srv__tool_a", "srv__tool_b"}
+
+
+# ---------------------------------------------------------------------------
+# Transport dispatch (v1.2): _spawn branches on cfg.transport
+# ---------------------------------------------------------------------------
+
+
+async def test_pool_dispatches_to_correct_spawn_helper_per_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dispatcher in :meth:`McpClientPool._spawn` must route each
+    config to the transport-matched helper. Stub both helpers and verify
+    that, given a pool mixing stdio and http configs, each config goes
+    through its own path with no crossover.
+
+    This is the load-bearing test for the v1.2 dispatcher refactor. The
+    asymmetry between the two recorded lists is what guarantees a
+    mutation that always calls ``_spawn_stdio`` (regardless of transport)
+    would fail this test with a clear diagnostic.
+    """
+    stdio_called: list[str] = []
+    http_called: list[str] = []
+
+    async def _fake_stdio(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+        stdio_called.append(cfg.name)
+        return _make_handle(cfg)
+
+    async def _fake_http(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+        http_called.append(cfg.name)
+        return _make_handle(cfg)
+
+    monkeypatch.setattr(McpClientPool, "_spawn_stdio", _fake_stdio)
+    monkeypatch.setattr(McpClientPool, "_spawn_http", _fake_http)
+
+    cfgs = [
+        McpServerConfig(name="local", command="python"),
+        McpServerConfig(name="remote", transport="http", url="https://example.invalid/mcp"),
+    ]
+    async with McpClientPool(cfgs) as pool:
+        assert stdio_called == ["local"]
+        assert http_called == ["remote"]
+        assert {h.config.name for h in pool.handles()} == {"local", "remote"}
+
+
+async def test_pool_http_handle_carries_transport_and_url_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An http-spawned handle preserves ``cfg.transport`` and ``cfg.url``
+    on the handle's ``config``, and the convenience ``handle.name``
+    accessor matches the config name. This is the metadata adapters
+    consume from ``pool.handles()`` — the dispatcher must not lose it.
+    """
+
+    async def _fake_http(self: McpClientPool, cfg: McpServerConfig) -> McpServerHandle:
+        return _make_handle(cfg, tool_names=["list_things"])
+
+    monkeypatch.setattr(McpClientPool, "_spawn_http", _fake_http)
+    cfg = McpServerConfig(name="remote", transport="http", url="https://mcp.example.com/v1")
+    async with McpClientPool([cfg]) as pool:
+        handle = pool.handles()[0]
+        assert handle.config.transport == "http"
+        assert handle.config.url == "https://mcp.example.com/v1"
+        assert handle.name == "remote"
+        assert handle.tool_names == ["list_things"]
+
+
+async def test_pool_stdio_handle_carries_transport_metadata(
+    patched_spawn: list[McpServerHandle],
+) -> None:
+    """Symmetry check with the http case: a stdio-spawned handle exposes
+    ``handle.config.transport == "stdio"`` so consumers that branch on
+    transport (e.g. observability tagging) can rely on it for both paths.
+    """
+    cfg = McpServerConfig(name="local", command="python")
+    async with McpClientPool([cfg]) as pool:
+        handle = pool.handles()[0]
+        assert handle.config.transport == "stdio"
+        assert handle.config.command == "python"
+        assert handle.config.url is None
+        assert handle.name == "local"
+
+
+async def test_pool_http_spawn_import_error_translated_to_spawn_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the ``[mcp]`` extra is missing, the http spawn path must raise
+    :class:`McpServerSpawnError` (not bare :class:`ImportError`), matching
+    the symmetry of the stdio path. We simulate the missing extra by
+    patching the import name to raise.
+
+    The pool's ``__aenter__`` catches any spawn failure, unwinds the
+    stack, and re-raises — so the assertion is that the surfaced
+    exception type is the SDK's translated error.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _raise_on_streamable_http(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "mcp.client.streamable_http":
+            raise ImportError("simulated missing extra")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _raise_on_streamable_http)
+
+    cfg = McpServerConfig(name="remote", transport="http", url="https://example.invalid/mcp")
+    from eap_core.mcp.client.errors import McpServerSpawnError
+
+    with pytest.raises(McpServerSpawnError, match=r"\[mcp\] extra"):
+        async with McpClientPool([cfg]):
+            pass  # __aenter__ should fail before yielding
