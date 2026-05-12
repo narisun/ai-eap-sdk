@@ -150,6 +150,7 @@ addopts = "--strict-markers -ra"
 markers = [
     "cloud: tests that hit real cloud APIs (skipped without EAP_ENABLE_REAL_RUNTIMES=1)",
     "extras: tests that require optional extras",
+    "cloud_live: tests requiring real cloud credentials (EAP_LIVE_AWS=1 / EAP_LIVE_GCP=1 + valid creds)",
 ]
 filterwarnings = [
     "error::RuntimeWarning",
