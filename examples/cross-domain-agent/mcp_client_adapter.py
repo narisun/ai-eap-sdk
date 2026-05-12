@@ -1,149 +1,102 @@
-"""Bridge between remote MCP servers (subprocess over stdio) and
-EAP-Core's local @mcp_tool / McpToolRegistry surface.
+"""v1.0 → v1.1 compatibility shim for the cross-domain-agent example.
 
-This module exists because eap_core.mcp ships server-side primitives
-(McpToolRegistry, @mcp_tool, run_stdio, build_mcp_server) but no
-first-class client. An agent that wants to consume an external MCP
-server has to:
+Pre-v1.1 this module was a ~149-line per-agent shim implementing
+``connect_servers`` / ``build_tool_specs`` / ``ServerHandle`` against
+the upstream ``mcp.client.stdio`` API. v1.1 promoted that pattern into
+the SDK as :mod:`eap_core.mcp.client` (see the parent package's
+``__init__``); this file is now a ~25-line **migration reference** that
+delegates to the SDK while preserving the v1.0 public signatures.
 
-1. Spawn the server as a subprocess.
-2. Open an MCP stdio session (mcp.client.stdio.stdio_client).
-3. List its tools.
-4. For each remote tool, build a local wrapper that forwards
-   call_tool requests through the open session.
+For new code, import directly from the SDK::
 
-This adapter does (1)-(4). It returns a list of ToolSpec values
-ready for ``McpToolRegistry.register()``.
+    from eap_core.mcp.client import McpClientPool, McpServerConfig
 
-LIMITATION (see README.md): this is a per-agent shim, not a
-general-purpose SDK feature. The official path would be a new
-``eap_core.mcp.client`` module with structured config, session
-lifecycle (pool/retry/timeout), output-schema validation, and
-observability spans around remote calls. None of those live here.
+    async with McpClientPool([cfg_a, cfg_b]) as pool:
+        registry = pool.build_tool_registry()
+        await registry.invoke("server-a__list_tables", {})
+
+The headline ``agent.py`` next to this file uses the SDK API directly.
+This shim exists so any external caller that imported the v1.0 public
+names continues to work after upgrading — the SDK is strictly additive.
 """
 
 from __future__ import annotations
 
-import json
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from eap_core.mcp.client import McpClientPool, McpServerConfig, McpServerHandle
+from eap_core.mcp.client.adapter import build_tool_registry
 from eap_core.mcp.types import ToolSpec
 
-
-@dataclass
-class ServerHandle:
-    """Handle to one running MCP server subprocess. Created by
-    ``connect_servers``; closed by exiting the AsyncExitStack returned
-    alongside it."""
-
-    name: str
-    session: Any  # mcp.client.ClientSession - typed loosely so this
-    #                module doesn't hard-import the upstream package at
-    #                module-load time.
-    tool_names: list[str]
+# v1.0 public alias. ``McpServerHandle`` is the SDK's dataclass; the
+# v1.0 example's ``ServerHandle`` had the same logical role (name +
+# session + tool_names) so aliasing is safe. New code should use
+# ``McpServerHandle`` directly.
+ServerHandle = McpServerHandle
 
 
 async def connect_servers(
     server_configs: list[dict[str, Any]],
     stack: AsyncExitStack,
 ) -> list[ServerHandle]:
-    """Spawn each MCP server subprocess and open an MCP stdio session
-    to it. Returns one ``ServerHandle`` per server.
+    """v1.0 entry point — accepts the legacy ``list[dict]`` shape and a
+    caller-owned :class:`AsyncExitStack`.
 
-    Caller owns the ``AsyncExitStack`` - when the stack exits, all
-    sessions and subprocesses are torn down.
-
-    ``server_configs`` items shape::
-
-        {"name": "bankdw", "command": "python", "args": ["server.py"],
-         "cwd": Path("...")}
-
-    Optional keys: ``env`` (dict[str, str]). When omitted the subprocess
-    inherits the parent process environment.
+    Internally constructs :class:`McpServerConfig` per server, enters an
+    :class:`McpClientPool` on the caller's stack, and returns the pool's
+    handles. The pool's teardown is bound to the stack, so when the
+    caller exits the stack every subprocess shuts down cleanly — the
+    same lifecycle the v1.0 shim provided.
     """
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
-
-    handles: list[ServerHandle] = []
-    for cfg in server_configs:
-        params = StdioServerParameters(
-            command=cfg["command"],
-            args=cfg["args"],
-            cwd=str(cfg["cwd"]) if cfg.get("cwd") else None,
-            env=cfg.get("env"),
+    cfgs = [
+        McpServerConfig(
+            name=d["name"],
+            command=d["command"],
+            args=d.get("args", []),
+            cwd=Path(d["cwd"]) if d.get("cwd") else None,
+            env=d.get("env"),
         )
-        read, write = await stack.enter_async_context(stdio_client(params))
-        session = await stack.enter_async_context(ClientSession(read, write))
-        await session.initialize()
-        tools_response = await session.list_tools()
-        handles.append(
-            ServerHandle(
-                name=cfg["name"],
-                session=session,
-                tool_names=[t.name for t in tools_response.tools],
-            )
-        )
-    return handles
+        for d in server_configs
+    ]
+    pool = await stack.enter_async_context(McpClientPool(cfgs))
+    return pool.handles()
 
 
 def build_tool_specs(handles: list[ServerHandle]) -> list[ToolSpec]:
-    """For every remote tool on every connected server, build a local
-    ``ToolSpec`` whose ``fn`` forwards to that remote tool. The remote
-    tool name is namespaced as ``<server-name>__<tool-name>`` to avoid
-    collisions (both validation servers expose ``query_sql``).
+    """v1.0 entry point — builds ToolSpec forwarders from a list of
+    handles (rather than a pool, which is what the SDK's adapter takes).
 
-    Description is preserved from the remote ``tools/list`` response is
-    available; the local description is augmented with a ``[remote: ...]``
-    prefix so a downstream LLM tool-picker can see which server backs
-    each tool. Input schema is left as a permissive ``{"type": "object"}``
-    because we don't re-fetch the remote schema here; the remote
-    validates on call.
-    """
-    specs: list[ToolSpec] = []
-    for handle in handles:
-        for remote_tool in handle.tool_names:
-            local_name = f"{handle.name}__{remote_tool}"
-            specs.append(_build_one(handle, remote_tool, local_name))
-    return specs
-
-
-def _build_one(handle: ServerHandle, remote_name: str, local_name: str) -> ToolSpec:
-    """Factory that captures ``handle`` + ``remote_name`` as function
-    parameters (NOT loop variables) so the closure inside ``_forward``
-    binds the correct values for each remote tool.
-
-    Inlining the ``async def _forward`` inside the ``for`` loop in
-    ``build_tool_specs`` would close over the LOOP variables, and every
-    forwarder would end up invoking the LAST tool on the LAST handle.
-    Extracting this factory pins the per-iteration values.
+    The SDK adapter is pool-shaped because the forwarder needs to call
+    ``pool.session(name)`` / ``pool.reconnect(name)`` at invocation
+    time. To preserve the v1.0 signature we construct a minimal
+    pool-like adapter from the loose handle list — duck-typed with the
+    three methods the adapter touches. This is exactly the seam future
+    callers migrate ACROSS; it exists here so the v1.0 contract holds.
     """
 
-    async def _forward(**kwargs: Any) -> Any:
-        response = await handle.session.call_tool(remote_name, kwargs)
-        # ``response.content`` is a list[TextContent | ImageContent |
-        # EmbeddedResource]. For the validation servers' DuckDB tools
-        # it's a single TextContent whose ``.text`` holds the result
-        # serialised by ``eap_core.mcp.server._serialize_for_text_content``
-        # (JSON for BaseModel / dict / list, str() for primitives).
-        if not response.content:
-            return None
-        first = response.content[0]
-        if not hasattr(first, "text"):
-            return None
-        try:
-            return json.loads(first.text)
-        except (json.JSONDecodeError, ValueError):
-            # Primitive str/int return — server-side str() output.
-            return first.text
+    class _LooseHandlesPool:
+        def __init__(self, handles_: list[ServerHandle]) -> None:
+            self._by_name = {h.config.name: h for h in handles_}
+            self._order = [h.config.name for h in handles_]
 
-    return ToolSpec(
-        name=local_name,
-        description=f"[remote: {handle.name}] {remote_name}",
-        input_schema={"type": "object"},  # Permissive - the remote validates.
-        output_schema=None,
-        fn=_forward,
-        requires_auth=False,
-        is_async=True,
-    )
+        def handles(self) -> list[ServerHandle]:
+            return [self._by_name[n] for n in self._order]
+
+        def session(self, name: str) -> Any:
+            return self._by_name[name].session
+
+        async def reconnect(self, name: str) -> None:
+            # The v1.0 shim never had a reconnect concept — surfacing a
+            # disconnect was the caller's problem. We preserve that
+            # behaviour: tell the user this branch isn't reachable from
+            # the v1.0 surface and let them upgrade to McpClientPool.
+            raise RuntimeError(
+                f"reconnect not supported via the v1.0 compat shim; "
+                f"use eap_core.mcp.client.McpClientPool directly to "
+                f"reconnect server {name!r}"
+            )
+
+    registry = build_tool_registry(_LooseHandlesPool(handles))
+    return list(registry.list_tools())

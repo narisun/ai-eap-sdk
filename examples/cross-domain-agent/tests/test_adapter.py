@@ -1,16 +1,27 @@
-"""Adapter unit tests - exercise build_tool_specs against a stub
-ClientSession to verify namespace prefixing, closure capture, and
-response decoding without spawning real subprocesses.
+"""Example-level tests for the v1.1 SDK MCP client adapter.
 
-The closure-capture test (``test_forwarder_invokes_correct_remote_tool_with_kwargs``)
-is the load-bearing case. ``build_tool_specs`` loops over tool names
-to build per-tool forwarders. If the forwarder is defined inline
-inside the loop, the closure captures the LOOP variable - every
-forwarder ends up calling the LAST remote tool name. The adapter
-must extract a factory function (``_build_one``) so each forwarder
-binds its own ``remote_name``. This test reads through every spec
-the adapter built and verifies each forwarder routes to its own
-tool.
+v1.1 replaced the per-agent shim that used to live in
+``mcp_client_adapter.py`` with the first-class SDK adapter at
+:mod:`eap_core.mcp.client.adapter`. The unit tests for the adapter itself
+live alongside the SDK in
+``packages/eap-core/tests/test_mcp_client_adapter.py`` — that's the
+canonical surface and where the load-bearing closure-capture mutation
+guard lives.
+
+These example-level tests stay around for two reasons:
+
+1. They prove the v1.0 → v1.1 **compat shim** (``mcp_client_adapter.py``
+   next to this test file) still preserves the v1.0 public signatures
+   (``connect_servers`` / ``build_tool_specs`` / ``ServerHandle``) by
+   delegating to the SDK. Anyone who pinned to the v1.0 shim should be
+   able to upgrade without code changes.
+2. They demonstrate the **canonical v1.1 pattern** using
+   :class:`McpClientPool` directly, so reviewers comparing the v1.0 and
+   v1.1 example test suites see what the migration looks like in one
+   file.
+
+The integration test (``test_agent.py``) is the headline end-to-end
+proof; these unit-level tests stay quick (no real subprocess spawn).
 """
 
 from __future__ import annotations
@@ -19,6 +30,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -27,6 +39,14 @@ AGENT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AGENT_DIR))
 
 from mcp_client_adapter import ServerHandle, build_tool_specs
+
+from eap_core.mcp.client import McpServerConfig, McpServerHandle
+from eap_core.mcp.client.adapter import build_tool_registry
+from eap_core.mcp.client.session import McpClientSession
+
+# ---------------------------------------------------------------------------
+# v1.0 compat-shim tests — confirm legacy callers still work
+# ---------------------------------------------------------------------------
 
 
 class _StubResponse:
@@ -41,10 +61,36 @@ class _StubResponse:
             self.content = [SimpleNamespace(text=text)]
 
 
+def _make_compat_handle(
+    *, server_name: str, tool_names: list[str], session: AsyncMock
+) -> ServerHandle:
+    """Build a ``ServerHandle`` (now alias of ``McpServerHandle``) the
+    way the v1.0 caller would: just name + session + tool_names. The
+    config defaults are fine since the v1.0 surface didn't expose them.
+    """
+    return ServerHandle(
+        config=McpServerConfig(name=server_name, command="x"),
+        session=session,
+        tool_names=tool_names,
+    )
+
+
 @pytest.mark.asyncio
-async def test_build_tool_specs_namespaces_each_tool_with_server_name():
-    h1 = ServerHandle(name="bankdw", session=AsyncMock(), tool_names=["query_sql", "list_tables"])
-    h2 = ServerHandle(name="sfcrm", session=AsyncMock(), tool_names=["query_sql"])
+async def test_v1_compat_build_tool_specs_namespaces_tools_per_server() -> None:
+    """v1.0 shim contract: ``build_tool_specs`` namespaces each remote
+    tool as ``<server>__<tool>``. v1.1 routes that through the SDK
+    adapter; the externally-observable shape is identical.
+    """
+    h1 = _make_compat_handle(
+        server_name="bankdw",
+        tool_names=["query_sql", "list_tables"],
+        session=AsyncMock(),
+    )
+    h2 = _make_compat_handle(
+        server_name="sfcrm",
+        tool_names=["query_sql"],
+        session=AsyncMock(),
+    )
     specs = build_tool_specs([h1, h2])
     names = sorted(s.name for s in specs)
     assert names == [
@@ -55,18 +101,22 @@ async def test_build_tool_specs_namespaces_each_tool_with_server_name():
 
 
 @pytest.mark.asyncio
-async def test_forwarder_invokes_correct_remote_tool_with_kwargs():
-    """Closure capture must pin each forwarder to its own remote name,
-    not the last name in the loop. If this fails, the adapter inlined
-    the forwarder inside the loop - extract ``_build_one`` and pass
-    ``remote_name`` as a parameter."""
+async def test_v1_compat_forwarder_invokes_correct_remote_tool_with_kwargs() -> None:
+    """The closure-capture guard, re-asserted at the shim level. If the
+    SDK adapter ever regressed the per-iteration binding, this would
+    catch it via the v1.0 entry points too.
+    """
     session = AsyncMock()
     session.call_tool = AsyncMock(return_value=_StubResponse(text=json.dumps({"row_count": 7})))
-    h = ServerHandle(name="bankdw", session=session, tool_names=["query_sql", "list_tables"])
+    h = _make_compat_handle(
+        server_name="bankdw",
+        tool_names=["query_sql", "list_tables"],
+        session=session,
+    )
     specs = build_tool_specs([h])
 
     list_spec = next(s for s in specs if s.name == "bankdw__list_tables")
-    await list_spec.fn()  # no kwargs
+    await list_spec.fn()
     session.call_tool.assert_called_with("list_tables", {})
 
     session.call_tool.reset_mock()
@@ -77,39 +127,110 @@ async def test_forwarder_invokes_correct_remote_tool_with_kwargs():
 
 
 @pytest.mark.asyncio
-async def test_forwarder_decodes_json_response():
-    session = AsyncMock()
-    session.call_tool = AsyncMock(
-        return_value=_StubResponse(
-            text=json.dumps({"columns": ["a", "b"], "rows": [{"a": 1, "b": 2}]})
-        )
-    )
-    h = ServerHandle(name="x", session=session, tool_names=["t"])
-    [spec] = build_tool_specs([h])
-    result = await spec.fn()
-    assert result == {"columns": ["a", "b"], "rows": [{"a": 1, "b": 2}]}
-
-
-@pytest.mark.asyncio
-async def test_forwarder_returns_raw_text_when_response_is_not_json():
-    """Primitive tool returns (str/int/bool) are serialised server-side
-    via ``str()`` not JSON. The adapter returns the raw text for these
-    rather than raising on the json.JSONDecodeError. Tools that need
-    structured returns should return a pydantic ``BaseModel`` or a
-    plain ``dict``/``list`` — those land as JSON.
+async def test_v1_compat_serverhandle_is_alias_for_mcp_server_handle() -> None:
+    """``ServerHandle`` in the shim is now a direct alias for
+    :class:`McpServerHandle`. Construct one through the v1.0 shim and
+    confirm ``isinstance`` against the SDK class — a tiny test that
+    catches accidental copy-paste forks of the dataclass.
     """
-    session = AsyncMock()
-    session.call_tool = AsyncMock(return_value=_StubResponse(text="this is plain text, not json"))
-    h = ServerHandle(name="x", session=session, tool_names=["t"])
-    [spec] = build_tool_specs([h])
-    result = await spec.fn()
-    assert result == "this is plain text, not json"
+    h = _make_compat_handle(server_name="x", tool_names=["t"], session=AsyncMock())
+    assert isinstance(h, McpServerHandle)
+
+
+# ---------------------------------------------------------------------------
+# v1.1 SDK tests — exercise the canonical pattern (McpClientPool +
+# build_tool_registry). These cover what new code should look like.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingUpstream:
+    """Stub for the upstream ``mcp.ClientSession``: records every
+    ``call_tool`` invocation and replays scripted responses per tool name.
+    """
+
+    def __init__(self) -> None:
+        self.responses: dict[str, Any] = {}
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def list_tools(self) -> Any:
+        return SimpleNamespace(tools=[])
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        self.calls.append((name, arguments))
+        return self.responses.get(name, SimpleNamespace(content=[]))
+
+
+class _FakePool:
+    """Minimal stand-in for :class:`McpClientPool` used to drive the
+    SDK adapter without spawning real subprocesses. Implements the three
+    methods the adapter actually touches (``handles`` / ``session`` /
+    ``reconnect``).
+    """
+
+    def __init__(self, handles: list[McpServerHandle]) -> None:
+        self._by_name = {h.config.name: h for h in handles}
+        self._order = [h.config.name for h in handles]
+        self.reconnect_calls: list[str] = []
+
+    def handles(self) -> list[McpServerHandle]:
+        return [self._by_name[n] for n in self._order]
+
+    def session(self, server_name: str) -> McpClientSession:
+        return self._by_name[server_name].session
+
+    async def reconnect(self, server_name: str) -> None:
+        self.reconnect_calls.append(server_name)
+
+
+def _make_sdk_handle(
+    *, server_name: str, tool_names: list[str], upstream: _RecordingUpstream
+) -> McpServerHandle:
+    return McpServerHandle(
+        config=McpServerConfig(name=server_name, command="x"),
+        session=McpClientSession(
+            server_name=server_name,
+            upstream=upstream,
+            request_timeout_s=5.0,
+        ),
+        tool_names=tool_names,
+    )
 
 
 @pytest.mark.asyncio
-async def test_forwarder_returns_none_when_response_has_empty_content():
-    session = AsyncMock()
-    session.call_tool = AsyncMock(return_value=_StubResponse(text=None, has_content=False))
-    h = ServerHandle(name="x", session=session, tool_names=["t"])
-    [spec] = build_tool_specs([h])
-    assert await spec.fn() is None
+async def test_sdk_pattern_build_tool_registry_namespaces_each_server() -> None:
+    """The v1.1 canonical pattern: build a pool, call
+    ``build_tool_registry``, get a populated registry. Confirms the SDK
+    adapter produces the same namespaced names the v1.0 shim did.
+    """
+    u_a = _RecordingUpstream()
+    u_b = _RecordingUpstream()
+    h_a = _make_sdk_handle(server_name="bankdw", tool_names=["query_sql"], upstream=u_a)
+    h_b = _make_sdk_handle(server_name="sfcrm", tool_names=["query_sql"], upstream=u_b)
+    pool = _FakePool([h_a, h_b])
+
+    registry = build_tool_registry(pool)  # type: ignore[arg-type]
+    names = {spec.name for spec in registry.list_tools()}
+    assert names == {"bankdw__query_sql", "sfcrm__query_sql"}
+
+
+@pytest.mark.asyncio
+async def test_sdk_pattern_forwarder_routes_to_correct_server_session() -> None:
+    """The two-servers companion to the closure-capture guard. Each
+    forwarder must route to its OWN server's session.
+    """
+    u_a = _RecordingUpstream()
+    u_b = _RecordingUpstream()
+    u_a.responses = {"ping": SimpleNamespace(content=[SimpleNamespace(text='"pong-a"')])}
+    u_b.responses = {"ping": SimpleNamespace(content=[SimpleNamespace(text='"pong-b"')])}
+    h_a = _make_sdk_handle(server_name="bankdw", tool_names=["ping"], upstream=u_a)
+    h_b = _make_sdk_handle(server_name="sfcrm", tool_names=["ping"], upstream=u_b)
+    pool = _FakePool([h_a, h_b])
+
+    registry = build_tool_registry(pool)  # type: ignore[arg-type]
+    a_result = await registry.invoke("bankdw__ping", {})
+    b_result = await registry.invoke("sfcrm__ping", {})
+
+    assert a_result == "pong-a"
+    assert b_result == "pong-b"
+    assert u_a.calls == [("ping", {})]
+    assert u_b.calls == [("ping", {})]

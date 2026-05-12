@@ -55,88 +55,85 @@ under a second.
 
 ## How the bridge works
 
-`mcp_client_adapter.py` is a ~200-line shim sitting between the
-upstream `mcp.client.stdio` API and EAP-Core's `McpToolRegistry`.
-Four pieces:
+As of **v1.1.0** the bridge is the SDK itself. `agent.py` uses
+[`eap_core.mcp.client.McpClientPool`](../../packages/eap-core/src/eap_core/mcp/client/pool.py)
+directly:
 
-1. **`ServerHandle`** — a small dataclass carrying the server name,
-   the open MCP `ClientSession`, and the list of tool names the
-   server advertised.
+```python
+async with McpClientPool([cfg_bankdw, cfg_sfcrm]) as pool:
+    registry = pool.build_tool_registry()
+    rows = await registry.invoke("bankdw__query_sql", {"sql": "...", "limit": 50})
+```
 
-2. **`connect_servers(configs, stack)`** — spawns each MCP server
-   subprocess and opens an MCP session via `stdio_client`. Sessions
-   are entered into a caller-provided `AsyncExitStack` so subprocess
-   teardown is deterministic on exit (no zombies).
+The pool spawns each MCP server subprocess, opens stdio sessions,
+captures advertised `outputSchema` per tool, and produces a populated
+`McpToolRegistry` with namespaced `<server-name>__<tool-name>`
+forwarders. Reconnect / health-check / per-call timeout / typed
+errors / OTel spans / opt-in output-schema validation all live in
+the SDK now; see the `eap_core.mcp.client` subpackage.
 
-3. **`build_tool_specs(handles)`** — for every remote tool on every
-   handle, builds a local `ToolSpec`. The local name is namespaced
-   as `<server-name>__<tool-name>` to avoid collisions (both
-   validation servers expose `query_sql`). The input schema is left
-   as the permissive `{"type": "object"}` because the remote server
-   re-validates on call.
+`mcp_client_adapter.py` next to this file is preserved as a ~25-line
+**v1.0 → v1.1 compat shim**: `connect_servers`, `build_tool_specs`,
+and `ServerHandle` keep their v1.0 signatures and delegate to the SDK.
+External callers that pinned to the v1.0 example surface can upgrade
+without touching their own code.
 
-4. **`_build_one(handle, remote_name, local_name)`** — a factory
-   that captures `handle` + `remote_name` as **function parameters**
-   (not loop variables) so each forwarder closure binds the correct
-   values. Inlining the forwarder inside `build_tool_specs`'s loop
-   would be a classic closure-capture bug — every forwarder would
-   call the *last* tool name. The unit test
-   `test_forwarder_invokes_correct_remote_tool_with_kwargs` pins
-   this.
-
-`agent.py` wires it together: spawn both servers, register every
-remote tool, then call the registry by name. No LLM is involved in
-the demo — the goal is to prove the *infrastructure*, not the
-language-model loop. Follow-on work would attach a configured
-`EnterpriseLLM` and let it drive the same flow via natural-language
-tool selection.
+`agent.py` wires it together: enter the pool, register every remote
+tool, then call the registry by name. No LLM is involved in the demo
+— the goal is to prove the *infrastructure*, not the language-model
+loop. Follow-on work would attach a configured `EnterpriseLLM` and
+let it drive the same flow via natural-language tool selection.
 
 ## What this validation surfaced
 
-The headline finding: **`eap_core.mcp` ships server primitives but
-no MCP client**. `mcp_client_adapter.py` is a per-agent shim that
-papers over the gap. Each item below is a concrete missing piece
-of the SDK surface, with a one-sentence sketch of what an
-`eap_core.mcp.client` module would provide.
+The headline finding: **`eap_core.mcp` shipped server primitives but
+no MCP client** through v1.0. This validation drove the v1.1 plan and
+implementation. Each gap below is now **CLOSED in v1.1.0**, with a
+one-line pointer to the SDK module that closes it.
 
-1. **No structured server-config primitive.** The adapter accepts
-   `list[dict[str, Any]]` for server configs (name + command + args
-   + cwd + env). A `McpServerConfig` pydantic model with validation
-   (command exists, cwd resolves, env is `dict[str, str]`) would
-   eliminate the schema-by-comment pattern at the top of
-   `connect_servers`.
+1. **No structured server-config primitive.** — **CLOSED in v1.1.**
+   [`eap_core.mcp.client.McpServerConfig`](../../packages/eap-core/src/eap_core/mcp/client/config.py)
+   is a pydantic v2 model with name/command/args/cwd/env/timeout
+   fields and a `transport` discriminator (only `stdio` in v1.1; v1.2
+   may add `http`). Replaces the v1.0 `list[dict[str, Any]]` shape.
 
-2. **No session lifecycle (pool / retry / timeout).** Today the
-   adapter opens one session per server per process and relies on
-   the `AsyncExitStack` for teardown. An `McpClientPool` with
-   per-server `connect()` / `reconnect()` / `health_check()` and a
-   configurable `request_timeout` would let an agent recover from
-   a crashed subprocess without rebuilding its registry. Long-lived
-   agents that run for hours need this.
+2. **No session lifecycle (pool / retry / timeout).** — **CLOSED in v1.1.**
+   [`eap_core.mcp.client.McpClientPool`](../../packages/eap-core/src/eap_core/mcp/client/pool.py)
+   is an async context manager with `reconnect(name)` /
+   `health_check()` / per-server `request_timeout_s` enforced by
+   [`McpClientSession`](../../packages/eap-core/src/eap_core/mcp/client/session.py).
+   The per-call timeout raises `McpToolTimeoutError`; pool teardown
+   is bound to a single `AsyncExitStack` owned by the pool.
 
 3. **No output-schema validation against the remote tool's
-   advertised shape.** The adapter sets `output_schema=None` on
-   every spec because we don't re-fetch the remote schema (and most
-   MCP tools don't advertise output schemas anyway). An
-   `McpRemoteToolSpec` that captures `tools/list`'s `inputSchema`
-   per tool *and* runs response shape checks against an optional
-   `outputSchema` would catch server-side contract drift in
-   integration tests.
+   advertised shape.** — **CLOSED in v1.1** (opt-in, shallow).
+   [`eap_core.mcp.client.adapter._maybe_validate`](../../packages/eap-core/src/eap_core/mcp/client/adapter.py)
+   threads each tool's advertised `outputSchema` (captured on
+   `McpServerHandle.tool_output_schemas` at spawn time) into the
+   forwarder. Enable via `McpServerConfig(validate_output_schemas=True)`;
+   shape mismatches raise `McpOutputSchemaError`. Deeper JSON-Schema
+   validation is flagged for v1.2 (would require adding `jsonschema`
+   as a dep — over-engineered for v1.1 given most servers don't yet
+   publish an `outputSchema`).
 
-4. **No observability spans around remote calls.** Each
-   `session.call_tool(...)` is a network-ish operation (subprocess
-   I/O) but there is no `with otel_span("mcp.client.call_tool", ...)`
-   wrapping it. The SDK already integrates OTEL spans on the server
-   side via `eap_core.mcp.server`'s middleware chain; a symmetric
-   client-side `McpClientMiddleware` would close the loop.
+4. **No observability spans around remote calls.** — **CLOSED in v1.1.**
+   [`eap_core.mcp.client.session.McpClientSession`](../../packages/eap-core/src/eap_core/mcp/client/session.py)
+   wraps every `call_tool` in an OTel span (`mcp.server.name`,
+   `mcp.tool.name`, `mcp.duration_s`, `mcp.error.kind` on failure) —
+   symmetric with the server-side observability middleware. Zero-cost
+   no-op when the `[otel]` extra isn't installed.
 
-5. **No reconnect-on-stale logic.** If a server subprocess dies
-   mid-session (OOM, segfault, SIGPIPE) every subsequent
-   `call_tool` raises raw `anyio` errors out of the adapter. An
-   SDK-managed pool would notice, mark the handle dead, optionally
-   respawn, and surface a typed `McpClientError` to the caller —
-   the same shape `eap_core.mcp.registry.McpToolRegistry.invoke`
-   uses today for local errors.
+5. **No reconnect-on-stale logic / typed errors.** — **CLOSED in v1.1.**
+   [`eap_core.mcp.client.errors`](../../packages/eap-core/src/eap_core/mcp/client/errors.py)
+   defines `McpClientError` + 5 subclasses (`McpServerSpawnError`,
+   `McpServerDisconnectedError`, `McpToolTimeoutError`,
+   `McpToolInvocationError`, `McpOutputSchemaError`). The adapter
+   catches `McpServerDisconnectedError`, calls `pool.reconnect`, and
+   re-raises so the caller decides retry semantics. (Known v1.2
+   follow-up: per-handle nested `AsyncExitStack` so reconnect can
+   unwind the old subprocess immediately instead of waiting for pool
+   exit — the current implementation can leak fds across many
+   reconnects in a long-lived pool.)
 
 ### Already closed — v0.7.1
 
@@ -151,21 +148,24 @@ of the SDK surface, with a one-sentence sketch of what an
   adapter's response decoder is now a single `json.loads` call;
   it does not need an AST-based fallback parser.
 
-The five open items together are roughly the shape of a v0.8.0
-`eap_core.mcp.client` module. They are flagged here as feedback
-from this validation exercise, not implemented — the validation
-plan explicitly defers the SDK change.
+All five gaps shipped in **v1.1.0** under the `eap_core.mcp.client`
+subpackage. The per-agent shim that used to live in
+`mcp_client_adapter.py` is now a ~25-line backward-compat layer that
+delegates to the SDK so callers pinned to the v1.0 surface keep
+working.
 
 ## Follow-on work (not in this validation)
 
 - Wire an `EnterpriseLLM` with `LocalRuntimeAdapter` (or a real
   provider) so the cross-domain query is driven by tool-selection
   from a language model, not hard-coded SQL.
-- Push the adapter (or its successor `eap_core.mcp.client` module)
-  into the SDK, with the lifecycle / observability /
-  schema-validation items above.
 - Add an `eap eval` golden-set entry for the cross-domain query so
   regressions in either MCP server's contract get caught in CI.
+- **v1.2 candidates from this validation:** deeper JSON-Schema
+  output validation (currently shallow required-keys check),
+  per-handle nested `AsyncExitStack` so reconnect unwinds the old
+  subprocess immediately, and HTTP/SSE transport (the
+  `McpServerConfig.transport` discriminator is already in place).
 
 ## Data and prerequisites
 

@@ -68,6 +68,15 @@ class McpServerHandle:
     config: McpServerConfig
     session: McpClientSession
     tool_names: list[str] = field(default_factory=list)
+    tool_output_schemas: dict[str, dict[str, Any] | None] = field(default_factory=dict)
+    """Per-tool ``outputSchema`` captured from the remote ``tools/list``
+    response at spawn time. Keys are remote tool names (NOT the
+    ``<server>__<tool>`` namespaced form). A ``None`` value means the
+    remote advertised the tool but did not publish an ``outputSchema``
+    — common today, since most MCP servers don't yet emit one. The
+    adapter consults this mapping when ``config.validate_output_schemas``
+    is True; absent or ``None`` schemas bypass validation entirely.
+    """
 
 
 class McpClientPool:
@@ -168,10 +177,20 @@ class McpClientPool:
             upstream=upstream,
             request_timeout_s=cfg.request_timeout_s,
         )
+        # Capture each tool's advertised ``outputSchema`` (which the
+        # upstream ``mcp.types.Tool`` exposes as an optional attribute).
+        # Tools that don't publish one map to ``None``; the adapter
+        # treats that as "skip validation for this tool" even when the
+        # pool's config opts in. Most MCP servers don't yet emit
+        # outputSchema, so this map is sparse in practice.
+        tool_output_schemas: dict[str, dict[str, Any] | None] = {
+            t.name: getattr(t, "outputSchema", None) for t in tools_response.tools
+        }
         return McpServerHandle(
             config=cfg,
             session=session,
             tool_names=[t.name for t in tools_response.tools],
+            tool_output_schemas=tool_output_schemas,
         )
 
     def handles(self) -> list[McpServerHandle]:

@@ -26,7 +26,12 @@ from typing import Any
 
 import pytest
 
-from eap_core.mcp.client import McpServerConfig, McpServerDisconnectedError, McpServerHandle
+from eap_core.mcp.client import (
+    McpOutputSchemaError,
+    McpServerConfig,
+    McpServerDisconnectedError,
+    McpServerHandle,
+)
 from eap_core.mcp.client.adapter import build_tool_registry
 from eap_core.mcp.client.session import McpClientSession
 
@@ -84,14 +89,25 @@ def _make_handle(
     server_name: str,
     tool_names: list[str],
     upstream: _RecordingUpstream,
+    validate_output_schemas: bool = False,
+    tool_output_schemas: dict[str, dict[str, Any] | None] | None = None,
 ) -> McpServerHandle:
-    cfg = McpServerConfig(name=server_name, command="x")
+    cfg = McpServerConfig(
+        name=server_name,
+        command="x",
+        validate_output_schemas=validate_output_schemas,
+    )
     session = McpClientSession(
         server_name=server_name,
         upstream=upstream,
         request_timeout_s=5.0,
     )
-    return McpServerHandle(config=cfg, session=session, tool_names=tool_names)
+    return McpServerHandle(
+        config=cfg,
+        session=session,
+        tool_names=tool_names,
+        tool_output_schemas=tool_output_schemas or {},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -378,3 +394,150 @@ async def test_build_tool_registry_returns_empty_registry_for_no_handles() -> No
     pool = _FakePool([])
     registry = build_tool_registry(pool)  # type: ignore[arg-type]
     assert registry.list_tools() == []
+
+
+# ---------------------------------------------------------------------------
+# Output-schema validation (opt-in via McpServerConfig.validate_output_schemas)
+# ---------------------------------------------------------------------------
+
+
+async def test_forwarder_passes_when_response_satisfies_required_keys() -> None:
+    """When validation is opt-in and the remote response contains every
+    required key advertised in ``outputSchema``, the forwarder returns
+    the decoded value unchanged. This is the happy path — schema checks
+    don't alter the return shape, they only gate it.
+    """
+    upstream = _RecordingUpstream()
+    upstream.responses["query_sql"] = SimpleNamespace(
+        content=[SimpleNamespace(text='{"columns": ["a"], "rows": [{"a": 1}]}')]
+    )
+    handle = _make_handle(
+        server_name="bankdw",
+        tool_names=["query_sql"],
+        upstream=upstream,
+        validate_output_schemas=True,
+        tool_output_schemas={
+            "query_sql": {"type": "object", "required": ["columns", "rows"]},
+        },
+    )
+    pool = _FakePool([handle])
+    registry = build_tool_registry(pool)  # type: ignore[arg-type]
+    result = await registry.invoke("bankdw__query_sql", {})
+    assert result == {"columns": ["a"], "rows": [{"a": 1}]}
+
+
+async def test_forwarder_raises_schema_error_on_missing_required_key() -> None:
+    """When validation is enabled and the response is missing a required
+    key, the forwarder raises :class:`McpOutputSchemaError` with the
+    offending payload, the expected schema, and a human-readable reason.
+    This is the failure mode the feature exists to catch — a remote
+    server's contract drift surfacing in tests rather than silently
+    corrupting downstream logic.
+    """
+    upstream = _RecordingUpstream()
+    upstream.responses["query_sql"] = SimpleNamespace(
+        content=[SimpleNamespace(text='{"rows": [{"a": 1}]}')],
+    )
+    handle = _make_handle(
+        server_name="bankdw",
+        tool_names=["query_sql"],
+        upstream=upstream,
+        validate_output_schemas=True,
+        tool_output_schemas={
+            "query_sql": {"type": "object", "required": ["columns", "rows"]},
+        },
+    )
+    pool = _FakePool([handle])
+    registry = build_tool_registry(pool)  # type: ignore[arg-type]
+    # Invoke ``spec.fn`` directly rather than via ``registry.invoke``:
+    # the registry wraps user-raised exceptions in :class:`MCPError`,
+    # which would mask the McpOutputSchemaError class identity. The
+    # forwarder itself is what we're testing — that it raises the
+    # typed error pre-wrap.
+    spec = registry.get("bankdw__query_sql")
+    assert spec is not None
+    with pytest.raises(McpOutputSchemaError) as ei:
+        await spec.fn()
+    assert ei.value.tool == "query_sql"
+    assert "columns" in str(ei.value)
+    assert ei.value.payload == {"rows": [{"a": 1}]}
+
+
+async def test_forwarder_skips_validation_when_tool_has_no_advertised_schema() -> None:
+    """Even with ``validate_output_schemas=True``, tools that did not
+    publish an ``outputSchema`` in ``tools/list`` skip validation
+    entirely. This is the common case for current MCP servers — most
+    don't yet emit output schemas — so opt-in is wasted when there's
+    nothing to validate against, and the forwarder transparently
+    passes through whatever shape comes back.
+    """
+    upstream = _RecordingUpstream()
+    upstream.responses["query_sql"] = SimpleNamespace(
+        content=[SimpleNamespace(text='{"anything": "goes"}')]
+    )
+    handle = _make_handle(
+        server_name="bankdw",
+        tool_names=["query_sql"],
+        upstream=upstream,
+        validate_output_schemas=True,
+        # Schema map present but the entry is None — the remote didn't
+        # advertise a schema for this tool.
+        tool_output_schemas={"query_sql": None},
+    )
+    pool = _FakePool([handle])
+    registry = build_tool_registry(pool)  # type: ignore[arg-type]
+    result = await registry.invoke("bankdw__query_sql", {})
+    assert result == {"anything": "goes"}
+
+
+async def test_forwarder_skips_validation_when_config_opts_out() -> None:
+    """Default config has ``validate_output_schemas=False``. Even when
+    the remote advertises an ``outputSchema`` AND the response would
+    fail it, the forwarder must pass through unchanged — the validator
+    is strictly opt-in. This guards against accidentally enabling
+    validation for callers that didn't ask for it.
+    """
+    upstream = _RecordingUpstream()
+    upstream.responses["query_sql"] = SimpleNamespace(
+        content=[SimpleNamespace(text='{"unexpected": "shape"}')]
+    )
+    handle = _make_handle(
+        server_name="bankdw",
+        tool_names=["query_sql"],
+        upstream=upstream,
+        validate_output_schemas=False,
+        tool_output_schemas={
+            "query_sql": {"type": "object", "required": ["columns", "rows"]},
+        },
+    )
+    pool = _FakePool([handle])
+    registry = build_tool_registry(pool)  # type: ignore[arg-type]
+    result = await registry.invoke("bankdw__query_sql", {})
+    assert result == {"unexpected": "shape"}
+
+
+async def test_forwarder_raises_when_decoded_response_is_not_object() -> None:
+    """If the schema declares an object but the decoded response is a
+    non-dict (string primitive, list), validation must fail rather than
+    silently passing the wrong shape through. Belt-and-suspenders for
+    the dict-required check.
+    """
+    upstream = _RecordingUpstream()
+    upstream.responses["scalar_tool"] = SimpleNamespace(
+        content=[SimpleNamespace(text='"just-a-string"')]
+    )
+    handle = _make_handle(
+        server_name="srv",
+        tool_names=["scalar_tool"],
+        upstream=upstream,
+        validate_output_schemas=True,
+        tool_output_schemas={
+            "scalar_tool": {"type": "object", "required": ["columns"]},
+        },
+    )
+    pool = _FakePool([handle])
+    registry = build_tool_registry(pool)  # type: ignore[arg-type]
+    spec = registry.get("srv__scalar_tool")
+    assert spec is not None
+    with pytest.raises(McpOutputSchemaError, match="expected object"):
+        await spec.fn()

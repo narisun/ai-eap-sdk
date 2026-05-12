@@ -31,11 +31,17 @@ Non-text content (``ImageContent``, ``EmbeddedResource``) is passed
 through as the raw upstream object — the agent layer decides what to do
 with images and resources. Decoding them is out of scope for v1.1.
 
-Output-schema validation is deferred to T4 (v1.1 task 4). The adapter
-currently builds permissive forwarders with ``input_schema={"type":
-"object"}`` and ``output_schema=None``; T4 will thread a captured
-``outputSchema`` through the forwarder when ``cfg.validate_output_schemas``
-is set.
+Output-schema validation (v1.1, opt-in via
+:attr:`McpServerConfig.validate_output_schemas`) threads each tool's
+remote ``outputSchema`` (captured at pool-spawn time on
+:attr:`McpServerHandle.tool_output_schemas`) into the forwarder. After
+decoding the response the forwarder hands it to :func:`_maybe_validate`,
+which performs a shallow required-keys check and raises
+:class:`McpOutputSchemaError` on mismatch. The validator is intentionally
+shallow — pydantic v2 doesn't ship a JSON-Schema-to-Model compiler and
+adding the ``jsonschema`` package as a dep for a feature most servers
+don't even use today would be over-engineered. A deeper validator is
+flagged as a v1.2 follow-up.
 """
 
 from __future__ import annotations
@@ -43,7 +49,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from eap_core.mcp.client.errors import McpServerDisconnectedError
+from eap_core.mcp.client.errors import (
+    McpOutputSchemaError,
+    McpServerDisconnectedError,
+)
 from eap_core.mcp.registry import McpToolRegistry
 from eap_core.mcp.types import ToolSpec
 
@@ -66,13 +75,22 @@ def build_tool_registry(pool: McpClientPool) -> McpToolRegistry:
     """
     registry = McpToolRegistry()
     for handle in pool.handles():
+        # Only consult the per-tool ``outputSchema`` map when the config
+        # explicitly opts in. When opt-out (default), the factory binds
+        # ``schema_to_validate=None`` so the forwarder skips validation
+        # entirely without per-call attribute lookup.
+        validate = handle.config.validate_output_schemas
         for remote_tool_name in handle.tool_names:
             local_name = f"{handle.config.name}__{remote_tool_name}"
+            schema_to_validate: dict[str, Any] | None = None
+            if validate:
+                schema_to_validate = handle.tool_output_schemas.get(remote_tool_name)
             spec = _build_forwarder_spec(
                 pool=pool,
                 server_name=handle.config.name,
                 remote_name=remote_tool_name,
                 local_name=local_name,
+                schema_to_validate=schema_to_validate,
             )
             registry.register(spec)
     return registry
@@ -84,6 +102,7 @@ def _build_forwarder_spec(
     server_name: str,
     remote_name: str,
     local_name: str,
+    schema_to_validate: dict[str, Any] | None = None,
 ) -> ToolSpec:
     """Factory that builds one forwarder ``ToolSpec``.
 
@@ -111,7 +130,13 @@ def _build_forwarder_spec(
             # docstring.
             await pool.reconnect(server_name)
             raise
-        return _decode_response(response)
+        decoded = _decode_response(response)
+        return _maybe_validate(
+            decoded,
+            schema=schema_to_validate,
+            server_name=server_name,
+            tool=remote_name,
+        )
 
     return ToolSpec(
         name=local_name,
@@ -152,3 +177,69 @@ def _decode_response(response: Any) -> Any:
         # Primitive str/int returns are ``str()``-cast server-side and
         # won't parse as JSON. Return raw text.
         return first.text
+
+
+def _maybe_validate(
+    decoded: Any,
+    *,
+    schema: dict[str, Any] | None,
+    server_name: str,
+    tool: str,
+) -> Any:
+    """Shallow output-schema validation for a decoded tool response.
+
+    When ``schema`` is ``None`` (the most common case — most MCP servers
+    don't yet publish ``outputSchema``) this is a no-op pass-through. When
+    a schema is present, the function performs a minimal required-keys
+    check against the response shape and raises
+    :class:`McpOutputSchemaError` on mismatch; otherwise it returns the
+    ``decoded`` value unchanged.
+
+    The implementation is intentionally **shallow**: it only honours
+    ``type: "object"`` schemas with a ``required`` list, asserting every
+    listed key is present in the decoded dict. Nested-shape validation,
+    type-level coercion, ``$ref`` resolution, etc. are NOT performed.
+    Reasoning:
+
+    - pydantic v2 doesn't ship a JSON-Schema → Model compiler. A deep
+      validator would require adding ``jsonschema`` as a dependency for
+      a feature most servers don't even use (most MCP tools don't yet
+      advertise an ``outputSchema``). The cost/benefit of dragging
+      ``jsonschema`` into eap-core's base deps doesn't pay off in v1.1.
+    - The shallow check catches the highest-value class of contract
+      drift: a remote server adding/renaming/removing top-level keys
+      between deployments. Subtler shape drift (a list field becoming
+      a scalar, an integer field becoming a string) is left for v1.2
+      alongside the proper JSON-Schema validator.
+
+    The ``server_name`` argument is currently informational (used in
+    docstrings and for callers grepping logs); future deeper validation
+    may include it in the error message. It is accepted today to avoid
+    an additional signature churn when the deeper validator lands.
+    """
+    if schema is None:
+        return decoded
+    # Only validate "type": "object" schemas with a "required" list.
+    # Anything else (no type, primitive type, schema-less dict) is
+    # treated as "no actionable constraint" — return the value as-is.
+    if not isinstance(schema, dict) or schema.get("type") != "object":
+        return decoded
+    required = schema.get("required") or []
+    if not isinstance(required, list) or not required:
+        return decoded
+    if not isinstance(decoded, dict):
+        raise McpOutputSchemaError(
+            tool=tool,
+            payload=decoded,
+            schema=schema,
+            reason=(f"expected object matching outputSchema, got {type(decoded).__name__}"),
+        )
+    missing = [k for k in required if k not in decoded]
+    if missing:
+        raise McpOutputSchemaError(
+            tool=tool,
+            payload=decoded,
+            schema=schema,
+            reason=f"missing required keys: {sorted(missing)}",
+        )
+    return decoded

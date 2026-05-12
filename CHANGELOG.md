@@ -16,6 +16,116 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.1.0] — 2026-05-11 — first minor after GA
+
+**EAP-Core v1.1 — first-class MCP client adapter.**
+
+First additive release after the v1.0 GA cut. Closes ALL FIVE gaps
+catalogued in `examples/cross-domain-agent/README.md`'s "What this
+validation surfaced" section by promoting the per-agent shim that
+lived in `examples/cross-domain-agent/mcp_client_adapter.py` into a
+first-class SDK subpackage at `eap_core.mcp.client`. No breaking
+changes; every v1.0 export keeps its signature. SemVer minor bump.
+
+### Added
+
+- **`eap_core.mcp.client` subpackage** — first-class MCP client
+  adapter. Public surface:
+  - `McpServerConfig` — pydantic v2 typed server config (name,
+    command, args, cwd, env, request_timeout_s,
+    validate_output_schemas, transport discriminator). Replaces the
+    v1.0 example shim's `list[dict[str, Any]]` config shape.
+  - `McpClientPool` — async context manager that spawns N MCP server
+    subprocesses over stdio, opens sessions, exposes per-server
+    `McpClientSession` handles, and offers `reconnect(name)` /
+    `health_check()` / `build_tool_registry()`.
+  - `McpServerHandle` — dataclass returned by `pool.handles()`;
+    carries the config, the live session, the advertised tool names,
+    and the captured `tool_output_schemas` (per-tool `outputSchema`
+    from `tools/list`, used by the opt-in output-schema validator).
+  - `McpClientError` + 5 subclasses (`McpServerSpawnError`,
+    `McpServerDisconnectedError`, `McpToolTimeoutError`,
+    `McpToolInvocationError`, `McpOutputSchemaError`) — typed
+    hierarchy so callers can catch the base or a specific subclass.
+- **Per-call timeout** via `McpClientSession`; raises
+  `McpToolTimeoutError` after `McpServerConfig.request_timeout_s`.
+- **OTel spans** around every `call_tool` (`mcp.server.name`,
+  `mcp.tool.name`, `mcp.duration_s`, `mcp.error.kind`/`mcp.error.class`
+  on failure). Best-effort — zero-cost no-op when the `[otel]` extra
+  isn't installed. Symmetric with the server-side observability
+  middleware so client + server spans line up in a tracing UI.
+- **Reconnect-on-stale** — when a forwarder catches
+  `McpServerDisconnectedError` it calls `pool.reconnect(server_name)`
+  to spawn a fresh session/subprocess, then re-raises so the caller
+  decides whether to retry. Auto-retry is deliberately NOT in v1.1
+  (deferred to v1.2 alongside the per-handle `AsyncExitStack` unwind
+  fix).
+- **Opt-in output-schema validation** —
+  `McpServerConfig(validate_output_schemas=True)` enables a shallow
+  required-keys check against each remote tool's advertised
+  `outputSchema` (captured at spawn time on
+  `McpServerHandle.tool_output_schemas`). Mismatches raise
+  `McpOutputSchemaError`. Tools that don't publish `outputSchema` skip
+  validation regardless of opt-in (the common case for current MCP
+  servers).
+- **Namespaced tool registry adapter** — `pool.build_tool_registry()`
+  returns a populated `McpToolRegistry` with
+  `<server-name>__<tool-name>` `ToolSpec` forwarders so multiple MCP
+  servers can coexist in one local registry. The closure-capture
+  factory pattern from the v1.0 shim is preserved.
+- **Public re-exports** from `eap_core.mcp`: `McpClientError`,
+  `McpClientPool`, `McpServerConfig`. The remaining error types and
+  `McpServerHandle` are importable from `eap_core.mcp.client`.
+
+### Changed
+
+- **`examples/cross-domain-agent/agent.py`** migrated to use
+  `McpClientPool` directly. The 149-line per-agent shim
+  (`mcp_client_adapter.py`) is now a ~95-line v1.0 → v1.1 compat
+  layer that delegates to the SDK while preserving the v1.0 public
+  signatures (`connect_servers`, `build_tool_specs`, `ServerHandle`)
+  so existing callers can upgrade without code changes. The cross-
+  domain query demo's printed output is unchanged.
+- **`examples/cross-domain-agent/README.md`** updated to mark all 5
+  gaps from the v1.0 "What this validation surfaced" section as
+  CLOSED, with module pointers to the SDK code that closes each.
+
+### Deferred to v1.2+
+
+- **HTTP/SSE transport.** `McpServerConfig.transport` is a Literal
+  discriminator that today only accepts `"stdio"`; v1.2 can add
+  `"http"` etc. without breaking the public API.
+- **Deeper JSON-Schema output validation.** The v1.1 validator is
+  shallow (required-keys check only) because pydantic v2 doesn't
+  ship a JSON-Schema → Model compiler and adding `jsonschema` as a
+  base dep for a feature most servers don't even use today is
+  over-engineered. v1.2 may add a richer validator behind the same
+  config flag.
+- **Reconnect fd cleanup.** `AsyncExitStack` doesn't support partial
+  unwind, so `pool.reconnect()` spawns a fresh subprocess and the
+  old one is torn down only at pool exit. v1.2 will introduce a
+  per-handle nested `AsyncExitStack` so reconnects unwind the old
+  subprocess immediately.
+
+### Stats
+
+- Non-extras test count: 634 (+55 vs v1.0). New: client config,
+  errors, session, pool, adapter, and schema-validation suites.
+- mcp-extras count: 19 (15 in `test_mcp_server.py` + 4 OTel session
+  tests).
+- Example test counts: cross-domain-agent suite is 7 tests after the
+  migration (5 unit covering both the SDK pattern and the v1.0 compat
+  shim, 2 real-subprocess integration tests). bankdw + sfcrm suites
+  unchanged at 19 each.
+
+### Backward compatibility
+
+Strictly additive. Every v1.0 public export keeps its signature. The
+example shim's v1.0 public names (`connect_servers`, `build_tool_specs`,
+`ServerHandle`) survive as aliases that delegate to the SDK.
+
+---
+
 ## [1.0.0] — 2026-05-11 — General Availability
 
 **EAP-Core v1.0 — first production-stable release.**

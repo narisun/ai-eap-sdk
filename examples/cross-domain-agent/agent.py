@@ -1,8 +1,16 @@
-"""cross-domain-agent - answer questions that span bankdw + sfcrm.
+"""cross-domain-agent — answer questions that span bankdw + sfcrm.
 
-Spawns both MCP servers as subprocesses, wires their tools into an
-``McpToolRegistry`` via the local ``mcp_client_adapter`` shim, and
-runs a hard-coded cross-domain query to prove the bridge works.
+Migrated in v1.1.0 to use :class:`eap_core.mcp.client.McpClientPool`
+directly. The previous version went through ``mcp_client_adapter.py``
+(now a thin v1.0 compat shim sitting next to this file); the headline
+example now uses the SDK API end-to-end so newcomers see the canonical
+pattern.
+
+Spawns both MCP servers as subprocesses through the SDK pool, builds a
+namespaced ``McpToolRegistry`` via :meth:`McpClientPool.build_tool_registry`,
+and runs the same cross-domain query the v1.0 demo printed. The output
+shape and the top-5 names are unchanged — this is a refactor of HOW the
+example wires things, not WHAT it produces.
 
 Run locally (no cloud creds, no LLM provider):
 
@@ -10,33 +18,21 @@ Run locally (no cloud creds, no LLM provider):
     python agent.py
 
 The demo bypasses LLM-driven tool selection (no
-``EnterpriseLLM.generate_text`` call) on purpose: the headline goal
-is proving the *infrastructure* is sound end-to-end. A real
-LLM-driven version would pick the tools sequentially:
-
-  1. ``sfcrm__list_tables`` -> discover ``Account``
-  2. ``sfcrm__describe_table(table="Account")`` -> find ``Name``,
-     ``AnnualRevenue``
-  3. ``sfcrm__query_sql("SELECT Name FROM Account ORDER BY
-     AnnualRevenue DESC LIMIT 5")``
-  4. ``bankdw__list_tables`` -> discover ``dim_party``
-  5. ``bankdw__query_sql("SELECT PartyName FROM dim_party WHERE
-     PartyName IN (...)")``
-
-That follow-on is documented as future work in the README.
+``EnterpriseLLM.generate_text`` call) on purpose: the headline goal is
+proving the *infrastructure* is sound end-to-end. A real LLM-driven
+version would let the model pick the tools sequentially — that's
+documented as follow-on work in the README.
 """
 
 from __future__ import annotations
 
 import asyncio
 import sys
-from contextlib import AsyncExitStack
 from pathlib import Path
-
-from mcp_client_adapter import build_tool_specs, connect_servers
 
 from eap_core import EnterpriseLLM, RuntimeConfig
 from eap_core.mcp import McpToolRegistry
+from eap_core.mcp.client import McpClientPool, McpServerConfig
 
 
 def _examples_root() -> Path:
@@ -44,11 +40,10 @@ def _examples_root() -> Path:
 
 
 # An empty registry at module-load time. ``main()`` spawns the MCP
-# subprocesses, populates the registry via the adapter, and runs the
-# demo cross-domain query. ``build_client()`` (below) returns an
-# ``EnterpriseLLM`` bound to this same registry shape - useful for
-# smoke tests that need to confirm the example wires together without
-# spawning real subprocesses.
+# subprocesses, populates the registry via the SDK pool, and runs the
+# demo. ``build_client()`` (below) returns an ``EnterpriseLLM`` bound to
+# this same registry — useful for smoke tests that need to confirm the
+# example wires together without spawning real subprocesses.
 REGISTRY = McpToolRegistry()
 
 
@@ -72,27 +67,30 @@ def build_client() -> EnterpriseLLM:
 
 async def main() -> None:
     root = _examples_root()
-    server_configs = [
-        {
-            "name": "bankdw",
-            "command": sys.executable,
-            "args": ["server.py"],
-            "cwd": root / "bankdw-mcp-server",
-        },
-        {
-            "name": "sfcrm",
-            "command": sys.executable,
-            "args": ["server.py"],
-            "cwd": root / "sfcrm-mcp-server",
-        },
+    configs = [
+        McpServerConfig(
+            name="bankdw",
+            command=sys.executable,
+            args=["server.py"],
+            cwd=root / "bankdw-mcp-server",
+        ),
+        McpServerConfig(
+            name="sfcrm",
+            command=sys.executable,
+            args=["server.py"],
+            cwd=root / "sfcrm-mcp-server",
+        ),
     ]
 
-    async with AsyncExitStack() as stack:
-        handles = await connect_servers(server_configs, stack)
-        # Reuse the module-level REGISTRY that ``build_client()`` exposes
-        # so the same wiring is exercised by both the demo entry point
-        # and the smoke-test entry point.
-        for spec in build_tool_specs(handles):
+    async with McpClientPool(configs) as pool:
+        # The pool owns its own AsyncExitStack; entering it spawns both
+        # servers and opens stdio sessions. ``build_tool_registry``
+        # produces a populated ``McpToolRegistry`` with namespaced
+        # forwarders (``<server-name>__<tool-name>``). For the demo we
+        # copy those specs into the module-level REGISTRY so the same
+        # wiring is exposed via ``build_client()`` for smoke tests.
+        pool_registry = pool.build_tool_registry()
+        for spec in pool_registry.list_tools():
             REGISTRY.register(spec)
 
         print("Registered remote tools:")
