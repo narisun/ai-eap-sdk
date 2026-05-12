@@ -1,9 +1,17 @@
-"""McpClientPool — lifecycle manager for one or more MCP server subprocesses.
+"""McpClientPool — lifecycle manager for one or more MCP servers.
 
 The pool is an async context manager. Entering it spawns every configured
-server, opens an ``mcp.ClientSession`` to each over stdio, and returns once
-every session has been initialised. Exiting it tears every session and
-subprocess down cleanly through the single ``AsyncExitStack`` it owns.
+server, opens an ``mcp.ClientSession`` to each, and returns once every
+session has been initialised. Exiting it tears every session down cleanly
+through the single ``AsyncExitStack`` it owns.
+
+**Two transports.** :class:`McpServerConfig.transport` selects ``"stdio"``
+(spawn a subprocess and talk over its stdin/stdout) or ``"http"`` (open a
+Streamable-HTTP session to a remote MCP endpoint). The pool's
+:meth:`_spawn` method dispatches on the field; the rest of the pool
+(lifecycle, reconnect, health-check, iteration) is transport-agnostic
+because :class:`McpClientSession` wraps the upstream ``mcp.ClientSession``
+via duck typing, and the upstream class is identical across transports.
 
 Per-server state lives in :class:`McpServerHandle`. The pool stores them by
 name; :meth:`McpClientPool.session` returns the current handle's
@@ -26,9 +34,9 @@ context. :meth:`reconnect` therefore spawns a NEW session/subprocess and
 replaces the handle; the OLD subprocess is torn down only when the pool
 exits (via the stack). For long-lived agents with many reconnects, this
 leaks file descriptors and child processes until pool teardown. The leak is
-flagged for v1.2, which will introduce a per-handle ``AsyncExitStack``
-nested inside the pool's outer stack so each handle can be unwound
-independently.
+flagged for a future minor (v1.3+), which will introduce a per-handle
+``AsyncExitStack`` nested inside the pool's outer stack so each handle can be
+unwound independently.
 """
 
 from __future__ import annotations
@@ -44,6 +52,31 @@ from eap_core.mcp.client.errors import (
     McpServerSpawnError,
 )
 from eap_core.mcp.client.session import McpClientSession
+
+
+def _unpack_transport_streams(result: Any, arity: int, cfg_name: str) -> tuple[Any, Any]:
+    """Unpack ``(read, write)`` from a transport context-manager's yielded value.
+
+    ``stdio_client(...)`` yields a 2-tuple ``(read, write)``.
+    ``streamable_http_client(...)`` yields a 3-tuple
+    ``(read, write, get_session_id)``; v1.2 doesn't use Streamable-HTTP
+    session resumption so the third element is discarded.
+
+    Extracted as a pure module-level helper so the arity-dispatch is
+    unit-testable without ``mcp`` installed — the integration test in
+    ``tests/extras/test_mcp_client_http_integration.py`` exercises it
+    end-to-end against a real upstream, but the unit tests in
+    ``tests/test_mcp_client_pool.py`` catch arity regressions even when
+    the integration suite isn't run (or is broken by an upstream
+    drift).
+    """
+    if arity == 2:
+        read, write = result
+        return read, write
+    if arity == 3:
+        read, write, _get_session_id = result
+        return read, write
+    raise McpServerSpawnError(f"unexpected transport arity {arity} for server {cfg_name!r}")
 
 
 @dataclass
@@ -205,15 +238,16 @@ class McpClientPool:
         session resumption so the third element is discarded by
         :meth:`_open_session` when ``arity=3``.
 
-        Upstream rename (T4 v1.2): the original ``streamablehttp_client``
-        was renamed to ``streamable_http_client`` (with underscores) and
-        its signature tightened — it no longer accepts ``headers`` /
-        ``auth`` / ``timeout`` kwargs. Callers now configure those by
-        constructing an ``httpx.AsyncClient`` (the upstream helper
-        :func:`mcp.shared._httpx_utils.create_mcp_http_client`, re-exported
-        from :mod:`mcp.client.streamable_http`, applies the MCP-recommended
-        defaults). We enter the client onto the pool's exit stack so
-        teardown is symmetric with the stdio path.
+        The upstream ``streamable_http_client`` signature is tight — it
+        takes ``url`` and a single ``http_client: httpx.AsyncClient | None``.
+        Per-request HTTP config (headers, auth) goes onto the AsyncClient
+        at construction time. The upstream helper
+        :func:`create_mcp_http_client` (imported privately into
+        ``mcp.client.streamable_http`` from ``mcp.shared._httpx_utils``)
+        applies the MCP-recommended httpx defaults; we apply
+        ``cfg.headers`` and ``cfg.auth`` on top and enter the resulting
+        client onto the pool's exit stack so teardown is symmetric with
+        the stdio path.
 
         ``cfg.auth`` is typed as ``Any`` to keep ``httpx`` out of the core
         import path; the upstream helper expects ``httpx.Auth | None`` and
@@ -221,7 +255,15 @@ class McpClientPool:
         loudly on the first HTTP request — that's the right contract.
         """
         try:
-            from mcp.client.streamable_http import (
+            # ``create_mcp_http_client`` is imported into
+            # ``mcp.client.streamable_http`` from
+            # ``mcp.shared._httpx_utils`` but isn't in the module's
+            # ``__all__``, so strict mypy flags it as not-explicitly-
+            # exported. The defensive [attr-defined, unused-ignore]
+            # pair handles both states across upstream versions —
+            # mirrors the vertex.py pattern (commit 44c0fae) for the
+            # google-cloud-aiplatform stub drift.
+            from mcp.client.streamable_http import (  # type: ignore[attr-defined, unused-ignore]
                 create_mcp_http_client,
             )
             from mcp.client.streamable_http import (
@@ -273,16 +315,7 @@ class McpClientPool:
         assert self._stack is not None, "pool not entered"
         try:
             result = await self._stack.enter_async_context(transport_cm)
-            if arity == 2:
-                read, write = result
-            elif arity == 3:
-                # The third element is ``get_session_id``; v1.2 does not
-                # use Streamable-HTTP session resumption so it's dropped.
-                read, write, _get_session_id = result
-            else:
-                raise McpServerSpawnError(
-                    f"unexpected transport arity {arity} for server {cfg.name!r}"
-                )
+            read, write = _unpack_transport_streams(result, arity, cfg.name)
             upstream = await self._stack.enter_async_context(ClientSession(read, write))
             await upstream.initialize()
             tools_response = await upstream.list_tools()
@@ -336,13 +369,14 @@ class McpClientPool:
         :class:`McpServerHandle` whose :class:`McpClientSession` wraps the
         new ``mcp.ClientSession``.
 
-        **v1.2 follow-up.** The :class:`AsyncExitStack` model does not
+        **Known limitation.** The :class:`AsyncExitStack` model does not
         support partial unwind of an intermediate context, so this method
         spawns a NEW session/subprocess and replaces the handle. The OLD
         subprocess is torn down only when the pool exits. For long-lived
         agents that call ``reconnect`` many times this leaks file
         descriptors and child processes until pool exit. The fix
-        (per-handle nested ``AsyncExitStack``) is deferred to v1.2.
+        (per-handle nested ``AsyncExitStack``) is deferred to a future
+        minor (v1.3+).
 
         Raises:
             KeyError: if ``server_name`` is not in the pool.

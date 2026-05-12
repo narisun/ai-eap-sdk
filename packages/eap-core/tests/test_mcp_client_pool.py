@@ -459,3 +459,68 @@ async def test_pool_http_spawn_import_error_translated_to_spawn_error(
     with pytest.raises(McpServerSpawnError, match=r"\[mcp\] extra"):
         async with McpClientPool([cfg]):
             pass  # __aenter__ should fail before yielding
+
+
+# ---------------------------------------------------------------------------
+# _unpack_transport_streams (H-1 from the v1.2 review):
+# unit-level coverage for the arity-dispatch contract, independent of
+# whether the in-process HTTP integration test is happy with the
+# upstream MCP version. The integration test exercises arity=3
+# end-to-end; these tests catch a regression even when extras can't
+# run.
+# ---------------------------------------------------------------------------
+
+
+def test_unpack_transport_streams_arity_2_returns_read_write() -> None:
+    """``stdio_client`` yields ``(read, write)``; helper returns them."""
+    from eap_core.mcp.client.pool import _unpack_transport_streams
+
+    read, write = _unpack_transport_streams(("R", "W"), arity=2, cfg_name="x")
+    assert read == "R"
+    assert write == "W"
+
+
+def test_unpack_transport_streams_arity_3_drops_get_session_id() -> None:
+    """``streamable_http_client`` yields ``(read, write, get_session_id)``;
+    v1.2 doesn't use session resumption so the third element is dropped."""
+    from eap_core.mcp.client.pool import _unpack_transport_streams
+
+    def session_id() -> str | None:
+        return None
+
+    read, write = _unpack_transport_streams(("R", "W", session_id), arity=3, cfg_name="x")
+    assert read == "R"
+    assert write == "W"
+
+
+def test_unpack_transport_streams_unsupported_arity_raises_spawn_error() -> None:
+    """Defensive: unknown arity values fail loud with the cfg name
+    in the message so a future v1.3+ transport with arity=4 surfaces
+    a clear "not yet supported here" error instead of a confusing
+    tuple-unpacking traceback."""
+    from eap_core.mcp.client.errors import McpServerSpawnError
+    from eap_core.mcp.client.pool import _unpack_transport_streams
+
+    with pytest.raises(McpServerSpawnError, match=r"unexpected transport arity 4"):
+        _unpack_transport_streams(("R", "W", "X", "Y"), arity=4, cfg_name="future")
+
+
+def test_unpack_transport_streams_arity_2_rejects_3_tuple() -> None:
+    """If a stdio transport ever returned a 3-tuple by mistake, the
+    arity=2 path would raise ValueError on the unpack. This pins the
+    contract so a future upstream that broadens stdio_client's return
+    shape surfaces the mismatch loudly."""
+    from eap_core.mcp.client.pool import _unpack_transport_streams
+
+    with pytest.raises(ValueError, match="too many values to unpack"):
+        _unpack_transport_streams(("R", "W", "extra"), arity=2, cfg_name="x")
+
+
+def test_unpack_transport_streams_arity_3_rejects_2_tuple() -> None:
+    """Mirror: if streamable_http_client ever stops returning the
+    3-tuple shape (e.g. drops session resumption upstream), the
+    arity=3 path raises ValueError instead of silently corrupting."""
+    from eap_core.mcp.client.pool import _unpack_transport_streams
+
+    with pytest.raises(ValueError, match="not enough values to unpack"):
+        _unpack_transport_streams(("R", "W"), arity=3, cfg_name="x")

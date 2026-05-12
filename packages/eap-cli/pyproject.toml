@@ -1,6 +1,6 @@
 [project]
 name = "eap-cli"
-version = "1.2.0"
+version = "1.2.1"
 description = "EAP-Core CLI — scaffolding and ops for agentic AI projects"
 readme = "README.md"
 requires-python = ">=3.11"

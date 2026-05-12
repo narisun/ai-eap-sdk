@@ -16,6 +16,94 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.2.1] — 2026-05-12 — Patch release
+
+Patch closing the two Criticals and one High from the v1.2.0 pre-prod
+review, plus four supporting docstring/test-coverage polish items.
+The v1.2.0 release shipped with `uv run mypy` red on `pool.py:224`
+and all three HTTP integration tests erroring at fixture setup — both
+are fixed here. The Streamable-HTTP feature itself is unchanged.
+
+### Fixed
+
+- **C-1: `pool.py:224` mypy error.** The `create_mcp_http_client`
+  helper is imported into `mcp.client.streamable_http` from
+  `mcp.shared._httpx_utils` without being in the module's `__all__`,
+  so strict mypy rejected `from mcp.client.streamable_http import
+  create_mcp_http_client` with "Module does not explicitly export
+  attribute". Added defensive `# type: ignore[attr-defined,
+  unused-ignore]` markers — same pattern as v1.2's vertex.py fix
+  (commit `44c0fae`) for `google-cloud-aiplatform` stub drift. The
+  multi-code form handles both states across upstream versions: if
+  the upstream eventually adds the helper to `__all__`, the
+  `unused-ignore` half silences the redundancy warning.
+- **C-2: HTTP integration tests blocked by upstream
+  DeprecationWarning chain.** uvicorn (a transitive dep of the
+  in-process MCP server fixture) eagerly imports
+  `websockets.legacy` AND
+  `websockets.server.WebSocketServerProtocol`, both of which raise
+  `DeprecationWarning`. The repo's
+  `filterwarnings = ["error::DeprecationWarning"]` policy escalated
+  these to fixture-setup errors, blocking all three tests before any
+  test logic ran. Added a scoped
+  `pytest.mark.filterwarnings("ignore::DeprecationWarning")` on the
+  HTTP integration test file's `pytestmark`. The SDK's strict
+  deprecation policy stays in force everywhere else.
+
+### Added
+
+- **H-1: unit-level coverage for the arity-3 transport unpack.**
+  v1.2's `_open_session(cfg, transport_cm, *, arity)` handles both
+  `stdio_client`'s 2-tuple and `streamable_http_client`'s 3-tuple
+  return shapes. The 3-tuple path had no unit-level coverage —
+  exercised only by the (formerly broken) HTTP integration test.
+  Refactored the arity dispatch into a pure module-level helper
+  `_unpack_transport_streams(result, arity, cfg_name)` and added
+  five unit tests covering both arities + the defensive
+  "unsupported arity" raise + mutation-resistance against
+  upstream tuple-shape drift in either direction.
+
+### Documentation
+
+- **M-2: docstring drift.** `pool.py`'s `__module__` doctring and
+  `reconnect`'s docstring both referenced "v1.2" as the destination
+  for the per-handle `AsyncExitStack` partial-unwind fix. v1.2
+  shipped without that fix (deferred to v1.3+); the docstrings now
+  say "a future minor (v1.3+)".
+- **L-1 / L-3 / L-4: docstring drift.** Top-of-module pool docstring
+  was stdio-only; now mentions both transports. `_spawn_http`'s
+  description of the upstream rename simplified — the rename is
+  history, the current shape is what matters. `streamablehttp_client`
+  (old name) references in test file docstrings advanced to
+  `streamable_http_client`.
+
+### Stats
+
+- 662 non-extras tests passing (+5 vs v1.2.0's 657 — the four new
+  arity-helper tests + one M-1 `handle.name` assertion that was
+  added in v1.2.0 but uncounted in that release's stat block).
+- 23 extras tests now actually passing: 15 mcp + 5 OTel + 3 HTTP
+  integration (was 20 + 3 errors at v1.2.0).
+- 47 example tests passing (19 + 19 + 9, unchanged).
+- ruff / format / mypy / pytest all green from repo root with **a
+  freshly-deleted `.mypy_cache`** — the v1.2.0 CHANGELOG claim that
+  this was already true is now actually true.
+
+### Process note
+
+This is the second consecutive minor (v1.1.0 → v1.1.1 and now v1.2.0
+→ v1.2.1) where a "gauntlet green" claim missed real issues the
+pre-prod review caught. The pattern: implementer venvs accumulate
+cached state (`.mypy_cache`, mid-test imports) that masks upstream
+drift across minor releases. v1.2.1 adopts a stricter discipline:
+**every release tag must be verified from a fresh `.mypy_cache` and
+`__pycache__` sweep before tagging.** The defensive
+`[attr-defined, unused-ignore]` pattern used in v1.2's vertex.py
+fix and v1.2.1's pool.py fix is the right SDK-side workaround for
+upstream stub-version drift.
+
+---
+
 ## [1.2.0] — 2026-05-11 — first minor adding HTTP transport for the MCP client
 
 **EAP-Core v1.2 — Streamable-HTTP transport for the MCP client.** v1.1

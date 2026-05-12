@@ -5,14 +5,14 @@ upstreams. This file is the highest-fidelity validation for v1.2: an
 in-process MCP HTTP server is spun up on an OS-assigned localhost port,
 an :class:`McpClientPool` is pointed at its URL via
 ``transport="http"``, and a tool round-trip is exercised through the
-full transport stack — the real upstream ``streamablehttp_client``
+full transport stack — the real upstream ``streamable_http_client``
 participates, not a mock.
 
 The test validates the seam between every layer:
 
 - T1's :class:`McpServerConfig` (``transport="http"`` + ``url`` field).
 - T2's :meth:`McpClientPool._spawn_http` dispatch.
-- The upstream ``mcp.client.streamable_http.streamablehttp_client``
+- The upstream ``mcp.client.streamable_http.streamable_http_client``
   context manager and its 3-tuple ``(read, write, get_session_id)``
   shape; the pool drops the third element.
 - The shared :meth:`McpClientPool._open_session` path —
@@ -47,13 +47,26 @@ pytest.importorskip("mcp")
 pytest.importorskip("fastapi")
 pytest.importorskip("uvicorn")
 
-# T4 (v1.2): the pool now calls the upstream's renamed
-# ``streamable_http_client`` (with underscores), so the
-# ``DeprecationWarning`` that escaped under the old ``streamablehttp_client``
-# import no longer fires. The local ``filterwarnings`` ignore that T3 added
-# has been removed — the repo's global ``error::DeprecationWarning`` policy
-# now applies here as everywhere else.
-pytestmark = pytest.mark.extras
+# v1.2.1: uvicorn (a transitive dep of this test's in-process MCP server)
+# eagerly imports several modules from the ``websockets`` package whose
+# transition to the newer asyncio-native API emits ``DeprecationWarning``s
+# at module-load time. The repo's
+# ``filterwarnings = ["error::DeprecationWarning"]`` policy escalates
+# those to test failures, blocking the fixture before any test runs.
+#
+# The warnings live entirely in upstream code we don't own (uvicorn →
+# websockets.legacy, websockets.imports). Scoping a broad
+# ``ignore::DeprecationWarning`` to this single test file silences the
+# upstream noise without weakening the SDK's strict deprecation policy
+# everywhere else. The trade-off: a real SDK-emitted deprecation that
+# happened to fire inside one of THESE three tests would also be
+# silenced — accepted because the tests here only exercise a single
+# narrow integration seam and no SDK-emitted deprecations are expected
+# in that path.
+pytestmark = [
+    pytest.mark.extras,
+    pytest.mark.filterwarnings("ignore::DeprecationWarning"),
+]
 
 from eap_core.mcp.client import McpClientPool, McpServerConfig
 
