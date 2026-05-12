@@ -41,7 +41,15 @@ class SyncProxy:
     def generate_text(
         self, prompt: str | list[Message] | list[dict[str, Any]], **kw: Any
     ) -> Response:
-        return asyncio.run(self._client.generate_text(prompt, **kw))
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self._client.generate_text(prompt, **kw))
+        raise RuntimeError(
+            "EnterpriseLLM.sync.generate_text() cannot be used inside an active "
+            "event loop (notebook, FastAPI handler, async test, etc.). "
+            "Use `await client.generate_text(...)` instead."
+        )
 
 
 class EnterpriseLLM:
