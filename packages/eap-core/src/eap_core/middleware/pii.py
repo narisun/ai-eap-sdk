@@ -35,6 +35,7 @@ post-hoc on the final assembled text.
 
 from __future__ import annotations
 
+import logging
 import re
 import secrets
 import uuid
@@ -43,6 +44,8 @@ from typing import Any, Literal
 
 from eap_core.middleware.base import PassthroughMiddleware
 from eap_core.types import Chunk, Context, Message, Request, Response
+
+_LOG = logging.getLogger(__name__)
 
 _DEFAULT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("EMAIL", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")),
@@ -259,3 +262,45 @@ class PiiMaskingMiddleware(PassthroughMiddleware):
         if not ctx.vault:
             return chunk.model_copy(update={"text": emit})
         return chunk.model_copy(update={"text": self._unmask(emit, vault=ctx.vault, ctx=ctx)})
+
+    async def on_stream_end(self, ctx: Context) -> None:
+        """Flush + clear the per-context partial-token buffer.
+
+        A non-empty buffer at ``on_stream_end`` means the upstream
+        finished without emitting a chunk with ``finish_reason`` set --
+        likely an abrupt stop or mid-stream exception (which fires
+        ``on_stream_end`` via the pipeline's ``finally`` block). The
+        buffer content is dropped rather than re-emitted: the Protocol
+        does not allow yielding from ``on_stream_end``, and silently
+        re-emitting partial content is a correctness/security
+        liability. We log a WARNING so operators can investigate.
+
+        Closes v1.6.2 follow-up #1 (PII stream buffer leak).
+        """
+        buffer = ctx.metadata.pop(_STREAM_BUFFER_KEY, None)
+        if buffer:
+            _LOG.warning(
+                "PII stream buffer non-empty at on_stream_end (%d chars); "
+                "upstream finished without a finish_reason chunk. Held text "
+                "is being dropped to prevent state leak across requests.",
+                len(buffer),
+            )
+
+    async def on_call_end(self, ctx: Context) -> None:
+        """Clear the per-context vault + stream buffer.
+
+        The vault (``ctx.vault``) holds ``<LABEL_xxxx>`` -> original-PII
+        mappings populated in ``on_request`` and consumed in
+        ``on_response``. Today the vault relies on ctx GC; patterns that
+        retain ctx for background work leak the mapping. ``on_call_end``
+        always fires (T1: v1.7 ``finally`` block) so this is the right
+        place to clear.
+
+        Stream buffer is cleared defensively even though
+        ``on_stream_end`` normally handles it -- defense-in-depth for
+        paths that bypass ``on_stream_end`` somehow.
+
+        Closes v1.6.2 follow-up #2 (PII vault leak symmetry).
+        """
+        ctx.vault.clear()
+        ctx.metadata.pop(_STREAM_BUFFER_KEY, None)
