@@ -16,6 +16,126 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.8.0] — 2026-05-12 — Tool-call lifecycle + output validation modes + streaming usage
+
+Closes the largest deferred architectural item — middlewares can now
+sanitize/observe tool arguments via the new `on_tool_call` hook with
+mandatory policy re-evaluation. `OutputValidationMiddleware` handles
+real-world LLM output shapes (fenced JSON, prose-wrapped, provider-
+native). Streaming traces now carry per-chunk token usage. CI gains
+security + package gates.
+
+### Added
+
+- **`on_tool_call(tool_name, args, ctx) → dict` and
+  `on_tool_call_post_mutation(tool_name, args, ctx)` Protocol hooks.**
+  Middlewares MAY transform tool arguments via `on_tool_call`; the SDK
+  then re-stamps trusted policy inputs in pipeline Phase 3 and calls
+  `on_tool_call_post_mutation` on every middleware in Phase 4.
+  `PolicyMiddleware` overrides the post-mutation hook to re-authorize
+  against the current `ctx.metadata`, so silent metadata mutation can
+  no longer bypass the policy decision. Strict-additive: defaults
+  preserve v1.7 behavior. [Finding 1 follow-up, 2026-05-12 external review]
+- **`MiddlewarePipeline.run_tool(tool_name, args, ctx, terminal)`** —
+  new 6-phase orchestrator used by `EnterpriseLLM.invoke_tool`. Phases:
+  `on_request` → `on_tool_call` → SDK re-stamps `policy.*` →
+  `on_tool_call_post_mutation` → terminal → `on_response`. Plus
+  `on_call_end` (finally) + `on_error` (except) mirroring v1.7 `run()`.
+- **`OutputValidationMiddleware(mode=...)`** — `strict_json` (default,
+  backward-compat), `extract_json` (regex+bracket-counter scanner
+  respecting string boundaries; handles fenced ```json blocks and
+  prose-wrapped JSON), `provider_native` (trusts `resp.payload`; falls
+  back to `strict_json` when payload is None). [P2-10]
+- **`Chunk.usage` + `RawChunk.usage`** — new optional `dict[str, int]`
+  field (default empty). Adapters MAY emit per-chunk incremental or
+  final-chunk single-shot totals.
+- **`ObservabilityMiddleware.on_stream_chunk`** aggregates usage
+  per-key into `ctx.metadata["gen_ai.usage"]`. The dormant span-attr
+  code in v1.7's `on_stream_end` now reads non-empty data and lands
+  `gen_ai.usage.*` attributes on the span.
+- **CI `security` job** — `pip-audit --strict` on workspace deps
+  (exported via `uv export --no-emit-workspace` to skip editable
+  members) + `bandit -ll` (Medium+High) on SDK source. [P2-12]
+- **CI `package-check` job** — `uv build --all-packages` + `twine check`. [P2-12]
+
+### Changed
+
+- **`LocalRuntimeAdapter.stream`** emits `finish_reason="stop"` on the
+  final chunk + token usage (was `finish_reason=None` always).
+  [LOW-2 from v1.7 review]
+- **`EnterpriseLLM.invoke_tool`** internally uses
+  `MiddlewarePipeline.run_tool` instead of inline
+  `pipeline.run(req, ctx, terminal)`. Public API `(tool_name, args)`
+  is unchanged.
+
+### Removed
+
+- **`_DEFAULT_INJECTION_PATTERNS`** private alias deleted from
+  `eap_core.security`. Use `INJECTION_PATTERNS` directly.
+  `RegexThreatDetector` now accepts `patterns=None` to select the
+  canonical table (was previously
+  `patterns=_DEFAULT_INJECTION_PATTERNS`). [LOW-3 from v1.7 review]
+
+### Documentation
+
+- **Dev guide §3.9** updated — the closure-capture rationale section
+  now points to the new `on_tool_call` hook as the forward path for
+  explicit arg mutation with policy re-evaluation.
+- **CHANGELOG [1.7.0]** annotated:
+  - DeprecationWarning emission asymmetry between `JsonPolicyEvaluator`
+    (PEP 562 `__getattr__`, import-time) and `PromptInjectionMiddleware`
+    (instantiation-time). [LOW-1]
+  - Runtime-error count clarification: 20 `@extras`-marked + 1 unmarked
+    hierarchy smoke = 21 collected without `-m` filter. [NIT-2]
+- **`_map_botocore_error` / `_map_google_error`** docstrings reworded —
+  these are private helpers, not external contracts. [NIT-1]
+
+### Backward compat
+
+Strict-additive on the public Protocol — `on_tool_call` default
+returns args unchanged (identity); `on_tool_call_post_mutation`
+defaults to no-op. Middlewares that don't override see no behavior
+change. `OutputValidationMiddleware()` with no args preserves v1.7
+`strict_json` behavior. `Chunk(...)` / `RawChunk(...)` without
+`usage=` validate cleanly. `EnterpriseLLM.invoke_tool(tool_name, args)`
+signature unchanged.
+
+### Deferred (v1.9 backlog)
+
+- **Bedrock real streaming** — uses v1.7's `_map_botocore_error`
+  translator + v1.8's `Chunk.usage` field
+- **Vertex real streaming** — uses v1.7's `_map_google_error`
+  translator + v1.8's `Chunk.usage` field
+- **Adapter retry/timeout/cancellation config** — pairs with cloud
+  streaming
+- **`provider_request_options`** passthrough on adapters
+
+### Stats (v1.8.0 reality, fresh `.mypy_cache` + `__pycache__`)
+
+- **784** non-extras tests passing, 1 skipped, 94 deselected
+  (was 760 in v1.7.0; +24 across T1-T4: `on_tool_call` lifecycle,
+  `OutputValidationMiddleware` modes, streaming usage aggregator,
+  CI/cleanup regression coverage).
+- **8** playground integration tests (unchanged).
+- **19** Cedar extras tests (unchanged).
+- **15** MCP extras tests (unchanged).
+- **47** MCP-examples tests (unchanged).
+- **21** runtime-error tests collected without `-m` filter — 20
+  `@extras`-marked + 1 unmarked hierarchy smoke (unchanged from v1.7;
+  [NIT-2] above clarifies the count).
+- **175** source files mypy-checked, no issues (was 172 in v1.7.0; +3
+  from new pipeline + validation modes + streaming-usage modules).
+- **224** files formatted clean (was 221 in v1.7.0; +3).
+- **pip-audit**: 0 vulnerabilities on workspace third-party deps
+  (`uv export --no-emit-workspace` → `pip-audit --strict -r`).
+- **bandit** `-ll` (Medium+High): 0 issues; 1 explicit `# nosec B701`
+  on `jinja2.Environment(autoescape=False)` in
+  `eap_cli/scaffolders/render.py` (codegen, not HTML rendering).
+- All 4 wheels + sdists build cleanly via `uv build --all-packages`;
+  `twine check` PASSED on every artifact.
+
+---
+
 ## [1.7.0] — 2026-05-12 — Pipeline lifecycle completion + runtime error hierarchy
 
 Closes the architecturally important deferred items from the v1.6.x
