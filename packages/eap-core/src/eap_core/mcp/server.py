@@ -34,7 +34,15 @@ def _json_default(o: Any) -> Any:
     wire (e.g. ``"2026-05-11 12:00:00"`` instead of ISO 8601
     ``"2026-05-11T12:00:00"``). Round-tripping through v1's own
     JSON-mode serialization keeps nested v1 BaseModels consistent
-    with the top-level path in ``_serialize_for_text_content``.
+    with the top-level v1 path.
+
+    Cross-major scope (v1 vs v2) is intentionally NOT unified here.
+    Within v1 nested == v1 top-level; within v2 nested == v2 top-level.
+    But v1 and v2 still differ on edge cases — Decimal serializes as
+    a JSON number under v1 and a JSON string under v2; UTC datetimes
+    use ``+00:00`` under v1 and ``Z`` under v2; NaN/Infinity tokens
+    differ. Tools that need cross-major identical output should
+    standardize on one pydantic major version.
     """
     if isinstance(o, BaseModel):
         return o.model_dump(mode="json")

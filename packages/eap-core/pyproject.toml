@@ -1,6 +1,6 @@
 [project]
 name = "eap-core"
-version = "0.7.3"
+version = "1.0.0"
 description = "Enterprise Agentic AI Platform SDK — core middleware, runtimes, identity"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -16,6 +16,145 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.0.0] — 2026-05-11 — General Availability
+
+**EAP-Core v1.0 — first production-stable release.**
+
+No behavior changes since v0.7.3; this release promotes v0.7.3's
+contents to v1.0 to lock the public API surface and signal
+production-readiness. The v0.x series ran 11 consecutive pre-prod
+review cycles to drive the release-debt to zero; v0.7.3's review
+returned the first "ship-as-GA-candidate" verdict with no
+Critical/High/Medium findings on the patch surface and an explicit
+convergence assessment recommending the GA cut. This release acts
+on that recommendation.
+
+### What's in v1.0
+
+- **Middleware chain** (`sanitize`, `pii`, `observability`, `policy`,
+  `validate`) composed through a deterministic `MiddlewarePipeline`.
+  Each middleware implements the `Middleware` protocol; the chain is
+  fail-fast and order-deterministic.
+- **Identity layer**: `NonHumanIdentity`, `OIDCTokenExchange` for
+  RFC 8693 token exchange, `LocalIdPStub` for local development,
+  and `InboundJwtVerifier` for server-side JWT validation
+  (https + same-host JWKS + issuer pinning).
+- **MCP server primitives**: `@mcp_tool` decorator with JSON-Schema
+  generated from type hints (Annotated/Field constraints preserved),
+  `McpToolRegistry` for per-process tool state, `build_mcp_server`
+  and `run_stdio` for the stdio transport. Tool returns are
+  JSON-serialized at all nesting depths (BaseModel /
+  dict / list / primitives all handled correctly under both
+  pydantic v2 and the `pydantic.v1` compat shim).
+- **Policy engines**: in-tree `JsonPolicyEvaluator` (Cedar-shaped
+  JSON) plus real Cedar engine via `CedarPolicyEvaluator` behind the
+  `[policy-cedar]` extra. Both implement the same one-method
+  Protocol; swap engines with a single constructor change.
+- **Runtime adapters**: `LocalRuntimeAdapter` for development, plus
+  cloud adapters for AWS Bedrock AgentCore (11 services: memory,
+  registry, payments, eval, code-sandbox, browser-sandbox, gateway,
+  identity, observability) and GCP Vertex Agent Engine (memory bank,
+  agent registry, AP2 payments, eval scorer, sandbox, gateway).
+  Cloud adapters behind `[aws]` / `[gcp]` extras.
+- **Eval framework**: `Trajectory`, `FaithfulnessScorer`,
+  `EvalRunner`, `EvalReports` (JSON, HTML, JUnit). Drives
+  golden-set evaluation via `eap eval --dataset <path>` from the
+  CLI.
+- **Payments**: `PaymentBackend` protocol with x402 (web-payment)
+  and AP2 (agent-to-payment) implementations.
+- **A2A protocol**: `AgentCard` schema + cloud-side registry
+  publish/search adapters.
+- **Memory / Sandbox / Discovery protocols** with cloud-backed
+  implementations under their respective extras.
+- **CLI tooling** (`eap-cli`): `eap create-agent --template
+  {transactional, research, mcp_server}`, `eap eval`,
+  `eap publish-gateway`, `eap deploy {agentcore, vertex, gcr,
+  aws-lambda}`.
+
+### Reference examples (8 projects under `examples/`)
+
+| Project | Demonstrates |
+|---|---|
+| `transactional-agent/` | Action-style template — writes, policy gates, idempotency, auth-required tools |
+| `research-agent/` | Retrieval-style template — RAG with `search_docs` tool, eval golden-set |
+| `mcp-server-example/` | Standalone MCP stdio server template |
+| `agentcore-bank-agent/` | Full AWS Bedrock AgentCore wiring (11 services) |
+| `vertex-bank-agent/` | Full GCP Vertex Agent Engine wiring |
+| `bankdw-mcp-server/` | Payments warehouse (DuckDB-backed) exposed as MCP |
+| `sfcrm-mcp-server/` | Salesforce CRM (DuckDB-backed) exposed as MCP |
+| `cross-domain-agent/` | EAP-Core agent consuming both MCP servers via stdio subprocess |
+
+### Stability commitment
+
+- The public API surface in `eap_core.*` and `eap_cli.*` follows
+  SemVer from this release forward. Breaking changes ship in
+  v2.0 with deprecation warnings in a preceding v1.x minor.
+- Optional extras (`[pii]`, `[otel]`, `[aws]`, `[gcp]`, `[mcp]`,
+  `[a2a]`, `[eval]`, `[policy-cedar]`) are part of the stable
+  contract — adding new ones is additive; removing or renaming
+  existing ones is breaking.
+- MCP wire format (the JSON serialization that `eap_core.mcp.server`
+  emits) is locked: `BaseModel` → `model_dump(mode="json")`;
+  `dict`/`list` → `json.dumps` with recursive `_json_default`;
+  primitives → `str()`. Consistent across nesting depth within each
+  pydantic major version (see note below on cross-major edges).
+
+### Wire-format consistency — clarification (closes v0.7.3 review L-A)
+
+The v0.7.3 patch made nested-BaseModel serialization consistent
+**within each pydantic major version** (v1 nested == v1 top-level;
+v2 nested == v2 top-level). It does NOT make v1 and v2 produce
+byte-identical output: `Decimal` is a JSON number under v1 and a
+JSON string under v2; UTC datetimes use `+00:00` under v1 and `Z`
+under v2; NaN/Infinity tokens differ. Tools needing cross-major
+identical output should standardize on one pydantic major version.
+
+### Test counts (closes v0.7.3 review L-B — accurate this time)
+
+- **586 non-extras tests** passing (1 deliberate skip in
+  `test_examples_smoke.py` for the cross-domain-agent build-client
+  variant).
+- **24 extras tests** passing: 15 in `test_mcp_server.py` (MCP
+  serialization regression suite) + 9 in `test_policy_cedar.py`
+  (Cedar decision-parity matrix + Cedar-only feature tests).
+- **45 validation-example tests** passing: 19 bankdw + 19 sfcrm + 7
+  cross-domain-agent (6 adapter unit + 2 integration spawning real
+  subprocesses).
+- **Total: 655 tests passing across the entire repo.**
+- Coverage on `packages/eap-core` non-extras path: ~92% (≥90%
+  floor).
+- Lint, format, strict mypy: green from repo root with no scope
+  tricks.
+
+### Deferred to v1.1+ (not blocking GA)
+
+- **`eap_core.mcp.client`** — first-class MCP client adapter
+  (currently a per-agent shim in
+  `examples/cross-domain-agent/mcp_client_adapter.py`). Five gaps
+  catalogued: structured server config, session lifecycle
+  (pool/retry/timeout), output-schema validation, observability
+  spans, reconnect-on-stale.
+- **H8** — live Cedar engine integration tests beyond decision-parity
+  (current tests cover representative scenarios via the
+  `CedarPolicyEvaluator` adapter).
+- **H18/H19** — cloud (AWS/GCP) live-runtime integration tests
+  requiring real credentials and a credential-rotation policy in CI.
+  Mocked-runtime tests cover the code paths in v1.0; live tests
+  remain a separate concern tied to CI cred infrastructure.
+
+### Acknowledgements
+
+The 0.x → 1.0 path took 11 reviews and 16 patches across four
+months. Every review found real findings, every patch closed them
+cleanly, and the convergence pattern was unambiguous by v0.7.3.
+The MCP serialization bug (str-vs-JSON) that v0.7.1 / v0.7.2 / v0.7.3
+collectively closed was first surfaced during the SDK-validation
+exercise (`examples/bankdw-mcp-server` + `sfcrm-mcp-server` +
+`cross-domain-agent`) — the kind of validation feedback this SDK
+was supposed to enable, applied to the SDK itself.
+
+---
+
 ## [0.7.3] — 2026-05-11 — v1 BaseModel nested datetime + mutation-pin
 
 Patch closing the two Medium-severity findings from the v0.7.2
