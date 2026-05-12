@@ -31,17 +31,20 @@ Non-text content (``ImageContent``, ``EmbeddedResource``) is passed
 through as the raw upstream object — the agent layer decides what to do
 with images and resources. Decoding them is out of scope for v1.1.
 
-Output-schema validation (v1.1, opt-in via
+Output-schema validation (introduced v1.1, opt-in via
 :attr:`McpServerConfig.validate_output_schemas`) threads each tool's
 remote ``outputSchema`` (captured at pool-spawn time on
 :attr:`McpServerHandle.tool_output_schemas`) into the forwarder. After
 decoding the response the forwarder hands it to :func:`_maybe_validate`,
-which performs a shallow required-keys check and raises
-:class:`McpOutputSchemaError` on mismatch. The validator is intentionally
-shallow — pydantic v2 doesn't ship a JSON-Schema-to-Model compiler and
-adding the ``jsonschema`` package as a dep for a feature most servers
-don't even use today would be over-engineered. A deeper validator is
-flagged as a v1.2 follow-up.
+which raises :class:`McpOutputSchemaError` on mismatch.
+
+v1.4 promotes ``_maybe_validate`` to full JSON Schema validation via
+the ``jsonschema`` library (pulled in under the ``[mcp]`` extra). The
+deep validator catches type mismatches, enum violations, and nested
+property errors that the v1.1 shallow required-keys check silently
+passed through. When ``jsonschema`` isn't installed the validator
+falls back to the v1.1 shallow check so older deployments that haven't
+bumped to the new ``[mcp]`` extra keep working.
 """
 
 from __future__ import annotations
@@ -186,60 +189,65 @@ def _maybe_validate(
     server_name: str,
     tool: str,
 ) -> Any:
-    """Shallow output-schema validation for a decoded tool response.
+    """Validate a decoded tool response against its advertised output schema.
 
     When ``schema`` is ``None`` (the most common case — most MCP servers
     don't yet publish ``outputSchema``) this is a no-op pass-through. When
-    a schema is present, the function performs a minimal required-keys
-    check against the response shape and raises
-    :class:`McpOutputSchemaError` on mismatch; otherwise it returns the
-    ``decoded`` value unchanged.
+    a schema is present, the function delegates to the ``jsonschema``
+    library for full JSON Schema validation; on mismatch it raises
+    :class:`McpOutputSchemaError` with the offending payload, the schema
+    we validated against, and a human-readable reason.
 
-    The implementation is intentionally **shallow**: it only honours
-    ``type: "object"`` schemas with a ``required`` list, asserting every
-    listed key is present in the decoded dict. Nested-shape validation,
-    type-level coercion, ``$ref`` resolution, etc. are NOT performed.
-    Reasoning:
+    **Full JSON Schema validation (preferred path).** Installed under the
+    ``[mcp]`` extra alongside the ``mcp`` package itself. Catches type
+    mismatches (``"count": "not-an-int"`` vs ``{"type": "integer"}``),
+    enum violations, nested-property errors, ``format`` checks, etc. —
+    the full contract a server advertises.
 
-    - pydantic v2 doesn't ship a JSON-Schema → Model compiler. A deep
-      validator would require adding ``jsonschema`` as a dependency for
-      a feature most servers don't even use (most MCP tools don't yet
-      advertise an ``outputSchema``). The cost/benefit of dragging
-      ``jsonschema`` into eap-core's base deps doesn't pay off in v1.1.
-    - The shallow check catches the highest-value class of contract
-      drift: a remote server adding/renaming/removing top-level keys
-      between deployments. Subtler shape drift (a list field becoming
-      a scalar, an integer field becoming a string) is left for v1.2
-      alongside the proper JSON-Schema validator.
+    **Shallow fallback (legacy v1.1 behavior).** If ``jsonschema`` isn't
+    importable for any reason (older ``[mcp]`` extra installation that
+    predates v1.4) the validator falls back to the v1.1 check: presence
+    of ``required`` keys on a ``type: "object"`` schema. This is a
+    backward-compatibility lifeline — installations that haven't bumped
+    their extras don't get a hard ``ImportError`` at validation time.
 
-    The ``server_name`` argument is currently informational (used in
-    docstrings and for callers grepping logs); future deeper validation
-    may include it in the error message. It is accepted today to avoid
-    an additional signature churn when the deeper validator lands.
+    The ``server_name`` argument is informational (used by callers
+    grepping logs); the error message itself comes from ``jsonschema``'s
+    ``ValidationError.__str__`` which already includes the schema path
+    of the offending field.
     """
     if schema is None:
         return decoded
-    # Only validate "type": "object" schemas with a "required" list.
-    # Anything else (no type, primitive type, schema-less dict) is
-    # treated as "no actionable constraint" — return the value as-is.
-    if not isinstance(schema, dict) or schema.get("type") != "object":
+    try:
+        import jsonschema
+    except ImportError:
+        # Fallback path: v1.1 shallow required-keys check. Preserved so
+        # an installation without ``jsonschema`` (e.g. older ``[mcp]``
+        # extra) still gets the v1.1 level of validation — better than
+        # silently dropping the check on the floor.
+        if isinstance(decoded, dict) and "type" in schema and schema["type"] == "object":
+            required = schema.get("required", [])
+            missing = [k for k in required if k not in decoded]
+            if missing:
+                # ``from None``: the McpOutputSchemaError is unrelated to
+                # the ImportError that put us on this fallback branch; the
+                # caller shouldn't see a chained "during handling of..."
+                # traceback.
+                raise McpOutputSchemaError(
+                    tool=tool,
+                    payload=decoded,
+                    schema=schema,
+                    reason=f"missing required keys: {sorted(missing)}",
+                ) from None
         return decoded
-    required = schema.get("required") or []
-    if not isinstance(required, list) or not required:
-        return decoded
-    if not isinstance(decoded, dict):
+    # Full JSON Schema validation path.
+    try:
+        jsonschema.validate(instance=decoded, schema=schema)
+    except jsonschema.ValidationError as e:
         raise McpOutputSchemaError(
             tool=tool,
             payload=decoded,
             schema=schema,
-            reason=(f"expected object matching outputSchema, got {type(decoded).__name__}"),
-        )
-    missing = [k for k in required if k not in decoded]
-    if missing:
-        raise McpOutputSchemaError(
-            tool=tool,
-            payload=decoded,
-            schema=schema,
-            reason=f"missing required keys: {sorted(missing)}",
-        )
+            reason=str(e),
+        ) from e
     return decoded

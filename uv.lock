@@ -1009,6 +1009,7 @@ gcp = [
     { name = "google-cloud-aiplatform" },
 ]
 mcp = [
+    { name = "jsonschema" },
     { name = "mcp" },
 ]
 otel = [
@@ -1034,6 +1035,7 @@ requires-dist = [
     { name = "google-cloud-aiplatform", marker = "extra == 'gcp'", specifier = ">=1.50" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "jsonschema", specifier = ">=4.21" },
+    { name = "jsonschema", marker = "extra == 'mcp'", specifier = ">=4.0" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=0.9" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "opentelemetry-api", marker = "extra == 'otel'", specifier = ">=1.24" },

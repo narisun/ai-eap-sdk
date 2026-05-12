@@ -32,7 +32,7 @@ from eap_core.mcp.client import (
     McpServerDisconnectedError,
     McpServerHandle,
 )
-from eap_core.mcp.client.adapter import build_tool_registry
+from eap_core.mcp.client.adapter import _maybe_validate, build_tool_registry
 from eap_core.mcp.client.session import McpClientSession
 
 
@@ -521,6 +521,12 @@ async def test_forwarder_raises_when_decoded_response_is_not_object() -> None:
     non-dict (string primitive, list), validation must fail rather than
     silently passing the wrong shape through. Belt-and-suspenders for
     the dict-required check.
+
+    v1.4 swapped the shallow validator for ``jsonschema.validate``, so
+    the error reason now comes from ``ValidationError.__str__`` —
+    something like ``"'just-a-string' is not of type 'object'"``. The
+    contract preserved across the version bump is that validation FAILS
+    here; the exact wording belongs to ``jsonschema``.
     """
     upstream = _RecordingUpstream()
     upstream.responses["scalar_tool"] = SimpleNamespace(
@@ -539,5 +545,129 @@ async def test_forwarder_raises_when_decoded_response_is_not_object() -> None:
     registry = build_tool_registry(pool)  # type: ignore[arg-type]
     spec = registry.get("srv__scalar_tool")
     assert spec is not None
-    with pytest.raises(McpOutputSchemaError, match="expected object"):
+    with pytest.raises(McpOutputSchemaError, match="not of type 'object'"):
         await spec.fn()
+
+
+# ---------------------------------------------------------------------------
+# v1.4: jsonschema-backed full validator (and the ImportError fallback path)
+# ---------------------------------------------------------------------------
+#
+# These tests exercise ``_maybe_validate`` directly rather than going through
+# the forwarder. The forwarder-level tests above already prove the schema
+# threading is wired correctly; the goal here is to pin the validator's
+# semantics — full ``jsonschema.validate`` when the dep is importable, and
+# the v1.1 shallow required-keys check when it isn't.
+
+
+def test_full_validator_rejects_type_mismatch() -> None:
+    """The deep validator catches a string-vs-integer mismatch that the
+    v1.1 shallow check (required-keys presence only) would have silently
+    let through. This is the headline reason v1.4 swaps in ``jsonschema``.
+    """
+    schema = {
+        "type": "object",
+        "properties": {"count": {"type": "integer"}},
+        "required": ["count"],
+    }
+    decoded = {"count": "not-an-int"}
+    with pytest.raises(McpOutputSchemaError, match="not of type 'integer'"):
+        _maybe_validate(decoded, schema=schema, server_name="x", tool="y")
+
+
+def test_full_validator_rejects_enum_violation() -> None:
+    """Enums are a common contract shape (status fields, role
+    enumerations). The shallow validator can't enforce them; the deep
+    one does.
+    """
+    schema = {"type": "string", "enum": ["pending", "ok", "error"]}
+    with pytest.raises(McpOutputSchemaError, match=r"enum|is not one of"):
+        _maybe_validate("unknown", schema=schema, server_name="x", tool="y")
+
+
+def test_full_validator_rejects_nested_type_mismatch() -> None:
+    """Nested ``properties`` are where the shallow validator was most
+    obviously deficient — it only ever inspected the top-level keys.
+    The deep validator walks the structure.
+    """
+    schema = {
+        "type": "object",
+        "properties": {
+            "inner": {
+                "type": "object",
+                "properties": {"n": {"type": "integer"}},
+            }
+        },
+    }
+    decoded = {"inner": {"n": "string-not-int"}}
+    with pytest.raises(McpOutputSchemaError):
+        _maybe_validate(decoded, schema=schema, server_name="x", tool="y")
+
+
+def test_full_validator_accepts_valid_payload() -> None:
+    """Happy path — a schema-compliant payload passes through unchanged.
+    Belt-and-suspenders so the new error-paths above can't be a false
+    positive on "everything raises".
+    """
+    schema = {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
+    }
+    decoded = {"name": "alice"}
+    result = _maybe_validate(decoded, schema=schema, server_name="x", tool="y")
+    assert result == decoded
+
+
+def test_fallback_to_shallow_check_when_jsonschema_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Patch the ``jsonschema`` import to raise ``ImportError`` and
+    verify the v1.1 shallow required-keys check still rejects a missing
+    key. This is the backward-compat lifeline for installations that
+    haven't bumped to the v1.4 ``[mcp]`` extra.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def blocked_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "jsonschema":
+            raise ImportError("simulated missing dep")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked_import)
+
+    schema = {"type": "object", "required": ["count"]}
+    with pytest.raises(McpOutputSchemaError, match="missing required keys"):
+        _maybe_validate({"other": 1}, schema=schema, server_name="x", tool="y")
+
+
+def test_fallback_accepts_when_required_keys_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mirror of the rejection test above. When ``jsonschema`` is
+    unavailable, the fallback only checks key presence — even if the
+    associated value is the wrong shape, the shallow check passes. This
+    pins the v1.1 contract: the fallback is intentionally permissive so
+    pre-v1.4 installations behave the way they always have.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def blocked_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "jsonschema":
+            raise ImportError("simulated missing dep")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked_import)
+
+    schema = {"type": "object", "required": ["count"]}
+    result = _maybe_validate(
+        {"count": "wrong-type-but-present"},
+        schema=schema,
+        server_name="x",
+        tool="y",
+    )
+    assert result == {"count": "wrong-type-but-present"}
