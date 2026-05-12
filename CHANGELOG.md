@@ -16,6 +16,81 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.5.0] — 2026-05-12 — Cloud live-runtime test scaffolding + Cedar depth
+
+Closes the last three deferred test-depth items from the v0.7-v1.4
+roadmap: H8 (Cedar live engine integration beyond decision-parity),
+H18 (AWS Bedrock AgentCore live-runtime tests), H19 (GCP Vertex
+Agent Engine live-runtime tests). v1.5 is test-only — no SDK
+behavior changes — but introduces a new pytest marker (`cloud_live`)
+that gates real-cloud test execution behind opt-in env flags.
+
+### Added
+
+- **`cloud_live` marker** (registered in workspace root
+  `pyproject.toml`). Tests bearing this marker call real AWS / GCP
+  services with real credentials. The default gauntlet command —
+  `pytest -m "not extras and not cloud and not cloud_live"` —
+  skips them entirely; CI without cred provisioning sees zero impact.
+- **Cloud-live framework** under
+  `packages/eap-core/tests/cloud_live/`. The `conftest.py` provides
+  two-stage gating fixtures (`live_aws_enabled`, `live_gcp_enabled`):
+  (1) check `EAP_LIVE_AWS=1` or `EAP_LIVE_GCP=1`; (2) probe the cred
+  chain via `sts.get_caller_identity()` / `google.auth.default()`.
+  Failures skip with messages naming the env vars and cred sources to
+  fix. Plus a `unique_test_id` fixture for tagging cloud artifacts
+  per session so concurrent dev runs don't collide.
+- **H18 — 8 AWS Bedrock AgentCore live smoke tests**: 4 for
+  `AgentCoreMemoryStore` (remember/recall roundtrip, list_keys,
+  recall-missing-returns-none, forget single key) + 4 for
+  `AgentCoreRegistry` (publish/get_record roundtrip, search by
+  query, list, missing-record returns None). Tagged with
+  `unique_test_id`; best-effort cleanup via teardown.
+- **H19 — 8 GCP Vertex Agent Engine live smoke tests**: 4 for
+  `VertexMemoryBankStore` + 4 for `VertexAgentRegistry`, mirroring
+  the AWS shape against the GCP analogues. Configurable
+  `VERTEX_LOCATION` env var (defaults `us-central1`).
+- **H8 — 10 deeper Cedar tests** in
+  `tests/extras/test_policy_cedar.py` covering entity stores (4),
+  schema validation (3), JSON policy round-trip (1), the
+  template/slot-link contract under cedarpy 4.x (1), and
+  missing-attribute error surfacing (1). Verified what cedarpy
+  actually exposes: entity stores work, schema validation works,
+  template-slot linking is NOT exposed in cedarpy 4.x (templates
+  parse but can't be linked to concrete principals; unlinked
+  templates evaluate as Deny — pinned with a contract test).
+
+### Stats (verified with fresh `.mypy_cache` + `__pycache__`)
+
+- 688 non-extras tests passing (unchanged from v1.4.0 — the cloud_live
+  tests are deselected by marker; Cedar tests are in the extras path).
+- **Cedar extras: 19 tests** (was 9 at v1.4.0; +10 for H8).
+- **Cloud-live total: 16 tests** (8 AWS + 8 GCP). All skip cleanly
+  without `EAP_LIVE_AWS=1` / `EAP_LIVE_GCP=1` — the framework is
+  present; execution is opt-in. Users with creds run via:
+
+      EAP_LIVE_AWS=1 AGENTCORE_MEMORY_ID=... AWS_REGION=... \
+        uv run --with boto3 pytest packages/eap-core/tests/cloud_live -v
+      EAP_LIVE_GCP=1 VERTEX_MEMORY_BANK_ID=... GCP_PROJECT_ID=... \
+        uv run --with google-cloud-aiplatform pytest packages/eap-core/tests/cloud_live -v
+
+- All four primary gauntlets green from repo root with fresh caches:
+  ruff, ruff format, mypy (153 source files, no issues), pytest.
+
+### Roadmap context
+
+v1.5 closes the deferred test-depth queue from the v0.7-v1.4 review
+cycle. The four-phase plan agreed at v1.2.1 is complete:
+- Phase 1 (v1.2.1): hold and gather feedback ✓
+- Phase 2 (v1.3.0): transport completeness (SSE + WebSocket + BearerTokenAuth) ✓
+- Phase 3 (v1.4.0): quality pass (AsyncExitStack + jsonschema + tests/ rename) ✓
+- Phase 4 (v1.5.0): cloud live-runtime test scaffolding + Cedar depth ✓
+
+Next minor decisions are open — feature additions or hardening as user
+feedback dictates.
+
+---
+
 ## [1.4.0] — 2026-05-12 — Quality / correctness pass
 
 Closes three quality items the v1.x reviews documented as future-minor
