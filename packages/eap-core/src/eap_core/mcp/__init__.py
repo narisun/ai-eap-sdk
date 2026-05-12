@@ -1,3 +1,7 @@
+from eap_core.mcp.client import (
+    McpClientError,
+    McpServerConfig,
+)
 from eap_core.mcp.decorator import mcp_tool
 
 # `default_registry` is intentionally re-imported here for backward
@@ -12,6 +16,8 @@ from eap_core.mcp.types import MCPError, ToolSpec
 
 __all__ = [
     "MCPError",
+    "McpClientError",
+    "McpServerConfig",
     "McpToolRegistry",
     "ToolSpec",
     "mcp_tool",
