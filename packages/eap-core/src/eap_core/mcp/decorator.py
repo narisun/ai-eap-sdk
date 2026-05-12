@@ -34,14 +34,25 @@ def _schema_for_param(annotation: Any) -> dict[str, Any]:
 
 def _build_input_schema(fn: Callable[..., Any]) -> dict[str, Any]:
     sig = inspect.signature(fn)
-    hints = get_type_hints(fn)
+    # ``include_extras=True`` preserves ``Annotated[T, Field(...)]``
+    # metadata so pydantic's ``TypeAdapter`` incorporates Field
+    # constraints (ge, le, description, etc.) into the generated JSON
+    # schema. Without it, ``Annotated[int, Field(ge=1, le=1000)] = 100``
+    # collapses to bare ``{"type": "integer"}``.
+    hints = get_type_hints(fn, include_extras=True)
     properties: dict[str, Any] = {}
     required: list[str] = []
     for name, param in sig.parameters.items():
         if name == "self":
             continue
         ann = hints.get(name, str)
-        properties[name] = _schema_for_param(ann)
+        prop = _schema_for_param(ann)
+        if param.default is not inspect.Parameter.empty:
+            # Capture the function default in the schema. JSON Schema
+            # treats ``default`` as informational metadata — clients
+            # can show it in prompts; it doesn't constrain validation.
+            prop = {**prop, "default": param.default}
+        properties[name] = prop
         if param.default is inspect.Parameter.empty:
             required.append(name)
     schema: dict[str, Any] = {"type": "object", "properties": properties}
@@ -51,7 +62,7 @@ def _build_input_schema(fn: Callable[..., Any]) -> dict[str, Any]:
 
 
 def _build_output_schema(fn: Callable[..., Any]) -> dict[str, Any] | None:
-    hints = get_type_hints(fn)
+    hints = get_type_hints(fn, include_extras=True)
     ret = hints.get("return")
     if ret is None or ret is type(None):
         return None

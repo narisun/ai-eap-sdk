@@ -33,10 +33,10 @@ import sys
 from contextlib import AsyncExitStack
 from pathlib import Path
 
+from mcp_client_adapter import build_tool_specs, connect_servers
+
 from eap_core import EnterpriseLLM, RuntimeConfig
 from eap_core.mcp import McpToolRegistry
-
-from mcp_client_adapter import build_tool_specs, connect_servers
 
 
 def _examples_root() -> Path:
@@ -102,14 +102,8 @@ async def main() -> None:
         # Demo 1: list both servers' tables to prove the bridge works.
         bankdw_tables = await REGISTRY.invoke("bankdw__list_tables", {})
         sfcrm_tables = await REGISTRY.invoke("sfcrm__list_tables", {})
-        print(
-            f"\nbankdw tables: "
-            f"{[t['name'] for t in bankdw_tables['tables']]}"
-        )
-        print(
-            f"sfcrm tables: "
-            f"{[t['name'] for t in sfcrm_tables['tables']]}"
-        )
+        print(f"\nbankdw tables: {[t['name'] for t in bankdw_tables['tables']]}")
+        print(f"sfcrm tables: {[t['name'] for t in sfcrm_tables['tables']]}")
 
         # Demo 2: cross-domain query. Find Salesforce Account names by
         # AnnualRevenue, then look them up in bankdw's dim_party.
@@ -117,28 +111,29 @@ async def main() -> None:
             "sfcrm__query_sql",
             {
                 "sql": (
-                    "SELECT Name, AnnualRevenue FROM Account "
-                    "ORDER BY AnnualRevenue DESC LIMIT 5"
+                    "SELECT Name, AnnualRevenue FROM Account ORDER BY AnnualRevenue DESC LIMIT 5"
                 ),
                 "limit": 5,
             },
         )
         top5_names = [r["Name"] for r in sf_top5["rows"]]
+        # ``in_clause`` builds an IN list from names returned by the
+        # sfcrm server. These values came out of a query whose SQL was
+        # ours (not user input). A production version would still want
+        # proper parameterisation; the bankdw query_sql tool doesn't
+        # expose parameter binding so this demo interpolates. S608 is
+        # a false positive in the validation flow.
         in_clause = ", ".join(f"'{n}'" for n in top5_names)
         bd_match = await REGISTRY.invoke(
             "bankdw__query_sql",
             {
-                "sql": (
-                    "SELECT PartyName FROM dim_party "
-                    f"WHERE PartyName IN ({in_clause})"
-                ),
+                "sql": "SELECT PartyName FROM dim_party "  # noqa: S608
+                f"WHERE PartyName IN ({in_clause})",
                 "limit": 50,
             },
         )
         matched = sorted({r["PartyName"] for r in bd_match["rows"]})
-        print(
-            f"\nTop-5 SFDC Accounts by AnnualRevenue: {top5_names}"
-        )
+        print(f"\nTop-5 SFDC Accounts by AnnualRevenue: {top5_names}")
         print(f"Of those, parties also in bankdw: {matched}")
 
 

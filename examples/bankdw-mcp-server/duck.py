@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     import duckdb
 
 
-def open_in_memory(data_dir: Path) -> "duckdb.DuckDBPyConnection":
+def open_in_memory(data_dir: Path) -> duckdb.DuckDBPyConnection:
     """Open a fresh in-memory DuckDB connection and load every CSV
     under ``data_dir`` as a table. Table name = CSV stem.
 
@@ -36,15 +36,22 @@ def open_in_memory(data_dir: Path) -> "duckdb.DuckDBPyConnection":
     for csv_path in sorted(data_dir.glob("*.csv")):
         table_name = csv_path.stem
         # `read_csv_auto` infers types; `header=true` is the default.
-        # We use parameter binding for the path because table names
-        # can't be parametrized.
+        # Parameter-bind the path; table names can't be parametrised so
+        # they're interpolated. ``table_name`` comes from the CSV
+        # filename stem — developer-controlled, not user input — so the
+        # bandit S608 warning is not a real injection risk here.
         con.execute(
-            f'CREATE TABLE "{table_name}" AS SELECT * FROM read_csv_auto(?)',
+            f'CREATE TABLE "{table_name}" AS SELECT * FROM read_csv_auto(?)',  # noqa: S608
             [str(csv_path)],
         )
     return con
 
 
-def row_count(con: "duckdb.DuckDBPyConnection", table: str) -> int:
-    """Return the row count for a loaded table. Used by list_tables."""
-    return con.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+def row_count(con: duckdb.DuckDBPyConnection, table: str) -> int:
+    """Return the row count for a loaded table. Used by list_tables.
+
+    ``table`` is interpolated, not parameter-bound (DuckDB cannot
+    parametrise identifiers). Callers pass values from the schema
+    metadata — developer-controlled — so S608 is not a real risk.
+    """
+    return con.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]  # noqa: S608

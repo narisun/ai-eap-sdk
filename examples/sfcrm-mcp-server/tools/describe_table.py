@@ -8,10 +8,9 @@ LLM's brief for writing a correct SELECT.
 from __future__ import annotations
 
 from pydantic import BaseModel
+from schema import TableSchema
 
 from eap_core.mcp import mcp_tool
-
-from schema import TableSchema
 
 _schema: dict[str, TableSchema] | None = None
 

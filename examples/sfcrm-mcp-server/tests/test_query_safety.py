@@ -16,9 +16,9 @@ import pytest
 SERVER_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SERVER_DIR))
 
-from duck import open_in_memory  # noqa: E402
-from tools.query_sql import _bind as _bind_query  # noqa: E402
-from tools.query_sql import query_sql  # noqa: E402
+from duck import open_in_memory
+from tools.query_sql import _bind as _bind_query
+from tools.query_sql import query_sql
 
 
 @pytest.fixture(scope="module")

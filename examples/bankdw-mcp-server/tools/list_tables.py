@@ -46,7 +46,9 @@ def _bind(con, schema) -> None:
 def list_tables() -> ListTablesResult:
     from duck import row_count
 
-    assert _con is not None and _schema is not None, "tools not bound - server.py:_bind() must run first"
+    assert _con is not None and _schema is not None, (
+        "tools not bound - server.py:_bind() must run first"
+    )
     tables = [
         TableSummary(
             name=t.name,

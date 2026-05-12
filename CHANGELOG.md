@@ -16,6 +16,87 @@ Nothing yet. Open a PR.
 
 ---
 
+## [0.7.2] — 2026-05-11 — Nested-BaseModel serialization + decorator constraint preservation
+
+Patch closing three findings from the v0.7.1 pre-prod review (H1, M1, M2),
+plus housekeeping cleanup of the lint/mypy carryover from the v0.7.0 +
+validation-examples merge. No public API or wire-format breaking changes
+for non-nested cases; existing v0.7.1 installs upgrade cleanly. **One
+behavior change for upgraders** flagged at the bottom.
+
+### Fixed
+
+- **H1: nested `BaseModel` inside `dict`/`list` now serialises to JSON
+  objects.** v0.7.1 fixed top-level BaseModel returns but used
+  `default=str` in `json.dumps`, which flattened *nested* BaseModels to
+  their Python repr string (`{"item": "name='alice' count=1"}` instead
+  of `{"item": {"name": "alice", "count": 1}}`). v0.7.2 introduces
+  `_json_default` which routes BaseModel values through
+  `model_dump(mode="json")` recursively, then falls through to `str()`
+  for unusual types. Three new regression tests in
+  `tests/extras/test_mcp_server.py` lock nested-dict, list-of-BaseModel,
+  and deeply-nested (BaseModel in dict in list) cases.
+- **M2: pydantic v1 `BaseModel` (via the `pydantic.v1` compat shim) now
+  serialises through the same JSON path.** Tools that still inherit
+  from `pydantic.v1.BaseModel` previously fell through to `str()` and
+  emitted the v1 repr — same class of bug v0.7.1 closed for v2. The
+  import is wrapped in `try/except ImportError` so installs without v1
+  compat continue to work. Two regression tests cover top-level and
+  nested v1 BaseModel cases.
+- **M1: `@mcp_tool` preserves `Annotated[T, Field(...)]` constraint
+  metadata in the generated JSON schema.** `_build_input_schema` /
+  `_build_output_schema` now call `get_type_hints(fn, include_extras=True)`,
+  so `Annotated[int, Field(ge=1, le=1000)] = 100` produces
+  `{"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}`
+  instead of bare `{"type": "integer"}`. Function defaults also
+  propagate into the schema's `default` slot. Two regression tests in
+  `tests/test_mcp_decorator.py` lock the contract.
+
+### Internal
+
+- **Pre-existing mypy errors in `integrations/vertex.py` resolved**
+  (lines 290, 388, 626, 731). Four `attr-defined` errors for service
+  classes (`SandboxServiceClient`, `AgentRegistryServiceClient`,
+  `PaymentServiceClient`) that exist at runtime in
+  `google-cloud-aiplatform>=1.50`'s `aiplatform_v1beta1` module but
+  are not declared in the type stubs. Added `# type: ignore[attr-defined]`
+  with explanatory comments. These errors were inherited from
+  v0.7.0; v0.7.0's CHANGELOG incorrectly claimed mypy was green.
+- **Validation examples (`examples/bankdw-mcp-server`,
+  `sfcrm-mcp-server`, `cross-domain-agent`) brought into the SDK's
+  strict lint discipline.** The original validation work ran ruff
+  scoped to `packages/` only; running root-level `ruff check` after
+  the merge surfaced 44 lint issues. All resolved: 35 auto-fixed
+  (import sorts, unused noqa, quoted annotations) + 9 manual
+  (per-line `# noqa: S608` with comments explaining why the
+  SQL-construction warnings are false positives in the DuckDB
+  CSV loader and the query_sql wrapper, plus two long-line fixes).
+  Future example projects should run the root ruff config before
+  merging.
+
+### Stats
+
+- 586 non-extras tests passing (up from 584 in v0.7.1; +2 new tests in
+  `test_mcp_decorator.py` for M1).
+- Extras tests: 13 in `test_mcp_server.py` (up from 8; +5 new for H1 / M2).
+- Coverage: ≥90% (unchanged).
+- All gauntlets fully green for the first time across the entire repo
+  (root `ruff check`, `mypy`, pytest non-extras, pytest mcp extras, and
+  all 45 example-project tests).
+
+### Behavior change worth flagging for upgraders
+
+- Tools returning `dict` / `list` containing pydantic `BaseModel` values
+  will now emit JSON objects for the nested models, where v0.7.1 emitted
+  the Python repr string. If you have downstream parsing that was
+  tolerating the v0.7.1 repr-string behavior, switch to JSON parsing.
+- `@mcp_tool` now emits richer JSON schemas for `Annotated[T, Field(...)]`
+  parameters (with `minimum`, `maximum`, `default`, etc.). Clients that
+  were comparing schemas byte-wise will see the new keys; clients that
+  read the schema dynamically will benefit from the extra metadata.
+
+---
+
 ## [0.7.1] — 2026-05-11 — MCP server JSON serialization fix
 
 Patch fixing a serialization bug surfaced by the SDK validation

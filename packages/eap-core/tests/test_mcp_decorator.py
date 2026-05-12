@@ -86,3 +86,45 @@ def test_build_mcp_server_raises_import_error_when_mcp_missing(monkeypatch):
 
         with _pytest.raises(ImportError, match="mcp"):
             build_mcp_server(reg)
+
+
+def test_mcp_tool_preserves_annotated_field_constraints_in_schema():
+    """Regression: ``@mcp_tool`` previously used ``get_type_hints`` without
+    ``include_extras=True``, so ``Annotated[int, Field(ge=1, le=1000)] = 100``
+    collapsed to bare ``{"type": "integer"}`` in the generated JSON
+    schema — constraint metadata lost on the wire. v0.7.2 enables
+    extras preservation and propagates function defaults into the
+    schema's ``default`` slot."""
+    from typing import Annotated
+
+    from pydantic import Field
+
+    @mcp_tool()
+    async def search(
+        query: str,
+        limit: Annotated[int, Field(ge=1, le=1000)] = 100,
+    ) -> str:
+        return query
+
+    schema = search.spec.input_schema
+    assert schema["properties"]["query"]["type"] == "string"
+    limit_schema = schema["properties"]["limit"]
+    assert limit_schema["type"] == "integer"
+    assert limit_schema["minimum"] == 1
+    assert limit_schema["maximum"] == 1000
+    # Default must also be captured.
+    assert limit_schema["default"] == 100
+    # `query` is required (no default); `limit` is not.
+    assert schema["required"] == ["query"]
+
+
+def test_mcp_tool_default_propagates_for_simple_param():
+    """Defaults on simple-typed params land in the schema too."""
+
+    @mcp_tool()
+    async def greet(name: str = "world") -> str:
+        return f"hello {name}"
+
+    schema = greet.spec.input_schema
+    assert schema["properties"]["name"]["default"] == "world"
+    assert "required" not in schema  # no required params

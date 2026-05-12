@@ -22,9 +22,9 @@ import pytest
 AGENT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AGENT_DIR))
 
-from eap_core.mcp import McpToolRegistry  # noqa: E402
+from mcp_client_adapter import build_tool_specs, connect_servers
 
-from mcp_client_adapter import build_tool_specs, connect_servers  # noqa: E402
+from eap_core.mcp import McpToolRegistry
 
 EXAMPLES_ROOT = AGENT_DIR.parent
 
@@ -104,10 +104,7 @@ async def test_agent_runs_cross_domain_query_round_trip():
         sf_result = await registry.invoke(
             "sfcrm__query_sql",
             {
-                "sql": (
-                    "SELECT Name FROM Account "
-                    "ORDER BY AnnualRevenue DESC LIMIT 5"
-                ),
+                "sql": ("SELECT Name FROM Account ORDER BY AnnualRevenue DESC LIMIT 5"),
                 "limit": 5,
             },
         )
@@ -121,16 +118,12 @@ async def test_agent_runs_cross_domain_query_round_trip():
         bd_result = await registry.invoke(
             "bankdw__query_sql",
             {
-                "sql": (
-                    "SELECT PartyName FROM dim_party "
-                    f"WHERE PartyName IN ({in_clause})"
-                ),
+                "sql": (f"SELECT PartyName FROM dim_party WHERE PartyName IN ({in_clause})"),
                 "limit": 50,
             },
         )
         # At least one match - the seed data has overlapping company
         # names between Account.Name and dim_party.PartyName.
         assert bd_result["row_count"] >= 1, (
-            f"expected at least one cross-domain match; sf top5={top5}, "
-            f"bd rows={bd_result['rows']}"
+            f"expected at least one cross-domain match; sf top5={top5}, bd rows={bd_result['rows']}"
         )

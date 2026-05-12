@@ -16,14 +16,14 @@ import pytest
 SERVER_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SERVER_DIR))
 
-from duck import open_in_memory  # noqa: E402
-from schema import parse_schema  # noqa: E402
-from tools.describe_table import _bind as _bind_describe  # noqa: E402
-from tools.describe_table import describe_table  # noqa: E402
-from tools.list_tables import _bind as _bind_list  # noqa: E402
-from tools.list_tables import list_tables  # noqa: E402
-from tools.query_sql import _bind as _bind_query  # noqa: E402
-from tools.query_sql import query_sql  # noqa: E402
+from duck import open_in_memory
+from schema import parse_schema
+from tools.describe_table import _bind as _bind_describe
+from tools.describe_table import describe_table
+from tools.list_tables import _bind as _bind_list
+from tools.list_tables import list_tables
+from tools.query_sql import _bind as _bind_query
+from tools.query_sql import query_sql
 
 
 @pytest.fixture(scope="module")
@@ -46,10 +46,21 @@ def test_list_tables_returns_all_fifteen_sfcrm_tables(loaded):
     result = list_tables()
     names = {t.name for t in result.tables}
     assert names == {
-        "Account", "Campaign", "CampaignMember", "Case", "Contact",
-        "Contract", "Event", "Lead", "Opportunity",
-        "OpportunityContactRole", "OpportunityLineItem", "Pricebook2",
-        "PricebookEntry", "Product2", "Task",
+        "Account",
+        "Campaign",
+        "CampaignMember",
+        "Case",
+        "Contact",
+        "Contract",
+        "Event",
+        "Lead",
+        "Opportunity",
+        "OpportunityContactRole",
+        "OpportunityLineItem",
+        "Pricebook2",
+        "PricebookEntry",
+        "Product2",
+        "Task",
     }
     # Row counts are real (Account has 45 rows: 46-line CSV minus header).
     account = next(t for t in result.tables if t.name == "Account")

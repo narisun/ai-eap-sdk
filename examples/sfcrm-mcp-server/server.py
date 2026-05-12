@@ -16,9 +16,6 @@ import asyncio
 import os
 from pathlib import Path
 
-from eap_core.mcp import McpToolRegistry
-from eap_core.mcp.server import run_stdio
-
 from duck import open_in_memory
 from schema import parse_schema
 from tools import describe_table, list_tables, query_sql
@@ -26,19 +23,26 @@ from tools.describe_table import _bind as _bind_describe
 from tools.list_tables import _bind as _bind_list
 from tools.query_sql import _bind as _bind_query
 
+from eap_core.mcp import McpToolRegistry
+from eap_core.mcp.server import run_stdio
+
 REGISTRY = McpToolRegistry()
 
 
 def _resolve_paths() -> tuple[Path, Path]:
     here = Path(__file__).resolve().parent
-    data_dir = Path(os.environ.get(
-        "SFCRM_DATA_DIR",
-        here.parent.parent / "samples" / "sfcrm",
-    )).resolve()
-    schema_csv = Path(os.environ.get(
-        "SFCRM_SCHEMA_CSV",
-        here.parent.parent / "samples" / "sfcrm_schema.csv",
-    )).resolve()
+    data_dir = Path(
+        os.environ.get(
+            "SFCRM_DATA_DIR",
+            here.parent.parent / "samples" / "sfcrm",
+        )
+    ).resolve()
+    schema_csv = Path(
+        os.environ.get(
+            "SFCRM_SCHEMA_CSV",
+            here.parent.parent / "samples" / "sfcrm_schema.csv",
+        )
+    ).resolve()
     return data_dir, schema_csv
 
 

@@ -26,7 +26,7 @@ import pytest
 AGENT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AGENT_DIR))
 
-from mcp_client_adapter import ServerHandle, build_tool_specs  # noqa: E402
+from mcp_client_adapter import ServerHandle, build_tool_specs
 
 
 class _StubResponse:
@@ -43,12 +43,8 @@ class _StubResponse:
 
 @pytest.mark.asyncio
 async def test_build_tool_specs_namespaces_each_tool_with_server_name():
-    h1 = ServerHandle(
-        name="bankdw", session=AsyncMock(), tool_names=["query_sql", "list_tables"]
-    )
-    h2 = ServerHandle(
-        name="sfcrm", session=AsyncMock(), tool_names=["query_sql"]
-    )
+    h1 = ServerHandle(name="bankdw", session=AsyncMock(), tool_names=["query_sql", "list_tables"])
+    h2 = ServerHandle(name="sfcrm", session=AsyncMock(), tool_names=["query_sql"])
     specs = build_tool_specs([h1, h2])
     names = sorted(s.name for s in specs)
     assert names == [
@@ -65,12 +61,8 @@ async def test_forwarder_invokes_correct_remote_tool_with_kwargs():
     the forwarder inside the loop - extract ``_build_one`` and pass
     ``remote_name`` as a parameter."""
     session = AsyncMock()
-    session.call_tool = AsyncMock(
-        return_value=_StubResponse(text=json.dumps({"row_count": 7}))
-    )
-    h = ServerHandle(
-        name="bankdw", session=session, tool_names=["query_sql", "list_tables"]
-    )
+    session.call_tool = AsyncMock(return_value=_StubResponse(text=json.dumps({"row_count": 7})))
+    h = ServerHandle(name="bankdw", session=session, tool_names=["query_sql", "list_tables"])
     specs = build_tool_specs([h])
 
     list_spec = next(s for s in specs if s.name == "bankdw__list_tables")
@@ -80,9 +72,7 @@ async def test_forwarder_invokes_correct_remote_tool_with_kwargs():
     session.call_tool.reset_mock()
     query_spec = next(s for s in specs if s.name == "bankdw__query_sql")
     result = await query_spec.fn(sql="SELECT 1", limit=10)
-    session.call_tool.assert_called_with(
-        "query_sql", {"sql": "SELECT 1", "limit": 10}
-    )
+    session.call_tool.assert_called_with("query_sql", {"sql": "SELECT 1", "limit": 10})
     assert result == {"row_count": 7}
 
 
@@ -109,9 +99,7 @@ async def test_forwarder_returns_raw_text_when_response_is_not_json():
     plain ``dict``/``list`` — those land as JSON.
     """
     session = AsyncMock()
-    session.call_tool = AsyncMock(
-        return_value=_StubResponse(text="this is plain text, not json")
-    )
+    session.call_tool = AsyncMock(return_value=_StubResponse(text="this is plain text, not json"))
     h = ServerHandle(name="x", session=session, tool_names=["t"])
     [spec] = build_tool_specs([h])
     result = await spec.fn()
@@ -121,9 +109,7 @@ async def test_forwarder_returns_raw_text_when_response_is_not_json():
 @pytest.mark.asyncio
 async def test_forwarder_returns_none_when_response_has_empty_content():
     session = AsyncMock()
-    session.call_tool = AsyncMock(
-        return_value=_StubResponse(text=None, has_content=False)
-    )
+    session.call_tool = AsyncMock(return_value=_StubResponse(text=None, has_content=False))
     h = ServerHandle(name="x", session=session, tool_names=["t"])
     [spec] = build_tool_specs([h])
     assert await spec.fn() is None

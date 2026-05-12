@@ -33,7 +33,12 @@ _con = None
 # and whitespace. PRAGMA is included so callers can run
 # `PRAGMA table_info(...)` style introspection.
 _READ_ONLY_FIRST_TOKENS = {
-    "select", "with", "describe", "show", "explain", "pragma",
+    "select",
+    "with",
+    "describe",
+    "show",
+    "explain",
+    "pragma",
 }
 
 # Block these mid-statement even if first token is allowed, to defend
@@ -105,7 +110,13 @@ def query_sql(
 
     # Wrap user SQL with an outer LIMIT so we don't materialize a
     # 100M-row result. limit+1 lets us detect truncation cheaply.
-    wrapped = f"SELECT * FROM ({sql}) AS _q LIMIT {limit + 1}"
+    # The user-supplied ``sql`` is interpolated here, but it has
+    # already passed the ``_is_read_only`` allow-list guard above —
+    # any value that would make this a real injection vector was
+    # rejected before reaching this line. DuckDB's ``execute`` also
+    # only runs the first statement, so trailing-semicolon attacks
+    # are blocked at the engine layer. S608 is a false positive here.
+    wrapped = f"SELECT * FROM ({sql}) AS _q LIMIT {limit + 1}"  # noqa: S608
     try:
         result = _con.execute(wrapped)
         columns = [d[0] for d in result.description]
