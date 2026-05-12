@@ -12,6 +12,7 @@ Public surface (the only names callers should import):
     from eap_core.mcp.client import (
         McpServerConfig,
         McpClientPool,
+        McpServerHandle,
         McpClientError,
         McpServerDisconnectedError,
         McpToolTimeoutError,
@@ -34,17 +35,16 @@ from eap_core.mcp.client.errors import (
     McpToolInvocationError,
     McpToolTimeoutError,
 )
+from eap_core.mcp.client.pool import McpClientPool, McpServerHandle
 
 __all__ = [
     "McpClientError",
+    "McpClientPool",
     "McpOutputSchemaError",
     "McpServerConfig",
     "McpServerDisconnectedError",
+    "McpServerHandle",
     "McpServerSpawnError",
     "McpToolInvocationError",
     "McpToolTimeoutError",
 ]
-
-# McpClientPool is added to __all__ in Task 3; left out here so the
-# T1 commit lints cleanly without forward-referencing types T3
-# introduces.

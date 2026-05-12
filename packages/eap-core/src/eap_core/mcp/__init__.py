@@ -1,5 +1,6 @@
 from eap_core.mcp.client import (
     McpClientError,
+    McpClientPool,
     McpServerConfig,
 )
 from eap_core.mcp.decorator import mcp_tool
@@ -17,6 +18,7 @@ from eap_core.mcp.types import MCPError, ToolSpec
 __all__ = [
     "MCPError",
     "McpClientError",
+    "McpClientPool",
     "McpServerConfig",
     "McpToolRegistry",
     "ToolSpec",
