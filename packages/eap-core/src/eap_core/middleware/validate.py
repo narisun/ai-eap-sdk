@@ -33,6 +33,14 @@ from eap_core.types import Context, Request, Response
 
 _FENCED_BLOCK_RE = re.compile(r"```(?:json)?\s*(.+?)```", re.DOTALL | re.IGNORECASE)
 
+# Upper bound on bracket-scan retries per start_char in extract_json
+# (v1.8.1 M1). When a candidate fails json.loads, the scanner advances
+# past it and tries again — this cap prevents pathological inputs from
+# DoS'ing the scanner. 32 is comfortably above any realistic LLM output
+# (which rarely contains more than a handful of brace tokens before the
+# actual JSON), but tight enough that a malicious input can't burn CPU.
+_MAX_CANDIDATE_ATTEMPTS = 32
+
 
 class OutputValidationMiddleware(PassthroughMiddleware):
     name = "output_validation"
@@ -76,7 +84,13 @@ class OutputValidationMiddleware(PassthroughMiddleware):
 
         Tries fenced triple-backtick json blocks first, then falls back
         to a bracket-counter scan that respects string + escape
-        boundaries.
+        boundaries. When a candidate fails ``json.loads``, the scanner
+        advances past the failed candidate's closing bracket and retries
+        — so a failed fenced block (containing garbage) or earlier
+        prose-embedded ``{...}`` token doesn't shadow valid JSON
+        further along (v1.8.1 M1). The retry loop is bounded at
+        ``_MAX_CANDIDATE_ATTEMPTS`` per bracket pair to prevent
+        pathological-input DoS.
         """
         # Try fenced ```json (or ```) block first
         fenced_match = _FENCED_BLOCK_RE.search(text)
@@ -87,37 +101,48 @@ class OutputValidationMiddleware(PassthroughMiddleware):
             except json.JSONDecodeError:
                 pass  # fall through to brace scan
 
-        # Bracket-counter scan respecting strings + escapes
+        # Bracket-counter scan that retries past failed candidates.
         for start_char, end_char in [("{", "}"), ("[", "]")]:
-            start = text.find(start_char)
-            if start == -1:
-                continue
-            depth = 0
-            in_string = False
-            escape = False
-            for i in range(start, len(text)):
-                c = text[i]
-                if escape:
-                    escape = False
-                    continue
-                if c == "\\":
-                    escape = True
-                    continue
-                if c == '"':
-                    in_string = not in_string
-                    continue
-                if in_string:
-                    continue
-                if c == start_char:
-                    depth += 1
-                elif c == end_char:
-                    depth -= 1
-                    if depth == 0:
-                        candidate = text[start : i + 1]
-                        try:
-                            return json.loads(candidate)
-                        except json.JSONDecodeError:
+            search_from = 0
+            for _ in range(_MAX_CANDIDATE_ATTEMPTS):
+                start = text.find(start_char, search_from)
+                if start == -1:
+                    break
+                depth = 0
+                in_string = False
+                escape = False
+                candidate_end = -1
+                for i in range(start, len(text)):
+                    c = text[i]
+                    if escape:
+                        escape = False
+                        continue
+                    if c == "\\":
+                        escape = True
+                        continue
+                    if c == '"':
+                        in_string = not in_string
+                        continue
+                    if in_string:
+                        continue
+                    if c == start_char:
+                        depth += 1
+                    elif c == end_char:
+                        depth -= 1
+                        if depth == 0:
+                            candidate_end = i
                             break
+                if candidate_end == -1:
+                    # Unmatched bracket from this start — no further
+                    # candidate for this start_char will parse either
+                    # (they'd be nested inside this unmatched run).
+                    break
+                try:
+                    return json.loads(text[start : candidate_end + 1])
+                except json.JSONDecodeError:
+                    # Advance past this failed candidate and retry.
+                    search_from = candidate_end + 1
+                    continue
 
         raise OutputValidationError(
             errors=[{"type": "json_extract", "msg": "no parseable JSON found in response text"}]

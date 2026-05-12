@@ -16,6 +16,62 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.8.1] — 2026-05-12 — Patch closing v1.8.0 review findings
+
+Same-day patch closing 4 findings from the v1.8.0 pre-prod review.
+No new features; pure correctness + docs.
+
+### Fixed
+
+- **M1 — `OutputValidationMiddleware(mode="extract_json")` retries past failed candidates.**
+  Previously, when a fenced ```` ```json ```` block contained
+  unparseable content, the bracket scanner started at that fenced
+  block's `{`, failed to parse, and gave up on the entire `{...}`
+  search. Valid JSON later in the text was missed. The scanner now
+  advances past each failed candidate (capped at 32 attempts to
+  prevent pathological-input DoS) and finds parseable JSON further
+  along.
+
+- **L1 — `ObservabilityMiddleware.on_stream_chunk` defensively handles
+  non-int usage values.** A misbehaving adapter that emits e.g.
+  `{"input_tokens": {"audio": 3}}` (violating the `dict[str, int]`
+  contract) previously would crash the stream with `TypeError`.
+  Pydantic normally rejects this at the type boundary, but the
+  runtime aggregator now also skips non-int values with a WARNING log
+  so the stream completes regardless of how the contract was
+  violated.
+
+### Documentation
+
+- **L2 — `examples/playground/tracing.py` docstring updated.** Stale
+  v1.7 wording about no `on_tool_call` hook corrected to reflect
+  v1.8.0's reality: the playground uses a registry wrapper because
+  it wants to capture every registered MCP tool invocation uniformly
+  at the registry layer (including direct `client.invoke_tool(...)`
+  calls), not because middleware lacks the hook.
+
+- **NIT-1 — `pipeline.py` documents tool-name aliasing as unsupported.**
+  Inline note in `MiddlewarePipeline.run_tool` Phase 3 comment
+  explaining why `tool_name` is immutable through the pipeline (re-
+  opening the laundering hole that Phase 3 closes). Alias resolution,
+  if needed, must happen BEFORE `_prepare_call_context` in
+  `EnterpriseLLM.invoke_tool`.
+
+### Backward compat
+
+Strict additive. No SDK API changes; behavior changes are bug fixes
+that surface valid JSON the v1.8.0 scanner missed.
+
+### Stats
+
+- 175 mypy source files (unchanged).
+- 789 bare tests pass, 1 skipped, 94 deselected (+5 new tests: 4 M1,
+  1 L1).
+- `ruff check`, `ruff format --check`, `bandit -ll`, and `pip-audit
+  --strict` all clean.
+
+---
+
 ## [1.8.0] — 2026-05-12 — Tool-call lifecycle + output validation modes + streaming usage
 
 Closes the largest deferred architectural item — middlewares can now

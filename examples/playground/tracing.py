@@ -1,9 +1,13 @@
 """Per-request tool-call tracing for the playground UI.
 
-The SDK's ``Middleware`` Protocol exposes only ``on_request``,
-``on_response``, ``on_stream_chunk`` and ``on_error`` — there is no
-``on_tool_call`` hook. We therefore capture tool invocations via a
-**registry wrapper**: ``install_trace`` monkey-patches the loaded
+We use a **registry wrapper** here rather than relying on middleware
+hooks because the playground wants to capture EVERY registered MCP
+tool invocation — including direct ``client.invoke_tool(...)`` calls
+that DO pass through the v1.8+ ``Middleware.on_tool_call`` hook AND
+implementation-internal registry calls that may not. The registry
+wrapper observes invocations at the registry layer, so it captures
+both middleware-mediated and direct invocations uniformly with a
+single capture seam. ``install_trace`` monkey-patches the loaded
 client's ``McpToolRegistry.invoke`` with a traced version that appends
 entries to a per-request list stored on a ``ContextVar``.
 

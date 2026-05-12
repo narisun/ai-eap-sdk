@@ -88,6 +88,60 @@ async def test_extract_json_raises_when_no_json_present() -> None:
         await _validate("extract_json", "just prose, no json")
 
 
+# extract_json — M1 scanner retry past failed candidates (v1.8.1)
+
+
+async def test_extract_json_recovers_when_fenced_block_contains_garbage() -> None:
+    """If a fenced block contains unparseable garbage, the scanner finds JSON later in the text."""
+    out = await _validate(
+        "extract_json",
+        '```json\n{garbage}\n```\nactual: {"name": "alice", "age": 30}',
+    )
+    assert out.payload.name == "alice"
+
+
+async def test_extract_json_recovers_past_multiple_failed_candidates() -> None:
+    """Multiple failed candidates -> scanner advances past each and finds valid JSON eventually."""
+    out = await _validate(
+        "extract_json",
+        '{not json} also {still not json} but here: {"name": "bob", "age": 40}',
+    )
+    assert out.payload.name == "bob"
+
+
+async def test_extract_json_caps_pathological_input() -> None:
+    """Pathological input doesn't DoS the scanner — bounded by _MAX_CANDIDATE_ATTEMPTS.
+
+    The cap is a finite bound, not a tight one — it just guarantees the
+    scanner halts on inputs with hundreds of garbage candidates. Reasonable
+    real inputs (a handful of failed candidates before valid JSON) sail
+    through. We use 20 garbage candidates here (well below the 32 cap) so
+    the valid trailing JSON is still found.
+    """
+    # 20 failed mini-candidates, then a valid one (within the 32 cap).
+    garbage = " ".join(["{nope}"] * 20)
+    out = await _validate(
+        "extract_json",
+        f'{garbage} {{"name": "carol", "age": 50}}',
+    )
+    assert out.payload.name == "carol"
+
+
+async def test_extract_json_cap_bounds_runaway_input() -> None:
+    """Truly pathological input (well past the cap) is rejected — no DoS.
+
+    With 100 garbage candidates and the cap at 32, the scanner gives
+    up before reaching the valid JSON at the end. The point: the
+    scanner halts in O(cap) iterations regardless of input size.
+    """
+    garbage = " ".join(["{nope}"] * 100)
+    with pytest.raises(OutputValidationError):
+        await _validate(
+            "extract_json",
+            f'{garbage} {{"name": "dan", "age": 99}}',
+        )
+
+
 # provider_native
 
 

@@ -8,10 +8,13 @@ so downstream consumers (eval, audit) get the data without depending on OTel.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from eap_core.middleware.base import PassthroughMiddleware
 from eap_core.types import Chunk, Context, Request, Response
+
+_LOG = logging.getLogger(__name__)
 
 # `_otel_trace` is annotated as Any so the optional opentelemetry-api
 # integration works regardless of whether the SDK ships py.typed markers
@@ -75,6 +78,21 @@ class ObservabilityMiddleware(PassthroughMiddleware):
         if chunk.usage:
             agg = ctx.metadata.setdefault("gen_ai.usage", {})
             for k, v in chunk.usage.items():
+                # Defensive: ``Chunk.usage`` is typed ``dict[str, int]``
+                # so pydantic normally rejects non-int values at the
+                # type boundary. A misbehaving custom adapter could
+                # still slip past (e.g. via ``model_construct``), so
+                # skip non-int values with a WARNING rather than
+                # crashing the stream (v1.8.1 L1).
+                if not isinstance(v, int):
+                    _LOG.warning(
+                        "ObservabilityMiddleware: ignoring non-int value for "
+                        "gen_ai.usage[%r]=%r (adapter contract violation; "
+                        "expected dict[str, int])",
+                        k,
+                        v,
+                    )
+                    continue
                 agg[k] = agg.get(k, 0) + v
         return chunk
 

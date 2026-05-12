@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -71,6 +72,34 @@ async def test_observability_aggregator_sums_per_chunk_usage() -> None:
     )
     # Sums per key across all chunks
     assert ctx.metadata["gen_ai.usage"] == {"input_tokens": 5, "output_tokens": 6}
+
+
+async def test_observability_skips_non_int_usage_values_with_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Non-int values in chunk.usage are skipped with a WARNING, don't crash the stream.
+
+    Belt-and-suspenders defense (v1.8.1 L1). Pydantic normally rejects
+    non-int values in ``Chunk.usage`` at the type boundary, so this
+    code path is unreachable via the standard constructor — we use
+    ``model_construct`` to bypass validation and verify the runtime
+    aggregator behaves defensively if some future adapter slips past
+    pydantic (e.g. by mutating ``chunk.usage`` after construction).
+    """
+    mw = ObservabilityMiddleware()
+    ctx = Context(request_id="r")
+    # Bypass pydantic validation via model_construct so we can inject
+    # a contract-violating dict-as-value.
+    bad_chunk = Chunk.model_construct(
+        index=0,
+        text="hi",
+        usage={"input_tokens": 5, "audio_tokens": {"channel": 1}},
+    )
+    with caplog.at_level(logging.WARNING, logger="eap_core.middleware.observability"):
+        await mw.on_stream_chunk(bad_chunk, ctx)
+    # Valid key aggregated; bad key skipped (no TypeError crash).
+    assert ctx.metadata["gen_ai.usage"] == {"input_tokens": 5}
+    assert any("audio_tokens" in rec.message and "non-int" in rec.message for rec in caplog.records)
 
 
 async def test_observability_on_stream_end_lands_span_attrs_from_aggregated_usage() -> None:

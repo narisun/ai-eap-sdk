@@ -159,6 +159,17 @@ class MiddlewarePipeline:
                 # ``ctx.metadata['policy.*']`` during Phase 2 sees its
                 # mutation OVERWRITTEN here, so the re-authorization in
                 # Phase 4 evaluates against the SDK-controlled inputs.
+                #
+                # Tool-name aliasing is NOT supported in v1.8 — the
+                # ``tool_name`` flowing through Phases 2-5 is the
+                # ORIGINAL value passed to ``invoke_tool()``. Letting
+                # middleware rewrite the tool name would re-open the
+                # laundering attack this re-stamp closes (an attacker
+                # could rewrite ``"transfer_funds"`` → ``"lookup_account"``
+                # via the alias to bypass policy). If alias resolution
+                # becomes a real need, add it as an explicit pre-pipeline
+                # step in ``EnterpriseLLM.invoke_tool``, BEFORE
+                # ``_prepare_call_context`` — not as a middleware mutation.
                 ctx.metadata["policy.action"] = f"tool:{tool_name}"
                 ctx.metadata["policy.resource"] = tool_name
 
