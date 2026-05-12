@@ -108,14 +108,20 @@ def _purge_sibling_modules(agent_dir: Path) -> None:
             continue
         mod = sys.modules.get(mod_name)
         mod_file = getattr(mod, "__file__", None) or getattr(mod, "__path__", None)
-        # ``__path__`` is a list-like for packages — take its first entry.
-        if isinstance(mod_file, list):
-            mod_file = mod_file[0] if mod_file else None
-        if not mod_file:
+        # ``__path__`` is a list-like for regular packages — take its
+        # first entry. Namespace packages expose ``_NamespacePath``
+        # which is iterable but NOT a ``list``; coerce defensively and
+        # bail out if nothing string-like comes out the other side.
+        if mod_file is not None and not isinstance(mod_file, (str, bytes)):
+            try:
+                mod_file = next(iter(mod_file), None)
+            except TypeError:
+                mod_file = None
+        if not isinstance(mod_file, (str, bytes)):
             continue
         try:
             mod_path = Path(mod_file).resolve()
-        except (OSError, ValueError):
+        except (OSError, ValueError, TypeError):
             continue
         try:
             rel = mod_path.relative_to(sdk_root)

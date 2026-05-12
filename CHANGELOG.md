@@ -16,6 +16,127 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.6.0] — 2026-05-11 — Playground web UI for example agents
+
+Ships `examples/playground/` — a browser-based UI for interacting
+with the in-tree example agents. No SDK behavior changes; this
+release is purely additive (new example project + one targeted bug
+fix in the playground's own module-cache helper).
+
+### Added
+
+- **`examples/playground/` — FastAPI + vanilla-JS single-page UI.**
+  Auto-discovers every `examples/*/agent.py` that exports
+  `build_client()` and exposes them in a dropdown. Backend is
+  ~200 lines (`server.py`) + a tracing helper (`tracing.py`);
+  frontend is one HTML file + one JS file + one CSS file — no
+  framework, didactic by design.
+- **Auto-discovery of example agents.** `_discover_agents()` scans
+  the `examples/` directory once on first reference, does a cheap
+  substring grep for `def build_client` before importing (avoids
+  importing every example at startup), then lazy-loads on first
+  use. Imports run via `importlib.util.spec_from_file_location` so
+  each agent's sibling imports (`from tools import …`) resolve
+  against its own directory.
+- **Tool-call trace panel.** The differentiating feature vs a
+  generic chat UI: each chat message returns a per-request trace
+  showing every tool invocation the agent made — name, args,
+  result, duration — plus middleware entry/exit ticks. The SDK's
+  `Middleware` Protocol doesn't expose an `on_tool_call` hook so
+  we capture via a registry wrapper: `install_trace()` monkey-
+  patches the loaded client's `McpToolRegistry.invoke` with a
+  traced version that appends entries to a `ContextVar`-backed
+  per-request list. The trace is async-safe (each `generate_text`
+  task gets its own buffer).
+- **Manual tool-invocation form.** Sidebar form lets users invoke
+  any tool on the selected agent directly — bypasses the LLM,
+  goes straight through `EnterpriseLLM.invoke_tool` so the full
+  middleware pipeline (policy gates, observability spans, identity
+  plumbing) still fires. Useful for testing tool wiring without
+  paying for LLM tokens.
+- **Runs without LLM credentials.** Each example agent's
+  `responses.yaml` plus `provider="local"` runtime means the
+  playground works out-of-the-box on a fresh checkout — no AWS /
+  GCP / OpenAI configuration needed to evaluate the SDK. Tool
+  invocations are real (they exercise actual SDK code paths); LLM
+  responses are canned.
+- **Three-endpoint JSON API.** `GET /api/agents` (list +
+  per-agent tool names), `POST /api/agents/{name}/chat` (message
+  → `{text, trace}`), `POST /api/agents/{name}/tools/{tool}`
+  (direct tool invocation → `{result}`). Frontend is a thin layer
+  over these; users can script against the API directly too.
+- **Integration test pattern: `TestClient` against the FastAPI
+  app.** `examples/playground/tests_playground/test_api.py` spins
+  up the app in-process via `fastapi.testclient.TestClient` —
+  no real uvicorn process, no network, no port allocation — and
+  asserts discovery, chat shape, 404 handling, and direct tool
+  invocation. 4 tests, ~1s wall time. Lives in `tests_playground/`
+  (the v1.4 convention) so the SDK's bare-tests gauntlet doesn't
+  pick it up — playground tests need FastAPI + httpx, which the
+  SDK doesn't list as a base-test dep.
+
+### Fixed
+
+- **`_purge_sibling_modules` TypeError on namespace-package
+  attributes.** T2's frontend-integration smoke test in an
+  `--all-extras` environment reproduced a 500 on every chat
+  request: `_purge_sibling_modules` iterates `sys.modules` to
+  evict cross-example top-level packages, and accesses each
+  module's `__file__` / `__path__`. For namespace packages
+  (`google`, `opentelemetry`, …) `__path__` is a `_NamespacePath`
+  instance — iterable but **not** a `list` subclass, and
+  `Path(_NamespacePath(...))` raises `TypeError: expected str,
+  bytes or os.PathLike object`. The original code only handled
+  the `list` case and only caught `OSError`/`ValueError` around
+  the `Path()` call. Fix: coerce non-string non-bytes path-likes
+  through `next(iter(...), None)` (works for both `list` and
+  `_NamespacePath`), require the result to be `str`/`bytes`
+  before passing to `Path()`, and widen the catch to include
+  `TypeError` belt-and-braces. The playground's smoke
+  reproducer (POST /api/agents/transactional-agent/chat after
+  `uv sync --extra all`) now returns 200.
+
+### Stats (v1.6.0 reality, fresh `.mypy_cache` + `__pycache__`)
+
+- **695 non-extras tests passing** (unchanged from v1.5.1 — the
+  playground tests live in their own directory under
+  `examples/playground/tests_playground/` and require the
+  playground extras, so the bare gauntlet doesn't collect them).
+- **4 playground integration tests** in
+  `examples/playground/tests_playground/test_api.py` — runs via
+  `uv run --with eap-core --with fastapi --with uvicorn --with
+  httpx pytest examples/playground/tests_playground -q`. Pattern:
+  `fastapi.testclient.TestClient` against the in-process app —
+  no real uvicorn, no network port allocation.
+- 19 Cedar extras tests passing (unchanged).
+- 16 cloud-live tests collected, all skipping cleanly without
+  creds (unchanged).
+- 155 source files type-checked, no mypy issues (unchanged from
+  v1.5.1 — no SDK source files added or modified).
+- All four primary gauntlets green from repo root with fresh
+  caches: ruff, ruff format, mypy, pytest non-extras-non-cloud-
+  non-cloud_live.
+
+### Backward compat
+
+Strict additive. Zero SDK changes — `packages/eap-core/` and
+`packages/eap-cli/` source trees only see the version bump.
+The bug fix is in the playground project itself, not in any SDK
+module. Users on v1.5.1 can upgrade by bumping the workspace
+pin; nothing in the public SDK surface moved.
+
+### Scope (deferred to a future minor)
+
+- Streaming responses (SSE/WebSocket). Plan is `provider="local"`
+  semantics first, then SSE once the runtime contract for streamed
+  chunks settles.
+- Auth on the playground itself (localhost-only by design).
+- Multi-turn conversation context (each message is independent;
+  agents that need state can wire their own `MemoryStore`).
+- Persistence of chat history beyond the in-memory page.
+
+---
+
 ## [1.5.1] — 2026-05-12 — Patch release
 
 Closes the three Medium + two Low + one Nit findings from the
