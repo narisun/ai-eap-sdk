@@ -60,6 +60,40 @@ class ObservabilityMiddleware(PassthroughMiddleware):
             ctx.span = None
         return resp
 
+    async def on_stream_end(self, ctx: Context) -> None:
+        """Close ctx.span on the streaming path.
+
+        The unary path closes via ``on_response`` (success) or
+        ``on_error`` (failure). The streaming success branch has neither
+        hook — without this override, ``ctx.span`` leaks at the end of
+        every successful streamed call, the BatchSpanProcessor drops the
+        span, and the trace is invisible in the exporter.
+
+        Idempotent: ``on_error`` may have already closed and cleared
+        ``ctx.span`` on the failure branch (which also triggers
+        ``on_stream_end`` via the v1.6.2 pipeline ``finally`` block).
+        The ``if ctx.span is None: return`` guard makes the double-fire
+        safe.
+
+        Mirrors the close logic of ``on_response`` for symmetry: if
+        streaming usage has been accumulated into
+        ``ctx.metadata["gen_ai.usage"]`` by a future streaming-usage
+        aggregator, those attributes are stamped on the span before
+        ``end()``. Today no streaming terminal populates that key, so
+        in practice this method just calls ``span.end()`` and clears
+        the reference — but the usage path is in place for v1.8+ work.
+
+        Closes v1.6.2 follow-up #2 (observability stream-span leak).
+        """
+        if ctx.span is None:
+            return
+        usage = ctx.metadata.get("gen_ai.usage")
+        if isinstance(usage, dict):
+            for k, v in usage.items():
+                ctx.span.set_attribute(f"gen_ai.usage.{k}", v)
+        ctx.span.end()
+        ctx.span = None
+
     async def on_error(self, exc: Exception, ctx: Context) -> None:
         """End any started span, recording the exception and ERROR status.
 
