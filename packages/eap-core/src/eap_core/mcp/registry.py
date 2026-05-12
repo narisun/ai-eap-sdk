@@ -79,7 +79,7 @@ def default_registry() -> McpToolRegistry:
     import warnings
 
     warnings.warn(
-        "default_registry() is deprecated and will be removed in v0.6.0. "
+        "default_registry() is deprecated and will be removed in v2.0. "
         "Construct an McpToolRegistry() explicitly and pass it to "
         "EnterpriseLLM(tool_registry=...).",
         category=DeprecationWarning,

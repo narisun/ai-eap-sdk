@@ -16,6 +16,166 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.6.2] — 2026-05-12 — Patch release closing v1.6.1 external code-review findings
+
+Closes 1 docs-truth + 1 stale-message + 4 code findings from the
+v1.6.1 external code review (P0-1, P0-2, P0-3, P0-8, P1-7, P2-11).
+No SDK behavior changes other than the new streaming lifecycle hook
+and the registry's broken-provider isolation; existing users see
+strict additive behavior.
+
+### Changed
+
+- **P0-1: README cloud-adapter status aligned with implementation.**
+  The status line near the bottom of `README.md` previously read
+  "Production-ready. Full integrations with AWS Bedrock AgentCore
+  (11 services) and GCP Vertex Agent Engine." That overstated the
+  default install: cloud real-call paths are gated behind
+  `EAP_ENABLE_REAL_RUNTIMES=1` and exercised by the `cloud_live`
+  test marker, with shape-correct stubs by default. The new status
+  line says exactly that — production-ready core SDK (middleware
+  pipeline, identity, MCP tooling, policy, PII, observability, CLI)
+  and points readers at `packages/eap-core/src/eap_core/runtimes/bedrock.py`
+  and `vertex.py` for the gate semantics. No code change.
+
+### Fixed
+
+- **P0-2: `SyncProxy.generate_text` event-loop guard.**
+  Calling `client.sync.generate_text(...)` (or any other sync
+  helper on `SyncProxy`) from inside an active event loop —
+  a Jupyter notebook, a FastAPI handler that forgot `await`,
+  or an `async def` test — previously surfaced the cryptic
+  `RuntimeError: asyncio.run() cannot be called from a running
+  event loop` from deep inside `asyncio.run`. `SyncProxy` now
+  detects the running-loop case with `asyncio.get_running_loop()`
+  and raises an actionable `RuntimeError` pointing the caller at
+  the async API: "Called SyncProxy.<method> from inside an active
+  event loop. Use `await client.<method>(...)` instead, or call
+  the sync helper from a synchronous context." Regression test:
+  `packages/eap-core/tests/test_sync_proxy.py::test_sync_proxy_inside_running_loop_raises_actionable_error`.
+
+- **P0-3: Streaming middleware lifecycle: `on_stream_end`.**
+  The `Middleware` Protocol and `PassthroughMiddleware` gain
+  `on_stream_end(ctx) -> None`. `MiddlewarePipeline.run_stream`
+  fires it on every middleware right-to-left after the chunk
+  iteration completes (mirroring `on_response` on the
+  non-streaming path), inside a `finally` block so it runs on
+  both normal stream completion **and** terminal exception.
+  Errors raised by an `on_stream_end` body are logged at WARNING
+  and swallowed; they do not mask the primary exception. Strict
+  additive on the Protocol: `PassthroughMiddleware.on_stream_end`
+  defaults to a no-op, so existing middlewares need no change.
+  This is the prerequisite hook that lets audit-close, span-close,
+  PII vault flush, and trajectory write land on the streaming
+  path — none of which had a place to land before. Regression
+  tests:
+  `packages/eap-core/tests/test_pipeline.py::test_on_stream_end_fires_after_normal_completion`
+  and `::test_on_stream_end_fires_inside_finally_on_exception`.
+
+- **P0-8: Stale `default_registry()` deprecation message.**
+  `mcp.registry.default_registry()` was emitting a
+  `DeprecationWarning` whose body said "will be removed in v0.6.0"
+  — a version that shipped almost a year before v1.6.1. The
+  recommended replacement (construct an explicit
+  `McpToolRegistry()` and pass to `EnterpriseLLM(tool_registry=...)`)
+  is unchanged; only the removal-version pointer is corrected
+  to "v2.0". The existing
+  `tests/test_mcp_registry.py::test_default_registry_emits_deprecation_warning`
+  checks the category only, so no test update was needed.
+
+- **P1-7: `AdapterRegistry` lazy entry-point loading.**
+  `AdapterRegistry.from_entry_points` previously called `.load()`
+  on every advertised `eap_core.runtimes` entry point eagerly at
+  registry construction. A user with the `[aws]` extra installed
+  but a broken/missing optional dependency for `[gcp]` would have
+  the Vertex provider's `.load()` raise `ImportError` during
+  registry construction and break the whole registry — including
+  paths that only needed `local` or `bedrock`. Loading is now
+  deferred: the registry records `(name, entry_point)` at
+  construction time and calls `.load()` lazily on first
+  `registry.get(name)`. A failing provider raises a clear
+  `AdapterLoadError` from `.get()` that names the offending
+  provider and the original exception; healthy providers continue
+  to load. A new public `AdapterRegistry.register_entry_point(name, ep)`
+  method exposes the lazy pattern to third-party packages that
+  want to advertise additional adapters without forcing eager
+  resolution. Handles both stdlib `importlib.metadata` and the
+  `importlib_metadata` backport (3.11+ uses stdlib; older Pythons
+  fall back to the backport's `EntryPoint` shape). Regression
+  tests:
+  `packages/eap-core/tests/test_runtimes_registry.py::test_broken_entry_point_does_not_break_registry`,
+  `::test_register_entry_point_lazy_resolution`, and
+  `::test_register_entry_point_failure_raises_adapter_load_error`.
+
+- **P2-11: Dockerfile templates use `ARG EAP_CORE_SOURCE`.**
+  All three generated Dockerfile templates (default, AgentCore,
+  Vertex) now declare `ARG EAP_CORE_VERSION=1.6.2` and
+  `ARG EAP_CORE_SOURCE` defaulting to a git-pinned URL against
+  the public `narisun/ai-eap-sdk` repo at
+  `@v${EAP_CORE_VERSION}#subdirectory=packages/eap-core`. The
+  install line in each template uses that ARG so out-of-box
+  `docker build` succeeds without requiring a published PyPI
+  artifact, and users on internal package registries override
+  with `--build-arg EAP_CORE_SOURCE=...`. **Caveat for v1.7
+  maintainers:** `EAP_CORE_VERSION` default is hardcoded to
+  `1.6.2` in the templates — bump it in the equivalent T5 task
+  when v1.7 ships. Regression tests:
+  `packages/eap-cli/tests/test_deploy_dockerfile_templates.py::test_default_dockerfile_has_eap_core_source_arg`,
+  `::test_agentcore_dockerfile_has_eap_core_source_arg`, and
+  `::test_vertex_dockerfile_has_eap_core_source_arg`.
+
+### Follow-up (v1.7 backlog)
+
+The new `on_stream_end` hook (P0-3) is the prerequisite for two
+real bugs that v1.7 will fix:
+
+- **PII buffer leak on mid-stream exception.**
+  `packages/eap-core/src/eap_core/middleware/pii.py` keeps a
+  per-context streaming buffer at
+  `ctx.metadata["pii._stream_buffer"]`. Today the buffer flushes
+  only when a chunk arrives with `finish_reason` set; if upstream
+  raises mid-stream the buffer leaks held text. v1.7 will override
+  `on_stream_end` to flush the buffer on both normal completion
+  and terminal exception.
+- **Observability span leak on streaming path.**
+  `packages/eap-core/src/eap_core/middleware/observability.py`
+  opens `ctx.span` on `on_request` but never closes it on the
+  streaming path (only on `on_error` if it fires). Normal
+  streaming completion therefore leaks the span. v1.7 will
+  override `on_stream_end` to close the span symmetrically.
+
+Both fixes are pure middleware-side overrides — the v1.6.2
+lifecycle hook is the only enabling change needed in the
+pipeline.
+
+### Backward compat
+
+- Strict additive on the `Middleware` Protocol: `on_stream_end`
+  has a no-op default on `PassthroughMiddleware`, so existing
+  middlewares continue to work without modification.
+- `AdapterRegistry.register()` for direct class registration is
+  unchanged; only entry-point discovery is now lazy.
+- Dockerfile template change is generation-time only; previously
+  generated artifacts are unaffected.
+- The corrected deprecation-message removal-version is purely
+  textual; the warning category and trigger are unchanged.
+
+### Stats (v1.6.2 reality, fresh `.mypy_cache` + `__pycache__`)
+
+- **706 non-extras tests passing** (was 695 in v1.6.1; +3
+  sync-proxy P0-2, +2 stream-lifecycle P0-3, +3 registry-lazy
+  P1-7, +3 dockerfile-template P2-11).
+- 8 playground integration tests (unchanged from v1.6.1).
+- 15 MCP extras tests (unchanged).
+- 47 MCP-examples tests (cross-domain + bankdw + sfcrm,
+  unchanged).
+- **161 source files mypy-checked, no issues** (was 158 in
+  v1.6.1 source-side; +1 sync helper, +1 lifecycle hook helper,
+  +1 lazy-registry helper).
+- ruff + ruff format clean across 210 files.
+
+---
+
 ## [1.6.1] — 2026-05-12 — Patch release closing v1.6.0 pre-prod review findings
 
 Same-day patch release addressing all ten findings from the v1.6.0

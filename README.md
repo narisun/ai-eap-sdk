@@ -597,7 +597,7 @@ ai-eap-sdk/
 └── pyproject.toml                           # uv workspace root
 ```
 
-**Status:** Production-ready. Full integrations with AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine.
+**Status:** Production-ready core SDK (middleware pipeline, identity, MCP tooling, policy, PII, observability, CLI). Cloud runtime adapters for AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine are gated behind `EAP_ENABLE_REAL_RUNTIMES=1`; their real-call paths are exercised by the `cloud_live` test marker and have shape-correct stubs by default. See `packages/eap-core/src/eap_core/runtimes/bedrock.py` and `vertex.py` for the gate semantics.
 
 ---
 
