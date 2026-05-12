@@ -290,3 +290,49 @@ async def test_bearer_token_auth_attaches_header_end_to_end(
         # wrote it. Header names are case-insensitive on the Starlette
         # side; we compare on the lowercased key.
         assert result == {"authorization": "Bearer fake-token"}
+
+
+async def test_bearer_token_auth_async_identity_end_to_end(
+    in_process_mcp_server: str,
+) -> None:
+    """End-to-end: an async ``get_token`` (NHI shape) survives the
+    full transport stack.
+
+    ``NonHumanIdentity.get_token`` is ``async def`` — calling it
+    returns a coroutine. Under ``httpx.AsyncClient`` (used internally
+    by ``streamable_http_client``) ``async_auth_flow`` detects the
+    coroutine via ``inspect.iscoroutine`` and ``await``s it before
+    formatting the header. Without that fix the header would be the
+    literal text ``"Bearer <coroutine object ... at 0x...>"`` — the
+    bug T3 flagged and T4 closed before v1.3.0 shipped.
+
+    This test exercises the load-bearing path with a minimal async
+    stub identity rather than spinning up a real
+    ``NonHumanIdentity`` + ``LocalIdPStub`` chain (which would require
+    a JWT roundtrip and is the responsibility of the identity layer's
+    own tests).
+    """
+
+    class _AsyncStubIdentity:
+        async def get_token(self, *, audience: str | None = None, scope: str = "") -> str:
+            return "nhi-async-token"
+
+    auth = BearerTokenAuth(
+        _AsyncStubIdentity(),
+        audience="mcp.example.com",
+        scope="read",
+    )
+    cfg = McpServerConfig(
+        name="local-http",
+        transport="http",
+        url=in_process_mcp_server,
+        auth=auth,
+    )
+    async with McpClientPool([cfg]) as pool:
+        registry = pool.build_tool_registry()
+        result = await registry.invoke("local-http__echo_authorization", {})
+        # If the coroutine slipped through unawaited, the header
+        # would contain ``<coroutine object ... at 0x...>`` instead
+        # of the resolved token string — this exact-match assertion
+        # catches that regression cleanly.
+        assert result == {"authorization": "Bearer nhi-async-token"}

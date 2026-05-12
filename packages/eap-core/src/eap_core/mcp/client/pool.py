@@ -5,13 +5,22 @@ server, opens an ``mcp.ClientSession`` to each, and returns once every
 session has been initialised. Exiting it tears every session down cleanly
 through the single ``AsyncExitStack`` it owns.
 
-**Two transports.** :class:`McpServerConfig.transport` selects ``"stdio"``
-(spawn a subprocess and talk over its stdin/stdout) or ``"http"`` (open a
-Streamable-HTTP session to a remote MCP endpoint). The pool's
-:meth:`_spawn` method dispatches on the field; the rest of the pool
-(lifecycle, reconnect, health-check, iteration) is transport-agnostic
-because :class:`McpClientSession` wraps the upstream ``mcp.ClientSession``
-via duck typing, and the upstream class is identical across transports.
+**Four transports.** :class:`McpServerConfig.transport` selects one of
+``"stdio"`` (spawn a subprocess and talk over its stdin/stdout),
+``"http"`` (open a Streamable-HTTP session — the modern MCP HTTP
+protocol), ``"sse"`` (open a legacy SSE session — the older HTTP
+protocol some servers still expose), or ``"websocket"`` (open an
+MCP-over-WebSocket session). The pool's :meth:`_spawn` method
+dispatches on the field; the rest of the pool (lifecycle, reconnect,
+health-check, iteration) is transport-agnostic because
+:class:`McpClientSession` wraps the upstream ``mcp.ClientSession`` via
+duck typing, and the upstream class is identical across transports.
+WebSocket support is URL-only (upstream ``websocket_client`` takes no
+headers/auth parameters — see ``_spawn_websocket`` for the
+limitation note); HTTP and SSE accept ``headers`` and ``auth``,
+including the ``BearerTokenAuth`` adapter that wraps an EAP-Core
+identity (``NonHumanIdentity`` / ``VertexAgentIdentityToken`` / etc.)
+as an ``httpx.Auth`` flow.
 
 Per-server state lives in :class:`McpServerHandle`. The pool stores them by
 name; :meth:`McpClientPool.session` returns the current handle's

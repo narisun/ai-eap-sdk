@@ -16,6 +16,114 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.3.0] — 2026-05-12 — Transport completeness for the MCP client
+
+**EAP-Core v1.3 — the four-transport MCP client.** v1.2 added
+Streamable-HTTP alongside stdio; v1.3 closes the set with the two
+remaining wire formats — legacy SSE and WebSocket — and wires the
+existing EAP-Core identity layer into HTTP/SSE authentication via a
+new `BearerTokenAuth` adapter. After v1.3 an agent can talk to any
+of the four upstream MCP transports (stdio, http, sse, websocket)
+and plug a `NonHumanIdentity` (or any `IdentityToken` Protocol
+implementation) directly into an `McpServerConfig.auth` field
+without writing a custom `httpx.Auth` subclass.
+
+### Added
+
+- **Legacy SSE transport (`transport="sse"`).** Extends
+  `McpServerConfig.transport: Literal["stdio", "http"]` to
+  `Literal["stdio", "http", "sse", "websocket"]`. The pool's
+  `_spawn` dispatcher gains an `_spawn_sse` branch that calls
+  the upstream `mcp.client.sse.sse_client(url, headers, auth,
+  timeout)`. Unlike `streamable_http_client`, SSE keeps the
+  original-style `headers`/`auth` kwargs so the existing
+  `McpServerConfig.headers` and `McpServerConfig.auth` fields
+  pass through directly. The transport context yields a 2-tuple
+  `(read, write)` — handled by the existing `arity=2` unpack
+  path. Integration test in
+  `packages/eap-core/tests/extras/test_mcp_client_sse_integration.py`
+  spins up an in-process FastMCP SSE server via uvicorn and
+  exercises the full round-trip.
+- **WebSocket transport (`transport="websocket"`).** The pool's
+  `_spawn_websocket` branch calls
+  `mcp.client.websocket.websocket_client(url)` and returns a
+  2-tuple `(read, write)`. Integration test in
+  `packages/eap-core/tests/extras/test_mcp_client_websocket_integration.py`
+  validates the path end-to-end against an in-process FastMCP
+  WebSocket server.
+- **`BearerTokenAuth`: httpx.Auth adapter for the IdentityToken
+  Protocol.** New module
+  `packages/eap-core/src/eap_core/mcp/client/auth.py`. Wraps any
+  object exposing `get_token(audience, scope)` (the EAP-Core
+  identity Protocol — `NonHumanIdentity`,
+  `VertexAgentIdentityToken`, future SPIFFE/JWT identities) as
+  an `httpx.Auth` flow that attaches
+  `Authorization: Bearer <token>` to every outgoing request.
+  Subclasses `httpx.Auth` directly (verified via Step 3.2:
+  `httpx.AsyncClient._build_auth` uses `isinstance(auth, Auth)`,
+  so duck-typing is rejected). Token refresh and caching remain
+  the identity layer's responsibility — `BearerTokenAuth` is a
+  thin formatting adapter. Exported from
+  `eap_core.mcp.client` and re-exported from `eap_core.mcp`.
+  **Both sync and async identity shapes are supported from day
+  one:** `NonHumanIdentity.get_token` is `async def`, and
+  `async_auth_flow` detects the returned coroutine with
+  `inspect.iscoroutine` and awaits it before formatting. This is
+  the load-bearing path because both `streamable_http_client`
+  and `sse_client` use `httpx.AsyncClient` internally.
+  `sync_auth_flow` raises a clear `RuntimeError` for async
+  identities (directing the caller to async client or
+  pre-resolution) rather than silently formatting
+  `"Bearer <coroutine object>"`.
+
+### Changed
+
+- **`pool.py` module docstring updated for four transports.**
+  Previously read "Two transports. ... selects `'stdio'` or
+  `'http'`"; now describes all four (stdio / http / sse /
+  websocket), notes WebSocket's URL-only limitation, and
+  mentions `BearerTokenAuth` as the HTTP/SSE identity seam.
+
+### Caveats
+
+- **WebSocket auth is URL-only.** Upstream
+  `mcp.client.websocket.websocket_client` accepts only a URL —
+  no `headers`, no `auth` kwargs. Until upstream adds those
+  parameters, agents authenticating to WebSocket MCP servers
+  must encode credentials in the URL (query string or path
+  segment). The `McpServerConfig` validator rejects
+  `headers`/`auth` for `transport="websocket"` so the limitation
+  is surfaced loudly at config-load time rather than silently
+  dropping the values. Native WebSocket auth lands in v1.4 when
+  upstream catches up.
+
+### Stats
+
+Measured from fresh `.mypy_cache` and `__pycache__` (the v1.2.1
+process discipline — see the "Process note" in [1.2.1] above for
+why this matters):
+
+- **679 non-extras tests passing** (+17 vs v1.2.1's 662 — new SSE +
+  WebSocket config validators, dispatch-routing tests, the seven
+  `BearerTokenAuth` unit tests, and the three v1.3 async-identity
+  guards in `test_mcp_client_auth.py`).
+- **34 extras tests now passing** (was 23 in v1.2.1): 15 mcp + 5
+  OTel + 5 HTTP integration (added the BearerTokenAuth header
+  end-to-end and async-identity end-to-end) + 3 SSE integration +
+  3 WebSocket integration + 3 across the other extras suites.
+  Actual counts per file:
+  - `test_mcp_server.py`: 15
+  - `test_mcp_client_session_otel.py`: 5
+  - `test_mcp_client_http_integration.py`: 5 (+2 vs v1.2.1)
+  - `test_mcp_client_sse_integration.py`: 3 (new in v1.3)
+  - `test_mcp_client_websocket_integration.py`: 3 (new in v1.3)
+- **47 example tests passing** (19 bankdw + 19 sfcrm + 9
+  cross-domain — unchanged).
+- ruff / format / mypy / pytest all green from a freshly-deleted
+  `.mypy_cache` and `__pycache__` sweep.
+
+---
+
 ## [1.2.1] — 2026-05-12 — Patch release
 
 Patch closing the two Criticals and one High from the v1.2.0 pre-prod

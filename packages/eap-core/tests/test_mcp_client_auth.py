@@ -152,3 +152,90 @@ def test_default_audience_and_scope() -> None:
     next(auth.sync_auth_flow(request))
     assert request.headers["Authorization"] == "Bearer default-tok"
     assert identity.calls == [(None, "")]
+
+
+class _AsyncStubIdentity:
+    """Async-shape identity — mirrors ``NonHumanIdentity.get_token``.
+
+    The ``IdentityToken`` Protocol documents two valid shapes: sync
+    (Vertex) and async (NHI). This stub stands in for the async shape
+    so the BearerTokenAuth async-identity path can be exercised in
+    unit tests without depending on a real IdP round-trip.
+    """
+
+    def __init__(self, token: str = "async-fake-token") -> None:
+        self.token = token
+        self.calls: list[tuple[str | None, str]] = []
+
+    async def get_token(self, *, audience: str | None = None, scope: str = "") -> str:
+        self.calls.append((audience, scope))
+        return self.token
+
+
+def test_async_auth_flow_awaits_coroutine_returning_identity() -> None:
+    """Async flow awaits async ``get_token``.
+
+    Regression guard for the bug T3 flagged: ``NonHumanIdentity``'s
+    ``get_token`` is ``async def`` so calling it returns a coroutine.
+    Without the ``await``, the header would become ``"Bearer
+    <coroutine object NonHumanIdentity.get_token at 0x...>"`` and the
+    server would reject it. The fix lives in
+    ``BearerTokenAuth.async_auth_flow``: detect the coroutine with
+    ``inspect.iscoroutine`` and ``await`` it before formatting.
+    """
+    identity = _AsyncStubIdentity(token="nhi-token")
+    auth = BearerTokenAuth(identity, audience="mcp.x.com", scope="read")
+    request = Mock(headers={})
+
+    async def _drive() -> None:
+        flow = auth.async_auth_flow(request)
+        await flow.__anext__()
+
+    asyncio.run(_drive())
+    assert request.headers["Authorization"] == "Bearer nhi-token"
+    assert identity.calls == [("mcp.x.com", "read")]
+
+
+def test_sync_auth_flow_rejects_async_identity_with_clear_error() -> None:
+    """Sync flow refuses to silently write a broken header.
+
+    The sync flow cannot ``await``; if ``get_token`` returns a
+    coroutine the only safe behaviour is to fail loud. The error
+    message tells the caller how to fix it (use async client, or
+    pre-resolve the token). Asserting on the message text pins the
+    documented guidance against accidental rewording.
+    """
+    identity = _AsyncStubIdentity()
+    auth = BearerTokenAuth(identity, audience="x", scope="y")
+    request = Mock(headers={})
+    flow = auth.sync_auth_flow(request)
+    with pytest.raises(RuntimeError, match="async identity"):
+        next(flow)
+    # The error message names both escape hatches so the caller
+    # doesn't need to read source to learn the fix.
+    identity_2 = _AsyncStubIdentity()
+    auth_2 = BearerTokenAuth(identity_2)
+    flow_2 = auth_2.sync_auth_flow(Mock(headers={}))
+    with pytest.raises(RuntimeError, match=r"httpx\.AsyncClient"):
+        next(flow_2)
+
+
+def test_async_auth_flow_still_works_with_sync_identity() -> None:
+    """Backward-compat: sync identities flow unchanged through async.
+
+    The v1.3 async-identity fix added an ``iscoroutine`` branch to
+    ``async_auth_flow``; verify that branch is no-op for the sync
+    path so ``VertexAgentIdentityToken`` (and the original
+    ``_StubIdentity`` here) keep working.
+    """
+    identity = _StubIdentity(token="sync-tok")
+    auth = BearerTokenAuth(identity, audience="aud", scope="scp")
+    request = Mock(headers={})
+
+    async def _drive() -> None:
+        flow = auth.async_auth_flow(request)
+        await flow.__anext__()
+
+    asyncio.run(_drive())
+    assert request.headers["Authorization"] == "Bearer sync-tok"
+    assert identity.calls == [("aud", "scp")]
