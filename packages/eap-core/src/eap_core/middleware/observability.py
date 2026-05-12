@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from eap_core.middleware.base import PassthroughMiddleware
-from eap_core.types import Context, Request, Response
+from eap_core.types import Chunk, Context, Request, Response
 
 # `_otel_trace` is annotated as Any so the optional opentelemetry-api
 # integration works regardless of whether the SDK ships py.typed markers
@@ -59,6 +59,24 @@ class ObservabilityMiddleware(PassthroughMiddleware):
             ctx.span.end()
             ctx.span = None
         return resp
+
+    async def on_stream_chunk(self, chunk: Chunk, ctx: Context) -> Chunk:
+        """Aggregate per-chunk usage into ``ctx.metadata['gen_ai.usage']``.
+
+        Adapters MAY emit usage on every chunk (incremental) or only on
+        the final chunk (single-shot total). The aggregator sums per-key
+        so both patterns produce the same correct totals. The span-attr
+        code in ``on_stream_end`` (added defensively in v1.7-T3) reads
+        this dict and lands ``gen_ai.usage.*`` attributes on the span.
+
+        Activates the v1.7-T3 dormant scaffolding and pairs with
+        ``LocalRuntimeAdapter.stream``'s final-chunk usage emission.
+        """
+        if chunk.usage:
+            agg = ctx.metadata.setdefault("gen_ai.usage", {})
+            for k, v in chunk.usage.items():
+                agg[k] = agg.get(k, 0) + v
+        return chunk
 
     async def on_stream_end(self, ctx: Context) -> None:
         """Close ctx.span on the streaming path.

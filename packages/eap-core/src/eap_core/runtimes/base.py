@@ -22,6 +22,7 @@ class RawChunk(BaseModel):
     index: int
     text: str
     finish_reason: str | None = None
+    usage: dict[str, int] = Field(default_factory=dict)
 
 
 class ModelInfo(BaseModel):

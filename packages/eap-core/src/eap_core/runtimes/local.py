@@ -125,10 +125,30 @@ class LocalRuntimeAdapter(BaseRuntimeAdapter):
         )
 
     async def stream(self, req: Request) -> AsyncIterator[RawChunk]:  # type: ignore[misc,override]
+        # Reconstruct the prompt via the same helper ``generate()`` uses so
+        # streaming and unary token counts stay consistent.
+        prompt = _flatten_prompt(req.messages)
         full = (await self.generate(req)).text
-        for i, word in enumerate(full.split(" ")):
+        words = full.split(" ")
+        total_input = len(prompt.split())
+        total_output = len(words)
+        last_index = len(words) - 1
+        for i, word in enumerate(words):
             await asyncio.sleep(0)
-            yield RawChunk(index=i, text=word + " ", finish_reason=None)
+            is_last = i == last_index
+            # Final chunk emits ``finish_reason="stop"`` (closes LOW-2 from
+            # the v1.7 review) and a single-shot usage total. Earlier chunks
+            # carry an empty usage dict; the observability aggregator sums
+            # per-key, so per-chunk incremental usage from future adapters
+            # composes correctly with this single-shot pattern.
+            yield RawChunk(
+                index=i,
+                text=word + " ",
+                finish_reason="stop" if is_last else None,
+                usage=(
+                    {"input_tokens": total_input, "output_tokens": total_output} if is_last else {}
+                ),
+            )
 
     async def list_models(self) -> list[ModelInfo]:
         return [ModelInfo(name=self._config.model or "echo-1", provider="local")]

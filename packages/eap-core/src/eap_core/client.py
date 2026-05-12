@@ -178,7 +178,12 @@ class EnterpriseLLM:
 
         async def terminal(r: Request, c: Context) -> AsyncIterator[Chunk]:  # type: ignore[misc,unused-ignore]
             async for raw in self._adapter.stream(r):  # type: ignore[attr-defined]
-                yield Chunk(index=raw.index, text=raw.text, finish_reason=raw.finish_reason)
+                yield Chunk(
+                    index=raw.index,
+                    text=raw.text,
+                    finish_reason=raw.finish_reason,
+                    usage=raw.usage,
+                )
 
         async for chunk in self._pipeline.run_stream(req, ctx, terminal):
             yield chunk
