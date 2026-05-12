@@ -16,6 +16,71 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.6.3] — 2026-05-12 — Docs accuracy patch (v1.6.2 review H1+M1+M2)
+
+Same-day patch closing three findings from the v1.6.2 pre-prod review.
+No SDK behavior changes — README accuracy, CHANGELOG correctness, and
+one mypy-ignore cleanup. Fully strict-additive on the public surface.
+
+### Fixed
+
+- **H1 — README accuracy.** Install pin `@v1.1.1` → `@v1.6.3` in
+  4 spots (the toml dependencies example, two `uv add` lines, and
+  the surrounding guidance sentence). The "Status:" line near the
+  bottom of `README.md` no longer leads with "Production-ready
+  core SDK" — rephrased to lead with the version and reframe
+  maturity as "stable and used in production by adopters" with
+  an explicit reference to the strict-additive v1.x Protocol
+  guarantee. The stale `# 576 tests, ~92% coverage` comment on
+  the `uv run pytest --cov` line is corrected to `706 tests`
+  (current v1.6.3 reality).
+
+- **M1 — CHANGELOG `[1.6.2]` test name corrections.** Cited test
+  paths/names didn't match the actual repo layout. Corrected:
+  `test_sync_proxy.py::test_sync_proxy_inside_running_loop_raises_actionable_error`
+  → `test_client_sync.py::test_sync_proxy_raises_actionable_error_inside_event_loop`;
+  `test_pipeline.py::test_on_stream_end_fires_*` → the actual
+  `test_middleware_stream_lifecycle.py::test_run_stream_fires_on_stream_end_*`
+  pair; `test_runtimes_registry.py::test_broken_entry_point_*`
+  and the two `::test_register_entry_point_*` citations →
+  `test_runtime_registry_lazy.py::test_broken_provider_does_not_break_registry_construction`,
+  `::test_lazy_load_caches_factory_across_creates`, and
+  `::test_broken_provider_only_fails_on_its_own_create` (with
+  the bullet text rephrased to describe what those tests
+  actually prove);
+  `test_deploy_dockerfile_templates.py::...` →
+  `test_deploy_dockerfile_install.py::...` with the actual
+  test-name triple. The P1-7 bullet also stripped the phantom
+  `AdapterLoadError` class reference and the non-existent
+  `.get()` method on `AdapterRegistry`; the actual behavior is
+  that the original `ImportError`/`ModuleNotFoundError` is
+  re-raised from `.create()` only when the specific broken
+  provider is requested.
+
+- **M2 — Replaced `# type: ignore[assignment]` with `cast()` in
+  lazy adapter registry.** `runtimes/registry.py` factory-resolution
+  path now uses `cast(AdapterFactory, entry)` to document the
+  TypeGuard-narrowed type assertion explicitly rather than silencing
+  mypy. Runtime behavior identical; mypy still passes strict.
+
+### Backward compat
+
+Strict additive. No behavior changes. README + CHANGELOG accuracy
+fixes plus one type-cast refactor.
+
+### Stats (v1.6.3 reality, fresh `.mypy_cache` + `__pycache__`)
+
+- **706 non-extras tests passing** (unchanged from v1.6.2 — no new
+  tests; H1/M1 are docs-only, M2 is a behavior-preserving refactor).
+- 8 playground integration tests (unchanged).
+- 19 Cedar extras tests (unchanged).
+- 15 MCP extras tests (unchanged).
+- 47 MCP-examples tests (unchanged).
+- 161 source files mypy-checked, no issues (unchanged).
+- ruff + ruff format clean across 210 files.
+
+---
+
 ## [1.6.2] — 2026-05-12 — Patch release closing v1.6.1 external code-review findings
 
 Closes 1 docs-truth + 1 stale-message + 4 code findings from the
@@ -52,7 +117,7 @@ strict additive behavior.
   the async API: "Called SyncProxy.<method> from inside an active
   event loop. Use `await client.<method>(...)` instead, or call
   the sync helper from a synchronous context." Regression test:
-  `packages/eap-core/tests/test_sync_proxy.py::test_sync_proxy_inside_running_loop_raises_actionable_error`.
+  `packages/eap-core/tests/test_client_sync.py::test_sync_proxy_raises_actionable_error_inside_event_loop`.
 
 - **P0-3: Streaming middleware lifecycle: `on_stream_end`.**
   The `Middleware` Protocol and `PassthroughMiddleware` gain
@@ -69,8 +134,8 @@ strict additive behavior.
   PII vault flush, and trajectory write land on the streaming
   path — none of which had a place to land before. Regression
   tests:
-  `packages/eap-core/tests/test_pipeline.py::test_on_stream_end_fires_after_normal_completion`
-  and `::test_on_stream_end_fires_inside_finally_on_exception`.
+  `packages/eap-core/tests/test_middleware_stream_lifecycle.py::test_run_stream_fires_on_stream_end_after_chunks`
+  and `::test_run_stream_fires_on_stream_end_even_on_terminal_exception`.
 
 - **P0-8: Stale `default_registry()` deprecation message.**
   `mcp.registry.default_registry()` was emitting a
@@ -93,19 +158,25 @@ strict additive behavior.
   paths that only needed `local` or `bedrock`. Loading is now
   deferred: the registry records `(name, entry_point)` at
   construction time and calls `.load()` lazily on first
-  `registry.get(name)`. A failing provider raises a clear
-  `AdapterLoadError` from `.get()` that names the offending
-  provider and the original exception; healthy providers continue
-  to load. A new public `AdapterRegistry.register_entry_point(name, ep)`
-  method exposes the lazy pattern to third-party packages that
-  want to advertise additional adapters without forcing eager
-  resolution. Handles both stdlib `importlib.metadata` and the
+  `registry.create(config)` for that provider. A failing provider
+  re-raises the original `ImportError`/`ModuleNotFoundError` from
+  `.create()` only when that specific provider is requested;
+  healthy providers continue to load and serve requests. A new
+  public `AdapterRegistry.register_entry_point(name, ep)` method
+  exposes the lazy pattern to third-party packages that want to
+  advertise additional adapters without forcing eager resolution.
+  Handles both stdlib `importlib.metadata` and the
   `importlib_metadata` backport (3.11+ uses stdlib; older Pythons
   fall back to the backport's `EntryPoint` shape). Regression
   tests:
-  `packages/eap-core/tests/test_runtimes_registry.py::test_broken_entry_point_does_not_break_registry`,
-  `::test_register_entry_point_lazy_resolution`, and
-  `::test_register_entry_point_failure_raises_adapter_load_error`.
+  `packages/eap-core/tests/test_runtime_registry_lazy.py::test_broken_provider_does_not_break_registry_construction`,
+  `::test_lazy_load_caches_factory_across_creates` (proves the
+  lazy resolution caches the loaded factory in place so subsequent
+  `create()` calls don't re-load), and
+  `::test_broken_provider_only_fails_on_its_own_create` (proves
+  a broken provider's load failure is scoped to `create()` calls
+  for that provider, not registry construction or other
+  providers).
 
 - **P2-11: Dockerfile templates use `ARG EAP_CORE_SOURCE`.**
   All three generated Dockerfile templates (default, AgentCore,
@@ -120,9 +191,9 @@ strict additive behavior.
   maintainers:** `EAP_CORE_VERSION` default is hardcoded to
   `1.6.2` in the templates — bump it in the equivalent T5 task
   when v1.7 ships. Regression tests:
-  `packages/eap-cli/tests/test_deploy_dockerfile_templates.py::test_default_dockerfile_has_eap_core_source_arg`,
-  `::test_agentcore_dockerfile_has_eap_core_source_arg`, and
-  `::test_vertex_dockerfile_has_eap_core_source_arg`.
+  `packages/eap-cli/tests/test_deploy_dockerfile_install.py::test_all_dockerfiles_use_build_arg_for_eap_core_source`,
+  `::test_all_dockerfiles_install_eap_core_via_arg`, and
+  `::test_default_eap_core_source_pins_to_git_url`.
 
 ### Follow-up (v1.7 backlog)
 

@@ -212,20 +212,20 @@ the git repo (pin to a tag for stability):
 ```toml
 [project]
 dependencies = [
-    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v1.1.1#subdirectory=packages/eap-core",
+    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v1.6.3#subdirectory=packages/eap-core",
 ]
 ```
 
 Or via `uv add`:
 
 ```bash
-uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v1.1.1#subdirectory=packages/eap-core"
-uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v1.1.1#subdirectory=packages/eap-cli"
+uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v1.6.3#subdirectory=packages/eap-core"
+uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v1.6.3#subdirectory=packages/eap-cli"
 ```
 
-> Pin to the latest tag in the v1.x line (`@v1.1.1` as of this
-> writing). Patches and minors within v1.x are additive; a v2.0
-> release would deprecate with notice.
+> Pin to the latest tag in the v1.x line (`@v1.6.3` as of v1.6.3).
+> Patches and minors within v1.x are additive; a v2.0 release would
+> deprecate with notice.
 
 If you operate a private package index (e.g. AWS CodeArtifact, Azure
 Artifacts, an internal devpi), upload built wheels there and depend on
@@ -597,7 +597,7 @@ ai-eap-sdk/
 └── pyproject.toml                           # uv workspace root
 ```
 
-**Status:** Production-ready core SDK (middleware pipeline, identity, MCP tooling, policy, PII, observability, CLI). Cloud runtime adapters for AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine are gated behind `EAP_ENABLE_REAL_RUNTIMES=1`; their real-call paths are exercised by the `cloud_live` test marker and have shape-correct stubs by default. See `packages/eap-core/src/eap_core/runtimes/bedrock.py` and `vertex.py` for the gate semantics.
+**Status:** v1.6.3. The core SDK (middleware pipeline, identity, MCP tooling, policy, PII, observability, CLI) is stable and used in production by adopters; the public Protocol is strict-additive across all v1.x releases. Cloud runtime adapters for AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine are gated behind `EAP_ENABLE_REAL_RUNTIMES=1`; their real-call paths are exercised by the `cloud_live` test marker and ship as shape-correct stubs by default. See `packages/eap-core/src/eap_core/runtimes/bedrock.py` and `vertex.py` for the gate semantics.
 
 ---
 
@@ -618,7 +618,7 @@ before merging non-trivial changes.
 
 ```bash
 uv sync --all-packages --all-extras --group dev   # install everything
-uv run pytest --cov                                # 576 tests, ~92% coverage (gate 90%)
+uv run pytest --cov                                # 706 tests, ~92% coverage (gate 90%)
 uv run ruff check && uv run ruff format --check    # lint + format
 uv run mypy                                        # strict type-check
 ```

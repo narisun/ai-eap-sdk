@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from importlib.metadata import EntryPoint, entry_points
-from typing import Any, TypeGuard
+from typing import Any, TypeGuard, cast
 
 from eap_core.config import RuntimeConfig
 from eap_core.runtimes.base import BaseRuntimeAdapter
@@ -77,9 +77,9 @@ class AdapterRegistry:
             return factory(config)
         # ``entry`` is not an EntryPoint here at runtime, but TypeGuard does
         # not narrow the negative branch, so mypy still sees the union. The
-        # union member that isn't EntryPoint is ``AdapterFactory`` — call it.
-        adapter_factory: AdapterFactory = entry  # type: ignore[assignment]
-        return adapter_factory(config)
+        # union member that isn't EntryPoint is ``AdapterFactory`` — assert
+        # that explicitly with ``cast`` rather than silencing mypy.
+        return cast(AdapterFactory, entry)(config)
 
     @classmethod
     def from_entry_points(cls, group: str = "eap_core.runtimes") -> AdapterRegistry:
