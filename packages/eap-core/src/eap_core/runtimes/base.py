@@ -31,6 +31,21 @@ class ModelInfo(BaseModel):
 
 
 class BaseRuntimeAdapter(ABC):
+    """Vendor-neutral runtime adapter ABC.
+
+    Exception contract: implementations MUST translate vendor-specific
+    exceptions into the canonical types in :mod:`eap_core.runtimes.errors`
+    (``RuntimeAdapterError`` and subclasses). See
+    ``BedrockRuntimeAdapter._map_botocore_error`` and
+    ``VertexRuntimeAdapter._map_google_error`` for reference mappings.
+
+    Adapters MAY raise :class:`RuntimeAdapterError` directly (with a
+    helpful message) for vendor errors that don't fit a more specific
+    subclass — keep the original exception accessible via ``__cause__``
+    so audit logs can inspect the vendor payload (i.e., use
+    ``raise CanonicalError(msg) from vendor_exc``).
+    """
+
     name: ClassVar[str]
 
     @abstractmethod

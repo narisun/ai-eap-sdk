@@ -13,6 +13,14 @@ from collections.abc import AsyncIterator
 from eap_core.config import RuntimeConfig
 from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.runtimes.base import BaseRuntimeAdapter, ModelInfo, RawChunk, RawResponse
+from eap_core.runtimes.errors import (
+    RuntimeAdapterError,
+    RuntimeAuthError,
+    RuntimeContextLengthError,
+    RuntimeRateLimitError,
+    RuntimeServerError,
+    RuntimeTimeoutError,
+)
 from eap_core.types import Request
 
 _GUIDE = (
@@ -23,6 +31,44 @@ _GUIDE = (
 
 def _real_runtimes_enabled() -> bool:
     return os.environ.get("EAP_ENABLE_REAL_RUNTIMES") == "1"
+
+
+def _map_botocore_error(exc: Exception) -> RuntimeAdapterError:
+    """Map ``botocore.exceptions`` failures to canonical EAP-Core runtime errors.
+
+    Callers MUST chain the original vendor exception via ``raise ... from exc``
+    so ``__cause__`` preserves the underlying payload for audit inspection.
+    Returns a plain :class:`RuntimeAdapterError` (no chaining done here) so
+    the call-site keeps full control over the cause chain.
+    """
+    try:
+        from botocore.exceptions import (
+            ClientError,
+            EndpointConnectionError,
+            ReadTimeoutError,
+        )
+    except ImportError:
+        # No botocore installed — vendor exception class checks can't fire.
+        # Fall back to the base type so middleware can still catch uniformly.
+        return RuntimeAdapterError(str(exc))
+
+    if isinstance(exc, ReadTimeoutError):
+        return RuntimeTimeoutError(str(exc))
+    if isinstance(exc, EndpointConnectionError):
+        return RuntimeServerError(str(exc))
+    if isinstance(exc, ClientError):
+        err = exc.response.get("Error", {}) if hasattr(exc, "response") else {}
+        code = err.get("Code", "") if isinstance(err, dict) else ""
+        message = err.get("Message", str(exc)) if isinstance(err, dict) else str(exc)
+        if code in {"AccessDeniedException", "UnauthorizedException"}:
+            return RuntimeAuthError(message)
+        if code in {"ThrottlingException", "TooManyRequestsException"}:
+            return RuntimeRateLimitError(message)
+        if code in {"ServiceUnavailableException", "InternalServerError"}:
+            return RuntimeServerError(message)
+        if code == "ValidationException" and "context" in message.lower():
+            return RuntimeContextLengthError(message)
+    return RuntimeAdapterError(str(exc))
 
 
 class BedrockRuntimeAdapter(BaseRuntimeAdapter):
@@ -41,16 +87,19 @@ class BedrockRuntimeAdapter(BaseRuntimeAdapter):
                 "Bedrock adapter requires the [aws] extra: pip install eap-core[aws]"
             ) from e
         client = boto3.client("bedrock-runtime", region_name=self._config.options.get("region"))
-        resp = client.converse(
-            modelId=self._config.model,
-            messages=[
-                {
-                    "role": m.role,
-                    "content": [{"text": m.content if isinstance(m.content, str) else ""}],
-                }
-                for m in req.messages
-            ],
-        )
+        try:
+            resp = client.converse(
+                modelId=self._config.model,
+                messages=[
+                    {
+                        "role": m.role,
+                        "content": [{"text": m.content if isinstance(m.content, str) else ""}],
+                    }
+                    for m in req.messages
+                ],
+            )
+        except Exception as exc:
+            raise _map_botocore_error(exc) from exc
         text = resp["output"]["message"]["content"][0]["text"]
         usage = resp.get("usage", {})
         return RawResponse(

@@ -8,6 +8,14 @@ from collections.abc import AsyncIterator
 from eap_core.config import RuntimeConfig
 from eap_core.exceptions import RealRuntimeDisabledError
 from eap_core.runtimes.base import BaseRuntimeAdapter, ModelInfo, RawChunk, RawResponse
+from eap_core.runtimes.errors import (
+    RuntimeAdapterError,
+    RuntimeAuthError,
+    RuntimeContextLengthError,
+    RuntimeRateLimitError,
+    RuntimeServerError,
+    RuntimeTimeoutError,
+)
 from eap_core.types import Request
 
 _GUIDE = (
@@ -18,6 +26,38 @@ _GUIDE = (
 
 def _real_runtimes_enabled() -> bool:
     return os.environ.get("EAP_ENABLE_REAL_RUNTIMES") == "1"
+
+
+def _map_google_error(exc: Exception) -> RuntimeAdapterError:
+    """Map ``google.api_core.exceptions`` failures to canonical EAP-Core errors.
+
+    Callers MUST chain the original vendor exception via ``raise ... from exc``
+    so ``__cause__`` preserves the underlying payload for audit inspection.
+    """
+    try:
+        from google.api_core.exceptions import (
+            DeadlineExceeded,
+            InternalServerError,
+            InvalidArgument,
+            PermissionDenied,
+            ResourceExhausted,
+            ServiceUnavailable,
+            Unauthenticated,
+        )
+    except ImportError:
+        return RuntimeAdapterError(str(exc))
+
+    if isinstance(exc, (PermissionDenied, Unauthenticated)):
+        return RuntimeAuthError(str(exc))
+    if isinstance(exc, ResourceExhausted):
+        return RuntimeRateLimitError(str(exc))
+    if isinstance(exc, DeadlineExceeded):
+        return RuntimeTimeoutError(str(exc))
+    if isinstance(exc, (InternalServerError, ServiceUnavailable)):
+        return RuntimeServerError(str(exc))
+    if isinstance(exc, InvalidArgument) and "context" in str(exc).lower():
+        return RuntimeContextLengthError(str(exc))
+    return RuntimeAdapterError(str(exc))
 
 
 class VertexRuntimeAdapter(BaseRuntimeAdapter):
@@ -44,7 +84,10 @@ class VertexRuntimeAdapter(BaseRuntimeAdapter):
         )
         model = GenerativeModel(self._config.model)
         prompt = "\n".join(m.content if isinstance(m.content, str) else "" for m in req.messages)
-        resp = model.generate_content(prompt)
+        try:
+            resp = model.generate_content(prompt)
+        except Exception as exc:
+            raise _map_google_error(exc) from exc
         return RawResponse(
             text=resp.text,
             usage={
