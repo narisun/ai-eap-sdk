@@ -16,6 +16,194 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.7.0] — 2026-05-12 — Pipeline lifecycle completion + runtime error hierarchy
+
+Closes the architecturally important deferred items from the v1.6.x
+internal + external reviews. Strict-additive on the public Protocol;
+two new lifecycle hooks (`on_call_end` on unary, building on v1.6.2's
+`on_stream_end`) plus a canonical runtime exception hierarchy that
+adapters MUST translate vendor errors into. Bundles five smaller
+findings (Luhn PII, policy/threat hardening, ergonomic improvements).
+
+### Added
+
+- **`on_call_end` lifecycle hook (unary path).** Fires right-to-left
+  in a `finally` block on `MiddlewarePipeline.run`. Mirrors v1.6.2's
+  `on_stream_end` semantics: always fires, best-effort, secondaries
+  logged at WARNING and don't mask primary exceptions. Default no-op
+  on `PassthroughMiddleware`. Order on success: `on_request L→R,
+  terminal, on_response R→L, on_call_end R→L`. Order on failure:
+  `on_request L→R, terminal raises, on_call_end R→L (in finally),
+  on_error R→L (in except)`. (Closes Finding 2 from the
+  2026-05-12 external review.)
+
+- **`eap_core.runtimes.errors` module — canonical exception hierarchy.**
+  New: `RuntimeAdapterError` (base), `RuntimeAuthError`,
+  `RuntimeRateLimitError`, `RuntimeTimeoutError`, `RuntimeServerError`,
+  `RuntimeContextLengthError`. `BaseRuntimeAdapter` docstring documents
+  the contract: adapters MUST translate vendor exceptions into canonical
+  types and preserve the original via `__cause__` (use
+  `raise ... from exc`). `bedrock.py:_map_botocore_error` +
+  `vertex.py:_map_google_error` implement the reference mappings; gated
+  real-call sites wrap with `raise _map_*_error(exc) from exc`.
+  (Closes Finding 4.)
+
+- **`ThreatDetectionMiddleware`** — pluggable detector middleware
+  accepting any `ThreatDetector` Protocol (regex, classifier, managed
+  cloud service). Defaults to `RegexThreatDetector` for parity with the
+  deprecated `PromptInjectionMiddleware` (kept as alias with
+  `DeprecationWarning`). (Closes P1-5.)
+
+- **`ThreatAssessment.severity` axis** — `Literal["low", "medium",
+  "high", "critical"]`. Separate dimension from `confidence`: confidence
+  is detector calibration (how sure the threat exists); severity is
+  impact (how dangerous it would be if real). `INJECTION_PATTERNS` now
+  tags each pattern with severity; `RegexThreatDetector` returns the
+  max severity across matches. (Closes Finding 7.)
+
+- **Luhn validation for credit-card PII.** `_passes_luhn(digits_str)`
+  filters false-positive 16-digit regex matches (phone numbers, order
+  IDs, arbitrary numeric sequences). Standard card lengths (13, 14, 15,
+  16, 19) are accepted; everything else falls through unmasked.
+  (Closes P1-6.)
+
+- **`PolicyDocument` / `PolicyRule` Pydantic models** —
+  `SimpleJsonPolicyEvaluator.__init__` now validates the document at
+  load time via `PolicyDocument.model_validate(...)`. Malformed rules
+  raise `pydantic.ValidationError` immediately rather than failing at
+  dict-indexing time during evaluation. `PolicyRule` has
+  `extra="forbid"` to catch typos like `"rsource"`; `PolicyDocument`
+  does not (preserves real-world docs with top-level keys like
+  `"version"`). (Closes P1-4.)
+
+### Changed
+
+- **`JsonPolicyEvaluator` renamed to `SimpleJsonPolicyEvaluator`.**
+  Alias kept (module-level `__getattr__` per PEP 562) with
+  `DeprecationWarning`. Class identity preserved —
+  `JsonPolicyEvaluator is SimpleJsonPolicyEvaluator` returns `True`.
+  (Closes P1-4.)
+
+- **`PromptInjectionMiddleware` deprecated** in favor of
+  `ThreatDetectionMiddleware`. Behavioral parity preserved through an
+  internal `_ClassifierThreatDetector` adapter. (Closes P1-5.)
+
+- **`EnterpriseLLM` — `_prepare_call_context()` extracted.** Centralizes
+  the `policy.action` / `policy.resource` ctx setup formerly duplicated
+  across `generate_text`, `stream_text`, `invoke_tool`. No behavior
+  change. (Closes Finding 5.)
+
+- **`LocalRuntimeAdapter` caches `responses.yaml` at init.** Default is
+  cache-at-init for prod ergonomics. Opt-in reload via
+  `RuntimeConfig.options.reload_responses=True` for dev loops.
+  (Closes P2-9.)
+
+- **`SyncProxy` error message refined.** Now mentions IPython >=7
+  top-level `await` for Jupyter contexts. Does NOT recommend
+  `nest_asyncio` (monkey-patches the event loop and breaks anyio,
+  uvloop, structured concurrency). (Closes Finding 3 partial.)
+
+- **Dockerfile templates bumped to `EAP_CORE_VERSION=1.7.0`** (was
+  `1.6.2` from the v1.6.2 T4 introduction). All three templates in
+  `packages/eap-cli/src/eap_cli/scaffolders/deploy.py` (generic Cloud
+  Run, AgentCore Runtime, Vertex Agent Engine) updated. Per the v1.6.2
+  CHANGELOG note: future minor/major bumps must update this string in
+  all three templates.
+
+### Fixed
+
+- **PII stream buffer leak on mid-stream exception** (v1.6.2 follow-up
+  #1). `PiiMaskingMiddleware.on_stream_end` now clears
+  `ctx.metadata["pii._stream_buffer"]`. A non-empty buffer at stream
+  end emits a WARNING log (indicates upstream stopped abruptly with a
+  partial vault token); content is dropped to prevent cross-request
+  state pollution.
+
+- **PII vault cleanup symmetry** (v1.6.2 follow-up #2).
+  `PiiMaskingMiddleware.on_call_end` clears `ctx.vault.clear()` so the
+  masking table doesn't survive in patterns that retain `ctx` for
+  background work. Defense-in-depth also clears the stream buffer.
+
+- **Observability span leak on streaming success** (v1.6.2 follow-up
+  #3). `ObservabilityMiddleware.on_stream_end` now calls
+  `ctx.span.end()` and clears `ctx.span = None`. Idempotent guard
+  handles the failure-branch case where `on_error` already closed the
+  span.
+
+- **Bedrock + Vertex adapters translate vendor errors to canonical
+  types** (Finding 4). Gated real-call sites in `generate()` wrap with
+  `raise _map_*_error(exc) from exc` so middleware `on_error` can react
+  uniformly via `except RuntimeAdapterError`.
+
+### Documentation
+
+- **Developer guide: buffering middleware contract on the streaming
+  path.** Documents the three-rule contract (consume without emit,
+  drain by `on_stream_end`, clear on exception). References
+  `PiiMaskingMiddleware.on_stream_end` as the canonical "log warning +
+  drop" implementation. (Closes Finding 6.)
+
+- **Developer guide: `invoke_tool` args closure-capture rationale.**
+  Documents WHY the terminal closure captures original `args` rather
+  than reading from middleware-mutated `Request.metadata`: policy
+  authorization is bound to API-entry args, and silent mutation would
+  let a compromised middleware bypass the policy decision. Future
+  v1.8+ `on_tool_call` Protocol hook is the forward path for explicit
+  arg mutation with policy re-evaluation. (Closes Finding 1 —
+  documented as intentional design, not a fix.)
+
+### Backward compat
+
+Strict additive on the public Protocol:
+
+- `on_call_end` has a no-op default on `PassthroughMiddleware`; existing
+  middlewares pick it up automatically.
+- `JsonPolicyEvaluator` and `PromptInjectionMiddleware` retained as
+  aliases with `DeprecationWarning`. `JsonPolicyEvaluator is
+  SimpleJsonPolicyEvaluator`.
+- Vendor exception translation is additive — existing call sites that
+  didn't hit the real-runtime gate are unaffected; gated paths now
+  raise canonical types but with the original via `__cause__`.
+
+### Deferred (v1.8 backlog)
+
+- **P2-10** — output validation modes (`extract_json`,
+  `provider_native`). Feature work.
+- **P2-12** — `pip-audit`, `bandit`, `twine check` CI gates. Parallel
+  standalone hardening PR.
+- **Finding 1 follow-up** — explicit `on_tool_call` Protocol hook with
+  documented mutation semantics and policy re-evaluation. Design work.
+- **Streaming usage aggregator** —
+  `ObservabilityMiddleware.on_stream_end` has dormant defensive code
+  that reads `ctx.metadata["gen_ai.usage"]`, but no streaming terminal
+  accumulates per-chunk tokens today. Adapter-side aggregation is
+  v1.8+.
+
+### Stats (v1.7.0 reality, fresh `.mypy_cache` + `__pycache__`)
+
+- **760** non-extras tests passing (was 706 in v1.6.3; +54 across
+  T1-T6 covering on_call_end lifecycle, PII/observability stream-end
+  finalization, runtime error hierarchy + tests, policy Pydantic
+  validation, threat detection middleware, Luhn PII, client-context
+  helpers, and ergonomic improvements). 1 skipped (pre-existing
+  cross-domain-agent smoke skip).
+- **8** playground integration tests (unchanged).
+- **19** Cedar extras tests (unchanged — Cedar evaluator wasn't
+  affected by the T5 rename; it remained `CedarPolicyEvaluator`).
+- **15** MCP extras tests (unchanged).
+- **47** MCP-examples tests (unchanged).
+- **20** runtime-error extras tests (new in T4): 11 Bedrock +
+  9 Vertex under `[aws]` + `[gcp]` markers via the shared
+  `test_runtime_errors.py`. (The hierarchy smoke test is unmarked
+  and rolls into the 760 bare-gauntlet count.)
+- **172** source files mypy-checked, no issues (was 161 in v1.6.3;
+  +11 across the new lifecycle/PII/observability/runtime-errors/policy
+  modules + Pydantic schema files).
+- **221** files formatted clean (was 210 in v1.6.3).
+- `ruff check` + `ruff format --check` + `mypy` clean throughout.
+
+---
+
 ## [1.6.3] — 2026-05-12 — Docs accuracy patch (v1.6.2 review H1+M1+M2)
 
 Same-day patch closing three findings from the v1.6.2 pre-prod review.

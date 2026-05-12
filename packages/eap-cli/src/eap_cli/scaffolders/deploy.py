@@ -347,7 +347,7 @@ _DOCKERFILE_TEMPLATE = """\
 FROM python:3.11-slim
 WORKDIR /app
 COPY . /app
-ARG EAP_CORE_VERSION=1.6.2
+ARG EAP_CORE_VERSION=1.7.0
 ARG EAP_CORE_SOURCE="eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v${EAP_CORE_VERSION}#subdirectory=packages/eap-core"
 RUN pip install --no-cache-dir "${EAP_CORE_SOURCE}" && pip install --no-cache-dir .
 ENV PYTHONUNBUFFERED=1
@@ -373,7 +373,7 @@ _AGENTCORE_DOCKERFILE = """\
 FROM --platform=linux/arm64 python:3.11-slim
 WORKDIR /app
 COPY . /app
-ARG EAP_CORE_VERSION=1.6.2
+ARG EAP_CORE_VERSION=1.7.0
 ARG EAP_CORE_SOURCE="eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v${EAP_CORE_VERSION}#subdirectory=packages/eap-core"
 RUN pip install --no-cache-dir "${EAP_CORE_SOURCE}" fastapi 'uvicorn[standard]' \\
     && pip install --no-cache-dir .
@@ -742,7 +742,7 @@ _VERTEX_DOCKERFILE = """\
 FROM --platform=linux/amd64 python:3.11-slim
 WORKDIR /app
 COPY . /app
-ARG EAP_CORE_VERSION=1.6.2
+ARG EAP_CORE_VERSION=1.7.0
 ARG EAP_CORE_SOURCE="eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v${EAP_CORE_VERSION}#subdirectory=packages/eap-core"
 RUN pip install --no-cache-dir "${EAP_CORE_SOURCE}" fastapi 'uvicorn[standard]' \\
     && pip install --no-cache-dir .
