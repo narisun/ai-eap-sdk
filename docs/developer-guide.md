@@ -438,6 +438,60 @@ even when the OTel SDK isn't installed. The convention is:
 Downstream consumers (eval, audit log, replay) read these fields
 without depending on OTel being installed.
 
+### 3.8 Buffering middleware contract (streaming path)
+
+Some middlewares need to buffer stream chunks before emission — PII
+vault detokenization across token boundaries is the canonical example.
+The contract:
+
+1. A buffering middleware may consume `Chunk` objects in `on_stream_chunk`
+   without emitting an equivalent chunk. Return a `Chunk(text="", index=…)`
+   so downstream middlewares see a clean pass-through with the original
+   index preserved.
+
+2. The buffering middleware MUST emit any held buffer by `on_stream_end`
+   at the latest. The pipeline does NOT scan chunk-emit events; it relies
+   on the middleware to drain. Because `on_stream_end(ctx)` cannot yield
+   chunks (the Protocol signature returns `None`), middlewares that need
+   late-emission must use one of:
+   - emit a final-content chunk earlier when the buffer first matches a
+     complete token boundary
+   - store the buffered content on `ctx.metadata` for the caller to
+     retrieve out-of-band
+
+3. On exception (terminal raises mid-stream), the buffering middleware's
+   `on_stream_end` MUST clear its buffer. Re-emission of partial content
+   is a security/correctness liability and must be opt-in per middleware.
+   See `PiiMaskingMiddleware.on_stream_end` (v1.7) for the canonical
+   "log warning + drop" implementation.
+
+### 3.9 Why `invoke_tool` captures args in the terminal closure
+
+A common middleware pattern is "transform the request before the
+terminal runs." For chat (`generate_text` / `stream_text`), this is
+standard — `on_request` may rewrite `Request.messages`, and the
+runtime adapter sees the transformed request.
+
+`invoke_tool` is **intentionally different**. The terminal closure
+captures the original `args` dict and passes it to the tool registry
+verbatim, ignoring any modifications a middleware might make to
+`Request.metadata`. See `packages/eap-core/src/eap_core/client.py`
+inside `invoke_tool` for the inline comment.
+
+**Reason:** `PolicyMiddleware` makes its authorization decision against
+the args submitted at API entry. If middleware could silently mutate
+args between the policy check and the tool invocation, an attacker
+who controls a middleware could effectively bypass the policy
+("policy approves `transfer_funds(account_id=alice)`; middleware
+mutates to `account_id=victim` before terminal fires").
+
+A future v1.8+ design will add an explicit `on_tool_call` Protocol
+hook with documented mutation semantics — a middleware that wants
+to transform tool args will declare so via that hook, and the policy
+re-runs against the post-mutation args. For now, the closure capture
+is the conservative path: middleware can observe via metadata but
+not influence terminal args.
+
 ---
 
 ## Part 4 — Extension cookbook

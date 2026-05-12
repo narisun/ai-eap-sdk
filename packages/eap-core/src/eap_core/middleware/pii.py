@@ -47,6 +47,13 @@ from eap_core.types import Chunk, Context, Message, Request, Response
 
 _LOG = logging.getLogger(__name__)
 
+# P1-6: labels that require a Luhn modulus-10 check to qualify as PII.
+# The CREDIT_CARD regex matches any 16-digit-with-separators sequence;
+# Luhn filters out false positives like phone numbers or arbitrary
+# numeric IDs that happen to fit the shape. Amex (15-digit, 3[47]
+# prefix) is checked the same way once it matches the prefix regex.
+_LUHN_LABELS = frozenset({"CREDIT_CARD", "AMEX"})
+
 _DEFAULT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("EMAIL", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")),
     ("SSN", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
@@ -83,14 +90,45 @@ _STREAM_BUFFER_KEY = "pii._stream_buffer"
 _MAX_TOKEN_LEN = 32
 
 
+def _passes_luhn(digits_str: str) -> bool:
+    """Validate a card number using the Luhn algorithm (P1-6).
+
+    Returns True if the digit sequence is a valid Luhn checksum, False
+    otherwise. Used to filter false-positive credit-card regex matches
+    (e.g., 16-digit phone numbers or arbitrary numeric sequences).
+
+    Standard card lengths: 13 (rare), 14, 15 (Amex), 16 (most), 19 (some).
+    Separators (``-``/space) are ignored — pass either the raw match or
+    a normalized digits-only string.
+    """
+    digits = [int(c) for c in digits_str if c.isdigit()]
+    if len(digits) not in (13, 14, 15, 16, 19):
+        return False
+    checksum = 0
+    for i, d in enumerate(reversed(digits)):
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        checksum += d
+    return checksum % 10 == 0
+
+
 def _replace_in_text(
     text: str, vault: dict[str, str], patterns: tuple[tuple[str, re.Pattern[str]], ...]
 ) -> str:
     out = text
     for label, pat in patterns:
+        # P1-6: card-shaped labels gate masking on Luhn validity so we
+        # don't redact 16-digit phone numbers or arbitrary numeric IDs.
+        requires_luhn = label in _LUHN_LABELS
 
-        def _sub(m: re.Match[str], _label: str = label) -> str:
+        def _sub(m: re.Match[str], _label: str = label, _check_luhn: bool = requires_luhn) -> str:
             value = m.group(0)
+            if _check_luhn and not _passes_luhn(value):
+                # Regex matched the shape but the digits fail Luhn —
+                # leave the original text in place.
+                return value
             # Token width: 16 hex chars (was 8) — lower collision probability
             # in long sessions and across overlapping vaults (H11).
             token = f"<{_label}_{secrets.token_hex(8)}>"

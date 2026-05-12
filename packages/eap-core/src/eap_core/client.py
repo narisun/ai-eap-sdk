@@ -47,8 +47,9 @@ class SyncProxy:
             return asyncio.run(self._client.generate_text(prompt, **kw))
         raise RuntimeError(
             "EnterpriseLLM.sync.generate_text() cannot be used inside an active "
-            "event loop (notebook, FastAPI handler, async test, etc.). "
-            "Use `await client.generate_text(...)` instead."
+            "event loop. Use `await client.generate_text(...)` instead. In "
+            "Jupyter (IPython >=7), `await` works directly at the top level "
+            "of a cell — no asyncio.run(...) wrapper needed."
         )
 
 
@@ -91,6 +92,32 @@ class EnterpriseLLM:
         """The configured identity (if any) — exposes ``_identity`` for tests/observability."""
         return self._identity
 
+    def _prepare_call_context(
+        self,
+        *,
+        action: str,
+        resource: str | None,
+    ) -> Context:
+        """Build a per-call Context with trusted policy inputs.
+
+        ``policy.action`` and ``policy.resource`` MUST come from a trusted
+        source (the SDK's explicit method API, not caller-controlled
+        ``Request.metadata``). ``PolicyMiddleware`` reads these — and ONLY
+        these — for the auth decision. Centralized here so all three call
+        sites (``generate_text``, ``stream_text``, ``invoke_tool``) share
+        one source of truth (Finding 5).
+
+        ``resource`` is allowed to be ``None`` for the chat path where the
+        configured model is the natural default; ``invoke_tool`` always
+        passes the explicit tool name and never falls through to the
+        model default.
+        """
+        ctx = Context(request_id=uuid.uuid4().hex, identity=self._identity)
+        resolved_resource = resource if resource is not None else self._config.model
+        ctx.metadata["policy.action"] = action
+        ctx.metadata["policy.resource"] = resolved_resource
+        return ctx
+
     async def generate_text(
         self,
         prompt: str | list[Message] | list[dict[str, Any]],
@@ -101,19 +128,10 @@ class EnterpriseLLM:
         resource: str | None = None,
         **kwargs: Any,
     ) -> Response:
-        ctx = Context(request_id=uuid.uuid4().hex, identity=self._identity)
         # Authorization inputs are explicit keyword arguments on the public
         # ``generate_text`` API, not free-form ``Request.metadata`` keys.
-        # Stash them on ``ctx.metadata`` (the SDK-trusted, per-pipeline slot)
-        # so ``PolicyMiddleware`` uses the values the SDK observed at the
-        # call site, not anything a later middleware (or a caller crafting
-        # a Request) might inject. ``action``/``resource`` deliberately do
-        # NOT live on ``req.metadata`` so there is exactly one source of
-        # truth — readers (eval/audit/observability) should consult
-        # ``ctx.metadata['policy.action']`` / ``['policy.resource']``.
-        resolved_resource = resource or self._config.model
-        ctx.metadata["policy.action"] = action
-        ctx.metadata["policy.resource"] = resolved_resource
+        # See ``_prepare_call_context`` for the trusted-input rationale.
+        ctx = self._prepare_call_context(action=action, resource=resource)
         req = Request(
             model=self._config.model,
             messages=_to_messages(prompt),
@@ -145,13 +163,8 @@ class EnterpriseLLM:
         resource: str | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[Chunk]:
-        ctx = Context(request_id=uuid.uuid4().hex, identity=self._identity)
-        # See ``generate_text`` for the rationale: ``action``/``resource`` are
-        # trusted policy inputs and live ONLY on ``ctx.metadata`` to keep
-        # exactly one source of truth.
-        resolved_resource = resource or self._config.model
-        ctx.metadata["policy.action"] = action
-        ctx.metadata["policy.resource"] = resolved_resource
+        # See ``_prepare_call_context`` for the trusted-input rationale.
+        ctx = self._prepare_call_context(action=action, resource=resource)
         req = Request(
             model=self._config.model,
             messages=_to_messages(prompt),
@@ -186,15 +199,12 @@ class EnterpriseLLM:
         # from a trusted source (the tool name we just resolved), never from
         # caller-controlled ``Request.metadata``. Allowing a caller to set
         # ``metadata['action']='tool:lookup_account'`` would let them bypass a
-        # ``deny tool:transfer_funds`` rule.
-        ctx = Context(request_id=uuid.uuid4().hex, identity=self._identity)
-        # SDK-trusted policy inputs live on ``ctx.metadata`` (per-pipeline,
-        # not part of ``Request`` and therefore not caller-mutable from the
-        # public API). ``PolicyMiddleware`` reads these — and ONLY these —
-        # for the auth decision. ``action``/``resource`` deliberately do not
-        # appear on ``req.metadata`` so there is one source of truth.
-        ctx.metadata["policy.action"] = f"tool:{tool_name}"
-        ctx.metadata["policy.resource"] = tool_name
+        # ``deny tool:transfer_funds`` rule. See ``_prepare_call_context``
+        # for the centralized policy-input setup shared with the chat path.
+        ctx = self._prepare_call_context(
+            action=f"tool:{tool_name}",
+            resource=tool_name,
+        )
         req = Request(
             model=self._config.model,
             messages=[],

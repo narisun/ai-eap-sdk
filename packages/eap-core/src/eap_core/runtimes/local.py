@@ -81,6 +81,17 @@ class LocalRuntimeAdapter(BaseRuntimeAdapter):
 
     def __init__(self, config: RuntimeConfig) -> None:
         self._config = config
+        # P2-9: cache responses.yaml at init. Default behavior reads the
+        # file once and reuses the parsed list across requests; opt-in
+        # reload (``options.reload_responses=True``) preserves the old
+        # dev-friendly "edit file, see next request pick it up" loop.
+        self._reload = bool(config.options.get("reload_responses", False))
+        self._responses_cache: list[dict[str, Any]] = [] if self._reload else _load_responses()
+
+    def _get_responses(self) -> list[dict[str, Any]]:
+        if self._reload:
+            return _load_responses()
+        return self._responses_cache
 
     async def generate(self, req: Request) -> RawResponse:
         prompt = _flatten_prompt(req.messages)
@@ -97,7 +108,7 @@ class LocalRuntimeAdapter(BaseRuntimeAdapter):
                 finish_reason="stop",
             )
 
-        for entry in _load_responses():
+        for entry in self._get_responses():
             if entry.get("match") and entry["match"] in prompt:
                 text = entry["text"]
                 return RawResponse(
