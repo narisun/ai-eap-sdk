@@ -16,7 +16,7 @@ lives behind an optional extra — lazy-imported, trivially replaceable.
 The canonical install snippets — pin convention, workspace sync, and
 downstream `uv add` flow — live in the top-level
 [`README.md` §Install](../../README.md#install). The version pin is
-`@v0.6.3`; the matrix below covers the optional extras.
+`@v1.1.1`; the matrix below covers the optional extras.
 
 ### Optional extras
 

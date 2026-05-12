@@ -424,9 +424,9 @@ and adds value on its own:
 - **Phase D** closes feature parity: Registry discoverability,
   x402 microtransactions, bidirectional Evaluations integration.
 
-All four phases are shipped as of v0.1.0+. Every live AgentCore call
-is gated behind `EAP_ENABLE_REAL_RUNTIMES=1` so tests stay
-deterministic and CI doesn't need AWS credentials.
+All four phases ship today. Every live AgentCore call is gated behind
+`EAP_ENABLE_REAL_RUNTIMES=1` so tests stay deterministic and CI
+doesn't need AWS credentials.
 
 ## Defense in depth
 

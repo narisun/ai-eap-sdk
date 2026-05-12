@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from eap_core.mcp.client.errors import (
     McpServerDisconnectedError,
@@ -36,23 +36,27 @@ from eap_core.mcp.client.errors import (
     McpToolTimeoutError,
 )
 
-if TYPE_CHECKING:
-    from mcp import ClientSession
-
 
 class McpClientSession:
     """Per-server session handle. One instance per running subprocess.
 
-    Not constructed directly by user code — see ``McpClientPool`` (T3).
+    Not constructed directly by user code — see :class:`McpClientPool`.
     The class is importable from ``eap_core.mcp.client.session`` for
     advanced callers and tests, but it isn't in the public ``__all__``.
+
+    The ``upstream`` parameter is duck-typed as :class:`typing.Any`
+    rather than ``mcp.ClientSession`` so tests can pass stub objects
+    without importing ``mcp`` on the non-extras path. The runtime
+    contract is "an object with ``async list_tools()`` and ``async
+    call_tool(name, arguments)`` methods that match ``mcp.ClientSession``'s
+    signatures."
     """
 
     def __init__(
         self,
         *,
         server_name: str,
-        upstream: ClientSession,
+        upstream: Any,
         request_timeout_s: float,
     ) -> None:
         self._name = server_name

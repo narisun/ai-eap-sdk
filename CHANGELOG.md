@@ -16,6 +16,85 @@ Nothing yet. Open a PR.
 
 ---
 
+## [1.1.1] — 2026-05-11 — Patch release
+
+Patch closing the H1 + 3 Medium findings from the v1.1.0 pre-prod
+review, plus a documentation cleanup pass that strips changelog
+references and historical/migration narrative from user-facing docs.
+The CHANGELOG (this file) remains the source of historical truth;
+README and guides describe the SDK in the present tense.
+
+### Fixed
+
+- **H1: `chore(mypy)` regression in `vertex.py` reverted.** v1.1.0's
+  `chore` commit removed four `# type: ignore[attr-defined]` markers
+  on `SandboxServiceClient`, `AgentRegistryServiceClient`, and
+  `PaymentServiceClient` claiming "newer type stubs declare these
+  classes." The claim was wrong — `google-cloud-aiplatform`'s type
+  stubs at the pinned version still don't declare them, so mypy was
+  red at the v1.1.0 tag (v1.0.0 had been green). The four markers
+  are restored. Lesson: every release-gate "all green" claim should
+  be re-verified from a fresh `.mypy_cache` before tagging.
+- **M1: mypy `arg-type` errors in the new client test files
+  resolved by relaxing `McpClientSession.__init__`'s `upstream`
+  annotation from `mcp.ClientSession` to `Any`.** The runtime is
+  duck-typed — `McpClientSession` calls `.list_tools()` and
+  `.call_tool(name, arguments)` on the upstream without
+  introspection. The strict annotation was misleading documentation
+  AND forced every test using stub upstreams to either `cast` or
+  `# type: ignore`. Docstring now captures the runtime contract:
+  "expects an mcp.ClientSession-like object with the two async
+  methods." Eleven test-side mypy errors evaporate as a result.
+- **M2: `McpServerHandle.name` property added** so the v1.0 compat
+  shim's `handle.name` access continues to work. v1.0's `ServerHandle`
+  exposed `name` as a direct attribute; v1.1.0's `McpServerHandle`
+  only exposed `config.name`. The new `@property def name(self) ->
+  str: return self.config.name` closes the regression without
+  breaking the existing `.config` access path. External pin-callers
+  iterating handles via `handle.name` continue to work.
+- **M3: CHANGELOG test count corrected.** v1.1.0's section claimed
+  "634 non-extras tests"; actual count was 641. The `+55 vs v1.0`
+  delta was correct; the absolute number wasn't. v1.1.1 ships with
+  the same code-paths-under-test, so this section's count reflects
+  reality: 641 non-extras tests passing.
+
+### Documentation
+
+- **README.md, docs/developer-guide.md, both user guides,
+  examples/README.md, examples/cross-domain-agent/README.md, and
+  package READMEs** rewritten to remove version-stamped historical
+  narrative. Removed patterns: "introduced in v0.6.0" / "new in
+  v0.6.0" notes, "v0.6.0 release introduced..." migration code
+  blocks, Status banners listing closed review debt, the
+  cross-domain-agent's "What this validation surfaced" section
+  documenting v1.0 → v1.1 gap closure, install-pin convention text
+  explaining historical patch-release packaging changes, scattered
+  `(H2)` / `(v0.5.0 C5)` review-tag parentheticals.
+- **Install pins advanced** to `@v1.1.1` across README, both package
+  READMEs, and both cloud user-guide install snippets. Install-pin
+  convention text simplified to: "Pin to the latest tag in the v1.x
+  line. Patches and minors within v1.x are additive; a v2.0 would
+  deprecate with notice."
+- **§9.2 (Coverage gate)** in `developer-guide.md` simplified to
+  state the current 90% floor without recounting the v0.6.x → v0.7.0
+  ratchet history.
+
+  Net documentation delta: ~290 fewer lines across 12 files.
+
+### Stats
+
+- 641 non-extras tests passing (unchanged from v1.1.0 — no test
+  changes; the corrected count was the v1.1.0 CHANGELOG error).
+- 36 extras tests passing (mcp + cedar + OTel session, all
+  unchanged).
+- 45 example tests passing (19 bankdw + 19 sfcrm + 7 cross-domain).
+- Coverage ≥90%.
+- All four primary gauntlets (ruff, ruff format, **mypy** —
+  green again — pytest) pass cleanly from repo root with no scope
+  tricks and no stale `.mypy_cache`.
+
+---
+
 ## [1.1.0] — 2026-05-11 — first minor after GA
 
 **EAP-Core v1.1 — first-class MCP client adapter.**

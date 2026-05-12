@@ -78,6 +78,13 @@ class McpServerHandle:
     is True; absent or ``None`` schemas bypass validation entirely.
     """
 
+    @property
+    def name(self) -> str:
+        """The server's logical name (``self.config.name``). Convenience
+        accessor: ``handle.name`` instead of ``handle.config.name``.
+        """
+        return self.config.name
+
 
 class McpClientPool:
     """Async context manager for one or more remote MCP servers.

@@ -377,8 +377,8 @@ class Context:
 - `span` — the active OTel span if observability is wired.
 - `identity` — the identity for this request. Typed as `Any` for
   backward compatibility, but in practice this is any object
-  satisfying the `IdentityToken` Protocol (`name: str`) introduced in
-  v0.6.0 — typically `NonHumanIdentity | VertexAgentIdentityToken | None`.
+  satisfying the `IdentityToken` Protocol (`name: str`) — typically
+  `NonHumanIdentity | VertexAgentIdentityToken | None`.
 - `request_id` — UUID, set by the client.
 
 The `Context` is created at request start and discarded at request
@@ -410,17 +410,15 @@ Errors that propagate out of middlewares should carry rich metadata.
   `EAP_ENABLE_REAL_RUNTIMES=1` is not set. Use `except
   RealRuntimeDisabledError` to selectively catch stub-mode failures
   without intercepting genuine `NotImplementedError` (which only fires
-  on truly-unimplemented paths). New in v0.6.0 — replaces the bare
-  `NotImplementedError` previously raised by stub-mode adapters.
+  on truly-unimplemented paths).
 - `PolicyConfigurationError` (subclass of `EapError`) is raised by
   `PolicyMiddleware` when `ctx.metadata["policy.action"]` or
   `ctx.metadata["policy.resource"]` is not populated.
   `EnterpriseLLM.generate_text` / `stream_text` / `invoke_tool` always
   set these slots from trusted SDK-internal sources; custom-pipeline
   users wiring `PolicyMiddleware` directly must populate them before
-  passing the request. New in v0.6.0 — defense-in-depth closure of H9
-  (`req.metadata` is caller-mutable and is no longer trusted by the
-  policy middleware).
+  passing the request. (`req.metadata` is caller-mutable and is not
+  trusted by the policy middleware.)
 
 A custom middleware that rejects a request should raise a custom
 exception that subclasses `EapError` and includes whatever the audit
@@ -827,10 +825,9 @@ user will want.
 ### 4.7 Add a custom identity provider
 
 `EnterpriseLLM(identity=...)` accepts anything satisfying the
-`IdentityToken` Protocol (`name: str`, introduced in v0.6.0). The
-bundled `NonHumanIdentity` is the standard async impl; the Vertex side
-ships `VertexAgentIdentityToken` (sync) which also satisfies the
-Protocol. The SDK routes calls polymorphically via
+`IdentityToken` Protocol (`name: str`). The bundled `NonHumanIdentity`
+is the standard async impl; the Vertex side ships
+`VertexAgentIdentityToken` (sync) which also satisfies the Protocol. The SDK routes calls polymorphically via
 `eap_core.identity.resolve_token`, which dispatches on the protocol
 shape rather than the concrete class — so the same agent code runs
 against either implementation.
@@ -885,7 +882,7 @@ trusts ``expires_at`` (minus a small buffer) for staleness decisions.
   uses a 30-second buffer (matching ``InboundJwtVerifier.clock_skew_seconds``)
   before expiry, and the cache-miss path is
   serialized by an `asyncio.Lock` so N concurrent callers issue
-  exactly one IdP request (H2). `get_token` is therefore `async` —
+  exactly one IdP request. `get_token` is therefore `async` —
   every call site must `await` it. Don't subclass to disable caching;
   instead pass `token_ttl=0` on your IdP for tests.
 - Roles are read from `principal.roles` by the policy middleware;
@@ -1399,16 +1396,10 @@ unknown markers fail loudly.
 
 ### 9.2 Coverage gate
 
-The coverage gate is set at **90%** (`tool.coverage.report.fail_under`
-in `pyproject.toml`). This was the target from v0.4.0 through the
-v0.6.x line — temporarily lowered to 86% in v0.6.2 to align the gate
-with measured reality while the codebase caught up, then ratcheted
-back to 90% in v0.7.0. Future regressions that drop coverage below
-90% will fail CI.
-
-If you need to lower it again, treat it as a code review-worthy
-decision — the gate is the floor for "what's acceptable in main", not
-a configurable convenience.
+The coverage gate is **90%** (`tool.coverage.report.fail_under` in
+`pyproject.toml`). Regressions that drop coverage below 90% will fail
+CI. Lowering the gate is a code review-worthy decision — it is the
+floor for "what's acceptable in main", not a configurable convenience.
 
 ### 9.3 What we test
 

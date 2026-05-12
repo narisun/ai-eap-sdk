@@ -83,8 +83,8 @@ For a downstream project, depend on EAP-Core directly:
 # pyproject.toml
 [project]
 dependencies = [
-    "eap-core[gcp,otel,mcp] @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.3#subdirectory=packages/eap-core",
-    "eap-cli @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.3#subdirectory=packages/eap-cli",
+    "eap-core[gcp,otel,mcp] @ git+https://github.com/narisun/ai-eap-sdk.git@v1.1.1#subdirectory=packages/eap-core",
+    "eap-cli @ git+https://github.com/narisun/ai-eap-sdk.git@v1.1.1#subdirectory=packages/eap-cli",
 ]
 ```
 
@@ -325,9 +325,8 @@ async def invocations(payload: dict, claims: dict = Depends(jwt_dependency(verif
     ...
 ```
 
-(The verifier lives under `integrations.agentcore` for historical
-reasons — it works against any OIDC IdP including Google's, and is
-not AWS-specific.)
+(The verifier lives under `integrations.agentcore` but is
+vendor-neutral — it works against any OIDC IdP including Google's.)
 
 The verifier caches JWKS (10-minute default) and validates audience,
 scope, and client id. Failures raise PyJWT exceptions with rich
@@ -802,8 +801,8 @@ spec = export_tools_as_openapi(
 )
 ```
 
-(The exporter lives under `integrations.agentcore` for historical
-reasons; it's vendor-neutral and works against either gateway.)
+(The exporter lives under `integrations.agentcore` but is
+vendor-neutral and works against either gateway.)
 
 ### 2.8 Registry — discovery and publishing
 
@@ -1018,10 +1017,8 @@ configured.`**
 You forgot the env flag. The flag is intentional — it prevents tests
 from accidentally hitting GCP. Set `EAP_ENABLE_REAL_RUNTIMES=1` in
 your runtime env (not in pytest). `RealRuntimeDisabledError` is an
-`EapError` subclass (new in v0.6.0; replaces the bare
-`NotImplementedError` previously raised by stub-mode adapters), so
-`except EapError` catches it consistently with the rest of the SDK's
-safety errors.
+`EapError` subclass, so `except EapError` catches it consistently
+with the rest of the SDK's safety errors.
 
 **`PolicyConfigurationError: PolicyMiddleware called without ctx.metadata['policy.action'] set ...`**
 
@@ -1029,9 +1026,8 @@ You constructed a custom `MiddlewarePipeline` and routed a request
 through `PolicyMiddleware` without going through `EnterpriseLLM`.
 Set `ctx.metadata["policy.action"]` and `["policy.resource"]`
 explicitly from a trusted source (the tool name for `invoke_tool`,
-`"generate_text"` for `generate_text`). This is the defense-in-depth
-closure of H9 — `req.metadata` is caller-mutable and is no longer
-trusted by the policy middleware.
+`"generate_text"` for `generate_text`). `req.metadata` is
+caller-mutable and is not trusted by the policy middleware.
 
 **`ImportError: ... requires the [gcp] extra: pip install eap-core[gcp]`**
 
@@ -1090,67 +1086,10 @@ tools.
 
 ---
 
-## Migrating from earlier versions
+## Migrating between versions
 
-See [`../CHANGELOG.md`](../CHANGELOG.md) for the full per-release
-history. The v0.6.0 release introduced three small breaking changes —
-recipes below cover each one.
-
-```python
-# === Task 1: IdentityToken Protocol ===
-# v0.6.0 introduced the structural `IdentityToken` Protocol so
-# `EnterpriseLLM(identity=...)` accepts both `NonHumanIdentity` (async
-# AWS-flavored) and `VertexAgentIdentityToken` (sync GCP-flavored)
-# interchangeably. If you have a helper typed against `NonHumanIdentity`
-# and want polymorphism, broaden the type annotation:
-#
-# Before:
-def my_helper(nhi: NonHumanIdentity): ...
-# After:
-from eap_core.identity import IdentityToken
-def my_helper(identity: IdentityToken): ...
-
-# === Task 4: PolicyMiddleware no fallback ===
-# `PolicyMiddleware` no longer falls back to `req.metadata` for
-# `policy.action` / `policy.resource` — `EnterpriseLLM` sets these
-# from trusted SDK-internal sources. Custom-pipeline users wiring
-# `PolicyMiddleware` directly must populate `ctx.metadata` explicitly.
-#
-# Before (custom pipeline, NOT via EnterpriseLLM):
-req = Request(model="m", messages=[], metadata={"action": "tool:transfer"})
-ctx = Context()
-await pipeline.run(req, ctx, terminal)  # used to fall back to req.metadata
-# After:
-ctx.metadata["policy.action"] = "tool:transfer"
-ctx.metadata["policy.resource"] = "transfer"
-await pipeline.run(req, ctx, terminal)
-
-# === Task 4: RealRuntimeDisabledError ===
-# Cloud-runtime stubs (including the Vertex adapter) now raise
-# `RealRuntimeDisabledError` (an `EapError` subclass) instead of
-# `NotImplementedError` when `EAP_ENABLE_REAL_RUNTIMES=1` is unset.
-#
-# Before:
-try:
-    await store.recall(...)
-except NotImplementedError as e:
-    # handle stub mode
-# After:
-from eap_core import RealRuntimeDisabledError  # or EapError
-try:
-    await store.recall(...)
-except RealRuntimeDisabledError as e:
-    # handle stub mode
-
-# === Task 9: AP2PaymentClient required budget ===
-# `AP2PaymentClient` now requires an explicit `max_spend_cents`
-# ceiling at construction time — no more silent $1 default.
-#
-# Before:
-pay = AP2PaymentClient(wallet_provider_id="my-wallet")  # silently $1
-# After:
-pay = AP2PaymentClient(wallet_provider_id="my-wallet", max_spend_cents=500)
-```
+See [`../CHANGELOG.md`](../CHANGELOG.md) for per-release notes and any
+migration recipes that apply when bumping the pin.
 
 ---
 

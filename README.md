@@ -93,13 +93,13 @@ production. The same agent code works on either cloud:
 | `AgentRegistry` | `InMemoryAgentRegistry` | `RegistryClient` | `VertexAgentRegistry` |
 | `PaymentBackend` | `InMemoryPaymentBackend` | `PaymentClient` (x402) | `AP2PaymentClient` (AP2) |
 | `ThreatDetector` | `RegexThreatDetector` | — | — |
-| `IdentityToken` Protocol (new in v0.6.0) | `LocalIdPStub` (via `NonHumanIdentity`) | `OIDCTokenExchange` (via `NonHumanIdentity`) | `VertexAgentIdentityToken` |
+| `IdentityToken` Protocol | `LocalIdPStub` (via `NonHumanIdentity`) | `OIDCTokenExchange` (via `NonHumanIdentity`) | `VertexAgentIdentityToken` |
 
-The `IdentityToken` Protocol (introduced in v0.6.0) is the structural
-type both `NonHumanIdentity` (async, AWS-flavored) and
-`VertexAgentIdentityToken` (sync, GCP-flavored) satisfy — `name: str` is
-the only required attribute, so `EnterpriseLLM(identity=...)` accepts
-either implementation interchangeably.
+The `IdentityToken` Protocol is the structural type both
+`NonHumanIdentity` (async, AWS-flavored) and `VertexAgentIdentityToken`
+(sync, GCP-flavored) satisfy — `name: str` is the only required
+attribute, so `EnterpriseLLM(identity=...)` accepts either
+implementation interchangeably.
 
 **End-to-end user guides for each cloud** (zero to deployed agent,
 with every command and every snippet):
@@ -212,24 +212,20 @@ the git repo (pin to a tag for stability):
 ```toml
 [project]
 dependencies = [
-    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.3#subdirectory=packages/eap-core",
+    "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v1.1.1#subdirectory=packages/eap-core",
 ]
 ```
 
 Or via `uv add`:
 
 ```bash
-uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.3#subdirectory=packages/eap-core"
-uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v0.6.3#subdirectory=packages/eap-cli"
+uv add "eap-core @ git+https://github.com/narisun/ai-eap-sdk.git@v1.1.1#subdirectory=packages/eap-core"
+uv add "eap-cli  @ git+https://github.com/narisun/ai-eap-sdk.git@v1.1.1#subdirectory=packages/eap-cli"
 ```
 
-> Pin to the latest patch tag in the v0.6 line (`@v0.6.3` as of this
-> writing). Patch releases on EAP-Core may carry packaging-shape
-> changes — for example, v0.6.2 added forwarded extras to `eap-cli`,
-> so `eap-cli[aws]` only resolves with `@v0.6.2` or newer. Bumping
-> to a later patch is a single-character edit and gets you the
-> latest fixes and CHANGELOG context. Minor (`v0.7.x`) and major
-> releases keep their own pins.
+> Pin to the latest tag in the v1.x line (`@v1.1.1` as of this
+> writing). Patches and minors within v1.x are additive; a v2.0
+> release would deprecate with notice.
 
 If you operate a private package index (e.g. AWS CodeArtifact, Azure
 Artifacts, an internal devpi), upload built wheels there and depend on
@@ -561,67 +557,10 @@ exporter. No SDK code changes.
 
 ---
 
-## Migrating from earlier versions
+## Migrating between versions
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the full per-release history. The
-v0.6.0 release introduced three small breaking changes — recipes below
-cover each one.
-
-```python
-# === Task 1: IdentityToken Protocol ===
-# v0.6.0 introduced the structural `IdentityToken` Protocol so
-# `EnterpriseLLM(identity=...)` accepts both `NonHumanIdentity` (async
-# AWS-flavored) and `VertexAgentIdentityToken` (sync GCP-flavored)
-# interchangeably. If you have a helper typed against `NonHumanIdentity`
-# and want polymorphism, broaden the type annotation:
-#
-# Before:
-def my_helper(nhi: NonHumanIdentity): ...
-# After:
-from eap_core.identity import IdentityToken
-def my_helper(identity: IdentityToken): ...
-
-# === Task 4: PolicyMiddleware no fallback ===
-# `PolicyMiddleware` no longer falls back to `req.metadata` for
-# `policy.action` / `policy.resource` — `EnterpriseLLM` sets these
-# from trusted SDK-internal sources. Custom-pipeline users wiring
-# `PolicyMiddleware` directly must populate `ctx.metadata` explicitly.
-#
-# Before (custom pipeline, NOT via EnterpriseLLM):
-req = Request(model="m", messages=[], metadata={"action": "tool:transfer"})
-ctx = Context()
-await pipeline.run(req, ctx, terminal)  # used to fall back to req.metadata
-# After:
-ctx.metadata["policy.action"] = "tool:transfer"
-ctx.metadata["policy.resource"] = "transfer"
-await pipeline.run(req, ctx, terminal)
-
-# === Task 4: RealRuntimeDisabledError ===
-# Cloud-runtime stubs now raise `RealRuntimeDisabledError` (an
-# `EapError` subclass) instead of `NotImplementedError` when
-# `EAP_ENABLE_REAL_RUNTIMES=1` is unset.
-#
-# Before:
-try:
-    await store.recall(...)
-except NotImplementedError as e:
-    # handle stub mode
-# After:
-from eap_core import RealRuntimeDisabledError  # or EapError
-try:
-    await store.recall(...)
-except RealRuntimeDisabledError as e:
-    # handle stub mode
-
-# === Task 9: PaymentClient required budget ===
-# `PaymentClient` and `AP2PaymentClient` now require an explicit
-# `max_spend_cents` ceiling at construction time — no more silent $1.
-#
-# Before:
-pay = PaymentClient(wallet_provider_id="my-wallet")  # silently $1
-# After:
-pay = PaymentClient(wallet_provider_id="my-wallet", max_spend_cents=500)
-```
+See [`CHANGELOG.md`](CHANGELOG.md) for per-release notes and any
+migration recipes that apply when bumping the pin.
 
 ---
 
@@ -658,7 +597,7 @@ ai-eap-sdk/
 └── pyproject.toml                           # uv workspace root
 ```
 
-**Status:** v0.6.3 — review-debt clean; full integrations with AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine. All v0.4.0 Criticals + v0.5.0 / v0.5.1 / v0.6.x follow-ups closed.
+**Status:** Production-ready. Full integrations with AWS Bedrock AgentCore (11 services) and GCP Vertex Agent Engine.
 
 ---
 

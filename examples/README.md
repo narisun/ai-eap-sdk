@@ -30,23 +30,19 @@ same business logic. Read side-by-side with the user guides.
 Both share the same `agent.py` business logic — only the integration
 wiring differs.
 
-## Validation examples (added in 2026-05)
+## MCP data-access examples
 
-Three projects that together validate the SDK against a realistic
-data use case: loading CSV sample data into in-memory DuckDB,
-exposing it as MCP servers, and consuming both servers from a
-cross-domain EAP-Core agent. The two MCP servers stand on their own;
-the cross-domain agent is the end-to-end test.
+Three projects that exercise the SDK against a realistic data use
+case: loading CSV sample data into in-memory DuckDB, exposing it as
+MCP servers, and consuming both servers from a cross-domain EAP-Core
+agent. The two MCP servers stand on their own; the cross-domain
+agent ties them together end-to-end.
 
 | Project | Demonstrates |
 |---|---|
 | [`bankdw-mcp-server/`](bankdw-mcp-server/) | Payments data warehouse (5-table star schema, ~3000 rows) exposed as an MCP stdio server. Three tools: `list_tables`, `describe_table`, `query_sql`. Read-only SQL guard with first-keyword allow-list + word-boundary mid-statement block. |
-| [`sfcrm-mcp-server/`](sfcrm-mcp-server/) | Salesforce CRM (15-table operational schema, ~900 rows) exposed via the same three-tool surface as bankdw. Confirms the pattern generalises from a star schema to a many-table operational schema without code changes. |
-| [`cross-domain-agent/`](cross-domain-agent/) | EAP-Core agent that spawns BOTH MCP servers as stdio subprocesses, wraps each remote tool as a local `@mcp_tool`-style forwarder (namespaced `server__tool`), and runs a cross-domain query (top-5 SFDC Accounts → matching bankdw parties). The README documents five open SDK gaps the exercise surfaced — backlog for a v0.8.0 `eap_core.mcp.client` module. |
-
-The validation surfaced a serialization bug in `eap_core.mcp.server`
-fixed in v0.7.1 (BaseModel returns were being emitted as Python repr
-instead of JSON). See `CHANGELOG.md` for that fix.
+| [`sfcrm-mcp-server/`](sfcrm-mcp-server/) | Salesforce CRM (15-table operational schema, ~900 rows) exposed via the same three-tool surface as bankdw. The pattern generalises from a star schema to a many-table operational schema without code changes. |
+| [`cross-domain-agent/`](cross-domain-agent/) | EAP-Core agent that uses `McpClientPool` to spawn BOTH MCP servers as stdio subprocesses, builds a namespaced `McpToolRegistry` of `<server>__<tool>` forwarders, and runs a cross-domain query (top-5 SFDC Accounts → matching bankdw parties). |
 
 ## Running an example
 
@@ -58,7 +54,7 @@ cd examples/<project>
 python <entry>.py
 ```
 
-The validation examples (`bankdw-mcp-server`, `sfcrm-mcp-server`,
+The MCP data-access examples (`bankdw-mcp-server`, `sfcrm-mcp-server`,
 `cross-domain-agent`) need the `mcp` and `duckdb` Python packages.
 Their READMEs document the exact invocations.
 

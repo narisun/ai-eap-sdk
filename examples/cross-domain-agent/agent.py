@@ -1,16 +1,9 @@
 """cross-domain-agent — answer questions that span bankdw + sfcrm.
 
-Migrated in v1.1.0 to use :class:`eap_core.mcp.client.McpClientPool`
-directly. The previous version went through ``mcp_client_adapter.py``
-(now a thin v1.0 compat shim sitting next to this file); the headline
-example now uses the SDK API end-to-end so newcomers see the canonical
-pattern.
-
-Spawns both MCP servers as subprocesses through the SDK pool, builds a
-namespaced ``McpToolRegistry`` via :meth:`McpClientPool.build_tool_registry`,
-and runs the same cross-domain query the v1.0 demo printed. The output
-shape and the top-5 names are unchanged — this is a refactor of HOW the
-example wires things, not WHAT it produces.
+Uses :class:`eap_core.mcp.client.McpClientPool` to spawn both MCP
+servers as subprocesses, builds a namespaced ``McpToolRegistry`` via
+:meth:`McpClientPool.build_tool_registry`, and runs a cross-domain
+query end-to-end.
 
 Run locally (no cloud creds, no LLM provider):
 

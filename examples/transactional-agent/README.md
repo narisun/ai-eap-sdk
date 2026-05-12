@@ -19,7 +19,7 @@ decision here maps to a step in the cloud-specific tutorials.
 | Idempotency-key dedup on writes | `tools/transfer_funds.py` (`_LEDGER`) |
 | Per-process `McpToolRegistry` (no global singleton) | `agent.py` (top-level `REGISTRY`) |
 | Workload identity — `NonHumanIdentity` + `LocalIdPStub` | `agent.py` (top-level `IDENTITY`) |
-| Dispatcher refuses auth-required tools without identity (v0.5.0 C5) | `EnterpriseLLM(identity=IDENTITY, ...)` |
+| Dispatcher refuses auth-required tools without identity | `EnterpriseLLM(identity=IDENTITY, ...)` |
 | Default middleware chain — sanitize → PII → OTel → policy → validate | `agent.build_client` |
 | JSON policy gate (Cedar-shaped) | `configs/policy.json` |
 | A2A AgentCard (capability advertisement) | `configs/agent_card.json` |
